@@ -228,4 +228,52 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
         string)
     (error "layer group %S doesn't exist!" layer-group)))
 
+;;; search
+
+(defun tp-forward (property &optional value predicate not-current)
+  (text-property-search-forward property value predicate not-current))
+
+(defun tp-backward (property &optional value predicate not-current)
+  (text-property-search-backward property value predicate not-current))
+
+(defun tp-forward-do (function property &optional
+                               value predicate not-current)
+  "从当前位置向前搜索，并执行 function，function的参数是 start end value"
+  (when-let* ((match (tp-forward property value predicate not-current))
+              (start (prop-match-beginning match))
+              (end (prop-match-end match))
+              (value (prop-match-value match)))
+    (funcall function start end value)))
+
+(defun tp-backward-do (function property &optional
+                                value predicate not-current)
+  "从当前位置向后搜索，并执行 function，function的参数是 start end value"
+  (when-let* ((match (tp-backward property value predicate not-current))
+              (start (prop-match-beginning match))
+              (end (prop-match-end match))
+              (value (prop-match-value match)))
+    (funcall function start end value)))
+
+(defun tp-regions-map
+    (function property &optional value predicate collect)
+  "对属性匹配的开头和结尾 point 执行 function。collect 为 t 时返回结果列表"
+  (save-excursion
+    (goto-char (point-min))
+    (let ((idx 0) lst)
+      (while-let ((match (tp-forward property value predicate))
+                  (start (prop-match-beginning match))
+                  (end (prop-match-end match)))
+        (let ((res (funcall function start end idx)))
+          (when collect (push res lst)))
+        (cl-incf idx 1))
+      (nreverse lst))))
+
+(defun tp-strings-map
+    (function property &optional value predicate collect)
+  "对属性匹配的字符串执行 function"
+  (tp-regions-map
+   (lambda (start end idx)
+     (funcall function (buffer-substring start end) idx))
+   property value predicate))
+
 (provide 'tp)
