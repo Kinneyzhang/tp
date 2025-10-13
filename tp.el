@@ -254,8 +254,8 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
               (value (prop-match-value match)))
     (funcall function start end value)))
 
-(defun tp-regions-map
-    (function property &optional value predicate collect)
+(defun tp-regions-map (function property &optional
+                                value predicate collect)
   "对属性匹配的开头和结尾 point 执行 function。collect 为 t 时返回结果列表"
   (save-excursion
     (goto-char (point-min))
@@ -268,8 +268,8 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
         (cl-incf idx 1))
       (nreverse lst))))
 
-(defun tp-strings-map
-    (function property &optional value predicate collect)
+(defun tp-strings-map (function property &optional
+                                value predicate collect)
   "对属性匹配的字符串执行 function"
   (tp-regions-map
    (lambda (start end idx)
