@@ -4,6 +4,40 @@
 
 (require 'dash)
 
+;;; tp layer define
+
+(defvar tp-layer-alist nil
+  "Alist 的每个元素是单个 layer")
+
+(defvar tp-layer-groups nil
+  "group 的每个元素是 layer 组，组中存储的是多个 layer")
+
+(defmacro tp-layer-define (name properties)
+  "定义一个名称为 name 的文本属性层，数据存放在 tp-layer-alist 中"
+  (declare (indent defun))
+  `(progn
+     (if (assoc ',name tp-layer-alist)
+         (setf (cdr (assoc ',name tp-layer-alist)) ,properties)
+       (push (cons ',name ,properties) tp-layer-alist))
+     (assoc ',name tp-layer-alist)))
+
+(defmacro tp-layer-group-define (name &rest layers)
+  "每个属性层在 tp-layer-alist 中，属性组指在 tp-layer-groups 中存储属性层的名称
+层级关系与layers定义顺序一致。最上面的定义表示顶层，渲染时会显示出来。"
+  (declare (indent defun))
+  `(let ((layer-names
+          (nreverse
+           (-map (lambda (lst)
+                   (let ((layer-name (car lst)))
+                     (eval `(tp-layer-define ,layer-name ,(cadr lst)))
+                     layer-name))
+                 (-partition 2 ',layers)))))
+     (if (assoc ',name tp-layer-groups)
+         (setf (cdr (assoc ',name tp-layer-groups)) layer-names)
+       (push (cons ',name layer-names) tp-layer-groups))
+     (assoc ',name tp-layer-groups)))
+
+
 ;;; tp layer
 
 (defun tp-top-layer-props (properties)
@@ -61,17 +95,6 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
        (list (+ start i-start) (+ start i-end) props)))
    start end object))
 
-;; (defun tp-layers-names (start end &optional object)
-;;   "返回当前所有 layers 的名称"
-;;   (seq-uniq
-;;    (apply 'append
-;;           (tp-intervals-map
-;;            (lambda (i-start i-end top belows)
-;;              (remove nil (mapcar (lambda (props)
-;;                                    (plist-get props 'tp-name))
-;;                                  (append (list top) belows))))
-;;            start end object))))
-
 (defun tp-layer-set (name start end &optional object)
   "将 object 的 start 和 end 之间的文本当前的属性层命名为 name"
   (if (tp-empty-p object)
@@ -87,10 +110,8 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
      start end object))
   object)
 
-(defun tp-layer-push (name start end properties &optional object)
+(defun tp-layer-push (start end name &optional properties object)
   "设置 properties 为最上面的 prop 层，name 是 layer 的名字"
-  ;; 当前顶层放到 tp-layers 开头，properties 设置为当前顶层。
-  ;; FIXME: 需要检查 name 是否已经存在，存在则报错
   (declare (indent defun))
   (when (tp-layer-props name start end object)
     (error "Already exist layer named %S" name))
@@ -176,35 +197,6 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
   nil)
 
 ;;; propertize string
-
-(defvar tp-layer-alist nil
-  "Alist 的每个元素是单个 layer")
-
-(defvar tp-layer-groups nil
-  "group 的每个元素是 layer 组，组中存储的是多个 layer")
-
-(defun tp-layer-define (name properties)
-  "定义一个名称为 name 的文本属性层，数据存放在 tp-layer-alist 中"
-  (declare (indent defun))
-  (if (assoc name tp-layer-alist)
-      (setf (cdr (assoc name tp-layer-alist)) properties)
-    (push (cons name properties) tp-layer-alist))
-  (assoc name tp-layer-alist))
-
-(defun tp-layer-group-define (name &rest layers)
-  "每个属性层在 tp-layer-alist 中，属性组指在 tp-layer-groups 中存储属性层的名称
-层级关系与layers定义顺序一致。最上面的定义表示顶层，渲染时会显示出来。"
-  (declare (indent defun))
-  (let ((layer-names
-         (nreverse
-          (mapcar (lambda (layer)
-                    (let ((layer-name (car layer)))
-                      (tp-layer-define layer-name (cdr layer))
-                      layer-name))
-                  layers))))
-    (if (assoc name tp-layer-groups)
-        (setf (cdr (assoc name tp-layer-groups)) layer-names)
-      (push (cons name layer-names) tp-layer-groups))))
 
 (defun tp-propertize (string properties &optional layer)
   (declare (indent defun))

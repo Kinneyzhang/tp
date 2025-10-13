@@ -3,19 +3,22 @@
 ;; tp-layer-alist
 ;; tp-layer-groups
 
-(tp-layer-define 'test1
+(tp-layer-define test1
   '(face link :foreground "orange"))
 
-(tp-layer-define 'test2
+(tp-layer-define test2
   '(face link :foreground "cyan"))
 
-(tp-layer-group-define 'test-group
-  '(test1 display "this is top layer"
-          face (:background "red" :foreground "#000"))
-  '(test2 display "this is middle layer"
-          face (:background "green" :foreground "#000"))
-  '(test3 display "this is bottom layer"
-          face (:background "cyan" :foreground "#000")))
+(tp-layer-group-define test-group
+  test1 '( display "this is top layer"
+           face (:background "red" :foreground "#000"))
+  test2 '( display "this is middle layer"
+           face (:background "green" :foreground "#000"))
+  test3 '( display "this is bottom layer"
+           face (:background "cyan" :foreground "#000")))
+
+(setq tp-layer-alist nil)
+(setq tp-layer-groups nil)
 
 (tp-layer-propertize "emacs" 'test1)
 (tp-layer-group-propertize "emacs" 'test-group)
