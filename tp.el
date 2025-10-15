@@ -37,16 +37,37 @@
        (push (cons ',name layer-names) tp-layer-groups))
      (assoc ',name tp-layer-groups)))
 
+;; ;; FIXME:
+;; (defun tp-layer-properties (layer-or-group-or-properties)
+;;   "如果 name 已在 `tp-layer-define' 中定义，忽略 properties;
+;; 否则使用 properties 作为新的层的属性"
+;;   (if-let ((plist (cdr (assoc name tp-layer-alist))))
+;;       (append plist (list 'tp-name name))
+;;     (append properties (list 'tp-name name))))
+
+(defun tp-layer-properties (name &optional properties)
+  "如果 name 已在 `tp-layer-define' 中定义，忽略 properties;
+否则使用 properties 作为新的层的属性"
+  (if-let ((plist (cdr (assoc name tp-layer-alist))))
+      (append plist (list 'tp-name name))
+    (append properties (list 'tp-name name))))
+
+(defun tp-layer-group-properties (name)
+  "返回使用 `tp-layer-group-define' 定义的 layer 的属性"
+  (when-let ((layers (cdr (assoc name tp-layer-groups))))
+    (mapcar (lambda (layer)
+              (tp-layer-properties layer))
+            layers)))
 
 ;;; tp layer
 
-(defun tp-top-layer-props (properties)
+(defun tp--layer-top-props (properties)
   "获取最上面的属性层，也就是实际要渲染的层"
   (if-let ((idx (-elem-index 'tp-layers properties)))
       (-remove-at-indices (list idx (1+ idx)) properties)
     properties))
 
-(defun tp-below-layers-props (properties)
+(defun tp--layer-below-props (properties)
   "获取最上层以下的属性层列表"
   (plist-get properties 'tp-layers))
 
@@ -77,14 +98,14 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
       (let* ((interval-start (nth 0 tp)) ;; start from 0
              (interval-end (nth 1 tp))
              (interval-props (nth 2 tp))
-             (top-props (tp-top-layer-props interval-props))
-             (below-props-lst (tp-below-layers-props interval-props)))
+             (top-props (tp--layer-top-props interval-props))
+             (below-props-lst (tp--layer-below-props interval-props)))
         (funcall function
                  interval-start interval-end
                  top-props below-props-lst)))
     (tp-all start end object))))
 
-(defun tp-layer-props (name start end &optional object)
+(defun tp-region-layer-props (start end name &optional object)
   "返回 object 的 start 和 end 之间文本属性层为 name 的属性列表"
   (tp-intervals-map
    (lambda (i-start i-end top belows)
@@ -95,7 +116,7 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
        (list (+ start i-start) (+ start i-end) props)))
    start end object))
 
-(defun tp-layer-set (name start end &optional object)
+(defun tp-layer-set (start end name &optional object)
   "将 object 的 start 和 end 之间的文本当前的属性层命名为 name"
   (if (tp-empty-p object)
       (add-text-properties
@@ -110,26 +131,29 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
      start end object))
   object)
 
+;;;###autoload
 (defun tp-layer-push (start end name &optional properties object)
-  "设置 properties 为最上面的 prop 层，name 是 layer 的名字"
+  "设置 properties 为最上面的 prop 层，name 是 layer 的名字;
+如果 properties 是 nil，则 `tp-layer-define' 定义的名称为 name 的 layer 设置。"
   (declare (indent defun))
-  (when (tp-layer-props name start end object)
+  (when (tp-region-layer-props name start end object)
     (error "Already exist layer named %S" name))
   (if (tp-empty-p object)
       (set-text-properties
        start end (append properties (list 'tp-name name))
        object)
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (set-text-properties
-        (+ start i-start) (+ start i-end)
-        (append (append properties (list 'tp-name name))
-                (list 'tp-layers (append (list top) belows)))
-        object))
-     start end object))
+    (let ((props (tp-layer-properties name properties)))
+      (tp-intervals-map
+       (lambda (i-start i-end top belows)
+         (set-text-properties
+          (+ start i-start) (+ start i-end)
+          (append props
+                  (list 'tp-layers (append (list top) belows)))
+          object))
+       start end object)))
   object)
 
-(defun tp-layer-delete (name start end &optional object)
+(defun tp-layer-delete (start end name &optional object)
   "移除 object 的 start 和 end 之间文本的名称为 name 的层"
   ;; 当前顶层放到 tp-layers 开头，properties 设置为当前顶层。
   ;; FIXME: 需要检查 name 是否已经存在，存在则报错
@@ -167,9 +191,9 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
    start end object)
   nil)
 
-(defun tp-layer-pin (name start end &optional object)
+(defun tp-layer-pin (start end name &optional object)
   "将 start 和 end 之间名称为 name 的层移动最上面。"
-  (unless (tp-layer-props name start end object)
+  (unless (tp-region-layer-props name start end object)
     (error "Doesn't exist a layer named %S" name))
   (tp-intervals-map
    (lambda (i-start i-end top belows)
@@ -198,11 +222,13 @@ function 的四个参数分别为:区间开始位置，区间结束位置，顶�
 
 ;;; propertize string
 
-(defun tp-propertize (string properties &optional layer)
+;; FIXME: 第二个参数兼容三种情况
+;; 1. layer 2. layer group 3. normal properties
+(defun tp-propertize (string layer-name &optional properties)
   (declare (indent defun))
   (let ((layer (or layer (org-id-uuid))))
-    (tp-layer-push layer
-      0 (length string) properties string)
+    (tp-layer-push 0 (length string)
+      layer-name properties string)
     string))
 
 (defun tp-layer-propertize (string layer)

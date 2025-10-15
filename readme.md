@@ -1,4 +1,4 @@
-最上面的层会被渲染到 buffer 中。
+## The project is in progress...
 
 ### text properties layer
 - `tp-layer-set (name start end &optional object)`\
