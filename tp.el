@@ -2,6 +2,11 @@
 ;; elisp 原生的 text properties 函数的局限性
 ;; https://github.com/emacsorphanage/ov
 
+;; (put 'my-keyword-category 'face '(:foreground "blue" :weight bold))
+;; (put 'my-keyword-category 'help-echo "This is a keyword.")
+;; (symbol-plist 'my-keyword-category)
+;; (put-text-property 10 20 'category 'my-keyword-category)
+
 (require 'dash)
 
 ;;; tp layer define
