@@ -4,7 +4,7 @@
 
 ;; Version: 0.1.0
 ;; Keywords: convenience text-properties
-;; Package-Requires: ((emacs "27.1") (dash "2.19.1"))
+;; Package-Requires: ((emacs "28.1") (dash "2.19.1"))
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -24,6 +24,8 @@
 ;; - Search and navigation functions for text properties
 ;;
 ;; Inspired by https://github.com/emacsorphanage/ov
+;;
+;; Requires Emacs 28.1+ for `object-intervals' function.
 
 ;;; Code:
 
@@ -153,11 +155,13 @@ Returns a plist of all properties in the region."
     props))
 
 ;;; Text property intervals
+;; Note: Uses `object-intervals' which requires Emacs 28.1+
 
 (defun tp-intervals (start end &optional object)
   "Get all text property intervals from START to END in OBJECT.
 OBJECT can be a buffer or string; nil defaults to current buffer.
-Returns a list of (START END PROPERTIES) for each interval."
+Returns a list of (START END PROPERTIES) for each interval.
+Uses `object-intervals' (Emacs 28.1+)."
   (let ((object (or object (current-buffer))))
     (cond
      ((stringp object)
@@ -169,7 +173,8 @@ Returns a list of (START END PROPERTIES) for each interval."
                (type-of object))))))
 
 (defun tp-empty-p (object)
-  "Return t if OBJECT has no text properties."
+  "Return t if OBJECT has no text properties.
+Uses `object-intervals' (Emacs 28.1+)."
   (null (object-intervals object)))
 
 (defun tp-intervals-map (function start end &optional object)

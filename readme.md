@@ -18,7 +18,9 @@ Inspired by [ov.el](https://github.com/emacsorphanage/ov) for overlays.
 (require 'tp)
 ```
 
-Dependencies: `dash` (for list manipulation utilities)
+**Requirements:**
+- Emacs 28.1+ (uses `object-intervals` function)
+- `dash` (for list manipulation utilities)
 
 ## Quick Start
 
