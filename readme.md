@@ -87,13 +87,13 @@ The layer system allows you to stack multiple sets of properties on the same tex
 Define groups of layers that work together:
 
 ```elisp
-(tp-layer-group-define my-status-group
+(tp-group-define my-status-group
   status-normal '(face (:background "green" :foreground "black"))
   status-warning '(face (:background "yellow" :foreground "black"))
   status-error '(face (:background "red" :foreground "white")))
 
 ;; Apply all layers from a group to a string
-(tp-layer-group-propertize "Status" 'my-status-group)
+(tp-group-propertize "Status" 'my-status-group)
 ```
 
 ## API Reference
@@ -122,11 +122,11 @@ Define groups of layers that work together:
 | Function | Description |
 |----------|-------------|
 | `tp-layer-define (name properties)` | Define a named layer |
-| `tp-layer-group-define (name &rest layers)` | Define a layer group |
-| `tp-layer-properties (layer-name)` | Get properties for a layer |
-| `tp-layer-group-properties (group-name)` | Get properties for all layers in group |
+| `tp-group-define (name &rest layers)` | Define a layer group |
+| `tp-layer-props (layer-name)` | Get properties for a layer |
+| `tp-group-props (group-name)` | Get properties for all layers in group |
 | `tp-layer-undefine (name)` | Remove a layer definition |
-| `tp-layer-group-undefine (name)` | Remove a layer group definition |
+| `tp-group-undefine (name)` | Remove a layer group definition |
 | `tp-layer-reset ()` | Clear all layer definitions |
 
 ### Layer Manipulation Functions
@@ -158,7 +158,7 @@ Define groups of layers that work together:
 |----------|-------------|
 | `tp-propertize (string &rest properties)` | Propertize string |
 | `tp-layer-propertize (string layer)` | Apply layer to string |
-| `tp-layer-group-propertize (string layer-group)` | Apply layer group to string |
+| `tp-group-propertize (string layer-group)` | Apply layer group to string |
 
 ### Search Functions
 

@@ -58,7 +58,7 @@ PROPERTIES should be a plist of text properties."
        (push (cons ',name ,properties) tp-layer-alist))
      (assoc ',name tp-layer-alist)))
 
-(defmacro tp-layer-group-define (name &rest layers)
+(defmacro tp-group-define (name &rest layers)
   "Define a layer group named NAME containing LAYERS.
 LAYERS are specified as alternating NAME PROPERTIES pairs.
 The first layer in the definition is the top layer (visible by default).
@@ -76,18 +76,27 @@ All layers are stored in `tp-layer-alist' and the group in `tp-layer-groups'."
        (push (cons ',name layer-names) tp-layer-groups))
      (assoc ',name tp-layer-groups)))
 
-(defun tp-layer-properties (layer-name)
+(defalias 'tp-layer-group-define 'tp-group-define
+  "Alias for `tp-group-define'.")
+
+(defun tp-layer-props (layer-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.
 Appends 'tp-name property to identify the layer."
   (when-let ((plist (cdr (assoc layer-name tp-layer-alist))))
     (append plist (list 'tp-name layer-name))))
 
-(defun tp-layer-group-properties (group-name)
+(defalias 'tp-layer-properties 'tp-layer-props
+  "Alias for `tp-layer-props'.")
+
+(defun tp-group-props (group-name)
   "Return list of properties for all layers in GROUP-NAME."
   (when-let ((layers (cdr (assoc group-name tp-layer-groups))))
     (mapcar (lambda (layer)
-              (tp-layer-properties layer))
+              (tp-layer-props layer))
             layers)))
+
+(defalias 'tp-layer-group-properties 'tp-group-props
+  "Alias for `tp-group-props'.")
 
 ;;; Basic text property functions (similar to ov.el)
 
@@ -238,7 +247,7 @@ Signals an error if layer NAME already exists in the region."
   (declare (indent defun))
   (when (tp-region-layer-props start end name object)
     (error "Already exist layer named %S" name))
-  (let ((props (tp-layer-properties name)))
+  (let ((props (tp-layer-props name)))
     (if (tp-empty-p (or object (current-buffer)))
         ;; No existing properties, just set the layer properties
         (set-text-properties start end
@@ -342,7 +351,7 @@ LAYER must be defined in `tp-layer-alist'."
       (apply #'propertize string (cdr layer-info))
     (error "Layer %S doesn't exist!" layer)))
 
-(defun tp-layer-group-propertize (string layer-group)
+(defun tp-group-propertize (string layer-group)
   "Return STRING with all layers from LAYER-GROUP applied.
 LAYER-GROUP must be defined in `tp-layer-groups'.
 Layers are applied in order, with later layers on top."
@@ -354,7 +363,7 @@ Layers are applied in order, with later layers on top."
           (setq result (tp-layer-propertize result first-layer)))
         ;; Apply additional layers using the layer system
         (dolist (layer (cdr layers))
-          (when-let ((props (tp-layer-properties layer)))
+          (when-let ((props (tp-layer-props layer)))
             (set-text-properties 0 (length result)
                                  (append props
                                          (list 'tp-layers
@@ -362,6 +371,9 @@ Layers are applied in order, with later layers on top."
                                  result)))
         result)
     (error "Layer group %S doesn't exist!" layer-group)))
+
+(defalias 'tp-layer-group-propertize 'tp-group-propertize
+  "Alias for `tp-group-propertize'.")
 
 ;;; Search functions
 
@@ -653,9 +665,12 @@ Clears both `tp-layer-alist' and `tp-layer-groups'."
   "Remove layer NAME from `tp-layer-alist'."
   (setq tp-layer-alist (assq-delete-all name tp-layer-alist)))
 
-(defun tp-layer-group-undefine (name)
+(defun tp-group-undefine (name)
   "Remove layer group NAME from `tp-layer-groups'."
   (setq tp-layer-groups (assq-delete-all name tp-layer-groups)))
+
+(defalias 'tp-layer-group-undefine 'tp-group-undefine
+  "Alias for `tp-group-undefine'.")
 
 (provide 'tp)
 ;;; tp.el ends here
