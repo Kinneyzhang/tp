@@ -203,7 +203,7 @@
     (should (assoc 'layer1 tp-layer-alist))
     (should (assoc 'layer2 tp-layer-alist))
     (should (assoc 'layer3 tp-layer-alist))
-    ;; Note: tp-group-define stores layers in reverse order (last defined is first)
+    ;; Check all layers are present in the group
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
       (should (= (length layers) 3))
       (should (memq 'layer1 layers))
@@ -524,6 +524,8 @@
     (insert "Hello World")
     (tp-put 7 12 'face 'bold)
     (goto-char 1)
+    ;; text-property-search-forward may not exist in all Emacs versions
+    (skip-unless (fboundp 'text-property-search-forward))
     (let ((match (tp-forward 'face)))
       (should match)
       (should (= (prop-match-beginning match) 7)))))
