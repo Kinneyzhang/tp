@@ -614,8 +614,8 @@ Returns:
                 (end (match-end 0)))
             (when properties
               (tp-put object beg end properties))
-            ;; Advance by at least 1 to avoid infinite loop on empty match
-            (setq pos (max (1+ beg) end))))
+            ;; Advance position: for zero-width match, advance by 1 to avoid infinite loop
+            (setq pos (if (= beg end) (1+ beg) end))))
         object))
      ;; Buffer or nil (current buffer)
      (t
@@ -678,8 +678,8 @@ Returns:
                 (end (match-end 0)))
             (when properties
               (tp-put object beg end properties))
-            ;; Advance by at least 1 to avoid infinite loop on zero-width match
-            (setq pos (max (1+ beg) end))))
+            ;; Advance position: for zero-width match, advance by 1 to avoid infinite loop
+            (setq pos (if (= beg end) (1+ beg) end))))
         object))
      ;; Buffer or nil (current buffer)
      (t
