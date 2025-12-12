@@ -398,10 +398,10 @@ PROPERTIES should be a plist of property-value pairs."
   (declare (indent defun))
   (cond
    ;; Called with just string and properties (no start/end)
+   ;; Detect by checking if first arg is not a number (not a start position)
    ((and (stringp object-or-string)
          (or (null args)
-             (symbolp (car args))
-             (and (listp (car args)) (symbolp (caar args)))))
+             (not (numberp (car args)))))
     (let ((properties args))
       (when (listp (car-safe properties))
         (setq properties (car properties)))
@@ -419,7 +419,8 @@ PROPERTIES should be a plist of property-value pairs."
           (properties (cddr args)))
       (when (listp (car-safe properties))
         (setq properties (car properties)))
-      (tp-put object start end properties)))
+      (tp-put object start end properties)
+      object))  ; Always return the object
    (t (error "Invalid arguments to tp-propertize"))))
 
 (defun tp-layer-propertize (object layer &optional start end)
@@ -451,7 +452,8 @@ Returns the modified object."
                 (fin (or end (if (stringp object)
                                  (length object)
                                (with-current-buffer object (point-max))))))
-            (tp-put object beg fin props)))
+            (tp-put object beg fin props)
+            object))  ; Always return the object
          (t (error "Invalid object type: %S" (type-of object)))))
     (error "Layer %S doesn't exist!" layer)))
 
@@ -612,7 +614,8 @@ Returns:
                 (end (match-end 0)))
             (when properties
               (tp-put object beg end properties))
-            (setq pos end)))
+            ;; Advance by at least 1 to avoid infinite loop on empty match
+            (setq pos (max (1+ beg) end))))
         object))
      ;; Buffer or nil (current buffer)
      (t
@@ -675,7 +678,8 @@ Returns:
                 (end (match-end 0)))
             (when properties
               (tp-put object beg end properties))
-            (setq pos end)))
+            ;; Advance by at least 1 to avoid infinite loop on zero-width match
+            (setq pos (max (1+ beg) end))))
         object))
      ;; Buffer or nil (current buffer)
      (t
