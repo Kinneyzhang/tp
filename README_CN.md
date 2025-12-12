@@ -1,49 +1,48 @@
-# tp.el - Text Properties Library for Emacs
+# tp.el - Emacs 文本属性操作库
 
 <p align="center">
-  <strong>A powerful text properties manipulation library with an innovative layer system</strong>
+  <strong>一个功能强大的文本属性操作库，具有创新的图层系统</strong>
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#api-reference">API Reference</a> •
-  <a href="#the-layer-system">Layer System</a> •
-  <a href="README_CN.md">中文文档</a>
+  <a href="#功能特性">功能特性</a> •
+  <a href="#安装">安装</a> •
+  <a href="#快速开始">快速开始</a> •
+  <a href="#api-参考">API 参考</a> •
+  <a href="#图层系统">图层系统</a>
 </p>
 
 ---
 
-**tp.el** provides a convenient and unified API for manipulating Emacs text properties. Inspired by [ov.el](https://github.com/emacsorphanage/ov) for overlays, tp.el offers:
+**tp.el** 提供了一个便捷统一的 API 来操作 Emacs 文本属性。灵感来自用于叠加层的 [ov.el](https://github.com/emacsorphanage/ov)，tp.el 提供：
 
-- **Unified API**: All property-setting functions work on both **strings** and **buffers**
-- **Layer System**: Stack multiple property sets on the same text region
-- **Pattern Matching**: Apply properties to text matching strings or regexps
+- **统一 API**：所有属性设置函数同时支持 **字符串** 和 **缓冲区**
+- **图层系统**：在同一文本区域上堆叠多组属性
+- **模式匹配**：将属性应用到匹配字符串或正则表达式的文本
 
-## Features
+## 功能特性
 
-- ✅ **Unified Object Support**: Functions like `tp-put`, `tp-match`, `tp-regexp` work on both strings and buffers
-- ✅ **Innovative Layer System**: Stack, rotate, and manage multiple layers of properties
-- ✅ **Layer Groups**: Define reusable sets of related layers
-- ✅ **Search & Navigation**: Find and navigate through propertized text
-- ✅ **Pattern Matching**: Apply properties to string/regexp matches
-- ✅ **Clean API**: Consistent naming and calling conventions
+- ✅ **统一对象支持**：`tp-put`、`tp-match`、`tp-regexp` 等函数同时支持字符串和缓冲区
+- ✅ **创新图层系统**：堆叠、轮换和管理多层属性
+- ✅ **图层组**：定义可复用的相关图层集合
+- ✅ **搜索和导航**：查找并导航带属性的文本
+- ✅ **模式匹配**：将属性应用到字符串/正则匹配
+- ✅ **简洁 API**：一致的命名和调用约定
 
-## Requirements
+## 系统要求
 
-- **Emacs 28.1+** (uses `object-intervals` function)
-- **dash.el** (list manipulation utilities)
+- **Emacs 28.1+**（使用 `object-intervals` 函数）
+- **dash.el**（列表操作工具库）
 
-## Installation
+## 安装
 
 ```elisp
-;; Add to your load-path
+;; 添加到 load-path
 (add-to-list 'load-path "/path/to/tp")
 (require 'tp)
 ```
 
-Or with `use-package`:
+或使用 `use-package`：
 
 ```elisp
 (use-package tp
@@ -52,144 +51,144 @@ Or with `use-package`:
 
 ---
 
-## Quick Start
+## 快速开始
 
-### Setting Properties
+### 设置属性
 
 ```elisp
-;; On current buffer
+;; 在当前缓冲区
 (tp-put 1 10 'face 'bold 'help-echo "Hello!")
 
-;; On a string
+;; 在字符串上
 (tp-put "Hello World" 0 5 'face 'bold)
 ;; => #("Hello World" 0 5 (face bold))
 
-;; Using a property list
+;; 使用属性列表
 (tp-put 1 10 '(face bold help-echo "test"))
 ```
 
-### Getting Properties
+### 获取属性
 
 ```elisp
-;; Get specific property
+;; 获取特定属性
 (tp-get 5 'face)  ; => bold
 
-;; Get all properties at point
+;; 获取该位置的所有属性
 (tp-at 5)  ; => (face bold help-echo "Hello!")
 ```
 
-### Pattern Matching
+### 模式匹配
 
 ```elisp
-;; Apply properties to all occurrences of "TODO" in buffer
+;; 将属性应用到缓冲区中所有 "TODO" 出现的位置
 (tp-match "TODO" 'face 'warning)
 
-;; Apply to string
+;; 应用到字符串
 (tp-match "world" "Hello world world" 'face 'bold)
 ;; => #("Hello world world" 6 11 (face bold) 12 17 (face bold))
 
-;; Using regexp
+;; 使用正则表达式
 (tp-regexp "\\b[0-9]+\\b" 'face 'font-lock-number-face)
 ```
 
 ---
 
-## API Reference
+## API 参考
 
-### Core Property Functions
+### 核心属性函数
 
-#### `tp-put` - Set Text Properties
+#### `tp-put` - 设置文本属性
 
-Set text properties on a string or buffer region.
+在字符串或缓冲区区域上设置文本属性。
 
 ```elisp
-;; Buffer (current buffer)
+;; 缓冲区（当前缓冲区）
 (tp-put START END PROPERTY VALUE ...)
 (tp-put START END '(PROPERTY VALUE ...))
 
-;; String or Buffer object
+;; 字符串或缓冲区对象
 (tp-put OBJECT START END PROPERTY VALUE ...)
 (tp-put OBJECT START END '(PROPERTY VALUE ...))
 ```
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Set face on buffer region
+;; 在缓冲区区域设置 face
 (tp-put 1 10 'face 'bold)  ; => (1 . 10)
 
-;; Set multiple properties
+;; 设置多个属性
 (tp-put 1 10 'face 'bold 'help-echo "Click me")
 
-;; Set properties on a string
+;; 在字符串上设置属性
 (setq my-string (tp-put "Hello World" 0 5 'face 'italic))
 ;; => #("Hello World" 0 5 (face italic))
 
-;; Properties as a list
+;; 属性作为列表
 (tp-put 1 10 '(face bold mouse-face highlight))
 ```
 
 ---
 
-#### `tp-get` - Get Property Value
+#### `tp-get` - 获取属性值
 
 ```elisp
 (tp-get POSITION PROPERTY &optional OBJECT)
 ```
 
-Get the value of PROPERTY at POSITION.
+获取 POSITION 位置的 PROPERTY 值。
 
-**Examples:**
+**示例：**
 
 ```elisp
-(tp-get 5 'face)           ; Get from current buffer
-(tp-get 0 'face my-string) ; Get from string
+(tp-get 5 'face)           ; 从当前缓冲区获取
+(tp-get 0 'face my-string) ; 从字符串获取
 ```
 
 ---
 
-#### `tp-at` - Get All Properties
+#### `tp-at` - 获取所有属性
 
 ```elisp
 (tp-at &optional POINT OBJECT)
 ```
 
-Get all text properties at POINT as a plist.
+获取 POINT 位置的所有文本属性，返回属性列表。
 
-**Examples:**
+**示例：**
 
 ```elisp
 (tp-at 5)  ; => (face bold help-echo "test")
-(tp-at 0 my-string)  ; Get from string
+(tp-at 0 my-string)  ; 从字符串获取
 ```
 
 ---
 
-#### `tp-remove` - Remove Property
+#### `tp-remove` - 移除属性
 
 ```elisp
 (tp-remove START END PROPERTY &optional OBJECT)
 ```
 
-Remove a specific property from a region.
+从区域中移除特定属性。
 
-**Examples:**
+**示例：**
 
 ```elisp
-(tp-remove 1 10 'face)  ; Remove face property
+(tp-remove 1 10 'face)  ; 移除 face 属性
 ```
 
 ---
 
-#### `tp-remove-list` - Remove Multiple Properties
+#### `tp-remove-list` - 移除多个属性
 
 ```elisp
 (tp-remove-list START END PROPERTIES &optional OBJECT)
 ```
 
-Remove multiple properties at once.
+一次移除多个属性。
 
-**Examples:**
+**示例：**
 
 ```elisp
 (tp-remove-list 1 10 '(face help-echo mouse-face))
@@ -197,142 +196,142 @@ Remove multiple properties at once.
 
 ---
 
-#### `tp-clear` - Clear All Properties
+#### `tp-clear` - 清除所有属性
 
 ```elisp
 (tp-clear &optional START END OBJECT)
 ```
 
-Clear all text properties from a region.
+清除区域中的所有文本属性。
 
-**Examples:**
+**示例：**
 
 ```elisp
-(tp-clear 1 10)     ; Clear region
-(tp-clear)          ; Clear entire buffer
+(tp-clear 1 10)     ; 清除区域
+(tp-clear)          ; 清除整个缓冲区
 ```
 
 ---
 
-### Propertize Functions
+### 属性化函数
 
-#### `tp-propertize` - Create Propertized String
+#### `tp-propertize` - 创建带属性的字符串
 
 ```elisp
-;; Create propertized string
+;; 创建带属性的字符串
 (tp-propertize STRING PROPERTY VALUE ...)
 (tp-propertize STRING '(PROPERTY VALUE ...))
 
-;; Apply to region of object
+;; 应用到对象的区域
 (tp-propertize OBJECT START END PROPERTY VALUE ...)
 ```
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Simple usage - returns propertized string
+;; 简单用法 - 返回带属性的字符串
 (tp-propertize "Hello" 'face 'bold)
 ;; => #("Hello" 0 5 (face bold))
 
-;; With property list
+;; 使用属性列表
 (tp-propertize "World" '(face italic help-echo "greeting"))
 
-;; Apply to substring
+;; 应用到子字符串
 (tp-propertize "Hello World" 6 11 'face 'underline)
 ```
 
 ---
 
-#### `tp-layer-propertize` - Apply Layer to Object
+#### `tp-layer-propertize` - 将图层应用到对象
 
 ```elisp
 (tp-layer-propertize OBJECT LAYER &optional START END)
 ```
 
-Apply a predefined layer's properties to an object.
+将预定义图层的属性应用到对象。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Define a layer first
+;; 首先定义一个图层
 (tp-layer-define highlight '(face (:background "yellow")))
 
-;; Apply to string
+;; 应用到字符串
 (tp-layer-propertize "Important" 'highlight)
 
-;; Apply to substring
+;; 应用到子字符串
 (tp-layer-propertize "Hello World" 'highlight 0 5)
 
-;; Apply to buffer region
+;; 应用到缓冲区区域
 (tp-layer-propertize (current-buffer) 'highlight 1 10)
 ```
 
 ---
 
-#### `tp-group-propertize` - Apply Layer Group
+#### `tp-group-propertize` - 应用图层组
 
 ```elisp
 (tp-group-propertize OBJECT LAYER-GROUP &optional START END)
 ```
 
-Apply all layers from a layer group to an object.
+将图层组中的所有图层应用到对象。
 
 ---
 
-### Pattern Matching Functions
+### 模式匹配函数
 
-#### `tp-match` - Match String
+#### `tp-match` - 匹配字符串
 
 ```elisp
-;; Buffer
+;; 缓冲区
 (tp-match PATTERN PROPERTY VALUE ...)
 
-;; String or Buffer object
+;; 字符串或缓冲区对象
 (tp-match PATTERN OBJECT PROPERTY VALUE ...)
 ```
 
-Set properties on all occurrences of a string pattern.
+在所有字符串模式匹配处设置属性。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; In buffer - returns list of (START . END) pairs
+;; 在缓冲区中 - 返回 (START . END) 对的列表
 (tp-match "TODO" 'face 'warning)
 ;; => ((10 . 14) (50 . 54) ...)
 
-;; On string - returns modified string
+;; 在字符串上 - 返回修改后的字符串
 (tp-match "o" "Hello World" 'face 'bold)
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 ```
 
 ---
 
-#### `tp-regexp` - Match Regexp
+#### `tp-regexp` - 匹配正则表达式
 
 ```elisp
-;; Buffer
+;; 缓冲区
 (tp-regexp PATTERN PROPERTY VALUE ...)
 
-;; String or Buffer object
+;; 字符串或缓冲区对象
 (tp-regexp PATTERN OBJECT PROPERTY VALUE ...)
 ```
 
-Set properties on all matches of a regular expression.
+在所有正则表达式匹配处设置属性。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Highlight all numbers in buffer
+;; 高亮缓冲区中的所有数字
 (tp-regexp "[0-9]+" 'face 'font-lock-number-face)
 
-;; On string
+;; 在字符串上
 (tp-regexp "[A-Z]+" "Hello WORLD" 'face 'bold)
 ;; => #("Hello WORLD" 6 11 (face bold))
 ```
 
 ---
 
-### Search & Navigation Functions
+### 搜索和导航函数
 
 #### `tp-forward` / `tp-backward`
 
@@ -341,15 +340,15 @@ Set properties on all matches of a regular expression.
 (tp-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
 ```
 
-Search forward/backward for text with PROPERTY.
+向前/向后搜索具有 PROPERTY 的文本。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Find next text with 'marker property
+;; 查找下一个具有 'marker 属性的文本
 (tp-forward 'marker)
 
-;; Find next text where 'type equals 'heading
+;; 查找下一个 'type 等于 'heading 的文本
 (tp-forward 'type 'heading)
 ```
 
@@ -362,7 +361,7 @@ Search forward/backward for text with PROPERTY.
 (tp-prev &optional POINT PROPERTY VALUE)
 ```
 
-Get the next/previous position with text properties.
+获取下一个/上一个具有文本属性的位置。
 
 ---
 
@@ -373,7 +372,7 @@ Get the next/previous position with text properties.
 (tp-goto-prev &optional PROPERTY VALUE)
 ```
 
-Move point to next/previous text with PROPERTY.
+将光标移动到下一个/上一个具有 PROPERTY 的文本。
 
 ---
 
@@ -384,110 +383,110 @@ Move point to next/previous text with PROPERTY.
 (tp-strings-map FUNCTION PROPERTY &optional VALUE PREDICATE COLLECT)
 ```
 
-Apply a function to all regions/strings with PROPERTY.
+对所有具有 PROPERTY 的区域/字符串应用函数。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Upcase all marked text
+;; 处理所有标记的文本
 (tp-strings-map
  (lambda (str idx)
-   (message "Found: %s at index %d" str idx))
+   (message "找到: %s，索引 %d" str idx))
  'marker)
 ```
 
 ---
 
-### Query Functions
+### 查询函数
 
-#### `tp-in` - Find Regions with Property
+#### `tp-in` - 查找具有属性的区域
 
 ```elisp
 (tp-in PROPERTY &optional VALUE START END)
 ```
 
-Get all regions with PROPERTY in current buffer.
+获取当前缓冲区中所有具有 PROPERTY 的区域。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Get all regions with 'marker property
+;; 获取所有具有 'marker 属性的区域
 (tp-in 'marker)
 ;; => ((1 5 (marker t ...)) (10 15 (marker t ...)))
 
-;; Filter by value
+;; 按值过滤
 (tp-in 'type 'heading)
 ```
 
 ---
 
-#### `tp-all` - Get All Propertized Regions
+#### `tp-all` - 获取所有带属性的区域
 
 ```elisp
 (tp-all &optional START END)
 ```
 
-Get all regions with any text properties.
+获取所有具有任何文本属性的区域。
 
 ---
 
-#### `tp-intervals` - Get Property Intervals
+#### `tp-intervals` - 获取属性区间
 
 ```elisp
 (tp-intervals START END &optional OBJECT)
 ```
 
-Get all text property intervals in a region.
+获取区域中所有文本属性区间。
 
 ---
 
-#### `tp-empty-p` - Check for Properties
+#### `tp-empty-p` - 检查属性
 
 ```elisp
 (tp-empty-p OBJECT)
 ```
 
-Return t if OBJECT has no text properties.
+如果 OBJECT 没有文本属性则返回 t。
 
 ---
 
-#### `tp-plist` - Get Merged Properties
+#### `tp-plist` - 获取合并的属性
 
 ```elisp
 (tp-plist START END &optional OBJECT)
 ```
 
-Get a merged plist of all properties in a region.
+获取区域中所有属性的合并属性列表。
 
 ---
 
-## The Layer System
+## 图层系统
 
-The **layer system** is tp.el's innovative feature that allows stacking multiple sets of properties on the same text region. Only the **top layer** is visible, but lower layers are preserved and can be revealed through rotation or pinning.
+**图层系统**是 tp.el 的创新功能，允许在同一文本区域上堆叠多组属性。只有**顶层**可见，但下层会被保留，可以通过轮换或置顶来显示。
 
-### Layer Concept
+### 图层概念
 
 ```
 ┌─────────────────────────────┐
-│   TOP LAYER (visible)       │  ← What you see
+│   顶层（可见）              │  ← 你看到的
 ├─────────────────────────────┤
-│   Middle Layer (hidden)     │  ← Preserved
+│   中间层（隐藏）            │  ← 被保留
 ├─────────────────────────────┤
-│   Bottom Layer (hidden)     │  ← Preserved
+│   底层（隐藏）              │  ← 被保留
 └─────────────────────────────┘
 ```
 
-### Layer Definition Functions
+### 图层定义函数
 
-#### `tp-layer-define` - Define a Layer
+#### `tp-layer-define` - 定义图层
 
 ```elisp
 (tp-layer-define NAME PROPERTIES)
 ```
 
-Define a named layer with properties.
+定义一个带属性的命名图层。
 
-**Examples:**
+**示例：**
 
 ```elisp
 (tp-layer-define highlight
@@ -495,7 +494,7 @@ Define a named layer with properties.
 
 (tp-layer-define error
   '(face (:background "red" :foreground "white")
-    help-echo "Error!"))
+    help-echo "错误!"))
 
 (tp-layer-define info
   '(face (:background "blue" :foreground "white")))
@@ -503,7 +502,7 @@ Define a named layer with properties.
 
 ---
 
-#### `tp-group-define` - Define Layer Group
+#### `tp-group-define` - 定义图层组
 
 ```elisp
 (tp-group-define NAME
@@ -512,9 +511,9 @@ Define a named layer with properties.
   ...)
 ```
 
-Define a group of related layers.
+定义一组相关的图层。
 
-**Examples:**
+**示例：**
 
 ```elisp
 (tp-group-define status-colors
@@ -532,7 +531,7 @@ Define a group of related layers.
 (tp-group-props GROUP-NAME)
 ```
 
-Get properties for a layer or all layers in a group.
+获取图层或图层组中所有图层的属性。
 
 ---
 
@@ -543,7 +542,7 @@ Get properties for a layer or all layers in a group.
 (tp-group-undefine NAME)
 ```
 
-Remove layer or group definition.
+移除图层或图层组定义。
 
 ---
 
@@ -553,83 +552,83 @@ Remove layer or group definition.
 (tp-layer-reset)
 ```
 
-Clear all layer and group definitions.
+清除所有图层和图层组定义。
 
 ---
 
-### Layer Manipulation Functions
+### 图层操作函数
 
-#### `tp-layer-push` - Add Layer
+#### `tp-layer-push` - 添加图层
 
 ```elisp
 (tp-layer-push START END NAME &optional OBJECT)
 ```
 
-Push a layer to the top of the stack.
+将图层推到堆栈顶部。
 
-**Examples:**
+**示例：**
 
 ```elisp
 (tp-layer-define base '(face default))
 (tp-layer-define highlight '(face (:background "yellow")))
 
-;; Push base layer first
+;; 首先推入 base 图层
 (tp-layer-push 1 10 'base)
 
-;; Push highlight on top (now visible)
+;; 将 highlight 推到顶部（现在可见）
 (tp-layer-push 1 10 'highlight)
 ```
 
 ---
 
-#### `tp-layer-delete` - Remove Layer
+#### `tp-layer-delete` - 删除图层
 
 ```elisp
 (tp-layer-delete START END NAME &optional OBJECT)
 ```
 
-Delete a layer from anywhere in the stack.
+从堆栈任何位置删除图层。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Remove the highlight layer
+;; 删除 highlight 图层
 (tp-layer-delete 1 10 'highlight)
-;; base layer is now visible
+;; base 图层现在可见
 ```
 
 ---
 
-#### `tp-layer-rotate` - Cycle Layers
+#### `tp-layer-rotate` - 轮换图层
 
 ```elisp
 (tp-layer-rotate START END &optional OBJECT)
 ```
 
-Rotate layers - top goes to bottom, next becomes visible.
+轮换图层 - 顶层移到底部，下一层变为可见。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Stack: highlight (top) -> base (bottom)
+;; 堆栈: highlight (顶) -> base (底)
 (tp-layer-rotate 1 10)
-;; Stack: base (top) -> highlight (bottom)
+;; 堆栈: base (顶) -> highlight (底)
 ```
 
 ---
 
-#### `tp-layer-pin` - Bring Layer to Top
+#### `tp-layer-pin` - 将图层置顶
 
 ```elisp
 (tp-layer-pin START END NAME &optional OBJECT)
 ```
 
-Move a specific layer to the top.
+将特定图层移到顶部。
 
-**Examples:**
+**示例：**
 
 ```elisp
-;; Make 'base the top layer
+;; 将 'base 设为顶层
 (tp-layer-pin 1 10 'base)
 ```
 
@@ -642,7 +641,7 @@ Move a specific layer to the top.
 (tp-layer-show START END NAME &optional OBJECT)
 ```
 
-Hide layer (move to bottom) or show layer (move to top).
+隐藏图层（移到底部）或显示图层（移到顶部）。
 
 ---
 
@@ -652,21 +651,21 @@ Hide layer (move to bottom) or show layer (move to top).
 (tp-layer-merge START END LAYER1 LAYER2 NEW-NAME &optional OBJECT)
 ```
 
-Merge two layers into one new layer.
+将两个图层合并为一个新图层。
 
 ---
 
-### Layer Query Functions
+### 图层查询函数
 
-#### `tp-layer-list` - List All Layers
+#### `tp-layer-list` - 列出所有图层
 
 ```elisp
 (tp-layer-list START END &optional OBJECT)
 ```
 
-Get list of all layer names in region.
+获取区域中所有图层名称的列表。
 
-**Examples:**
+**示例：**
 
 ```elisp
 (tp-layer-list 1 10)  ; => (highlight base)
@@ -680,7 +679,7 @@ Get list of all layer names in region.
 (tp-layer-count START END &optional OBJECT)
 ```
 
-Count layers in region.
+计算区域中的图层数量。
 
 ---
 
@@ -690,7 +689,7 @@ Count layers in region.
 (tp-layer-exists-p START END NAME &optional OBJECT)
 ```
 
-Check if layer exists in region.
+检查区域中是否存在某图层。
 
 ---
 
@@ -700,39 +699,39 @@ Check if layer exists in region.
 (tp-layer-top START END &optional OBJECT)
 ```
 
-Get name of the top (visible) layer.
+获取顶层（可见）图层的名称。
 
 ---
 
-## Practical Examples
+## 实用示例
 
-### Syntax Highlighting with Multiple Layers
+### 多图层语法高亮
 
 ```elisp
-;; Define layers for different highlighting purposes
+;; 为不同高亮目的定义图层
 (tp-layer-define code-base
   '(face font-lock-keyword-face))
 
 (tp-layer-define code-error
   '(face (:underline (:color "red" :style wave))
-    help-echo "Syntax error"))
+    help-echo "语法错误"))
 
 (tp-layer-define code-debug
   '(face (:background "dark blue")))
 
-;; Apply base highlighting
+;; 应用基础高亮
 (tp-layer-push 1 100 'code-base)
 
-;; Add error highlight on problematic code
+;; 在有问题的代码上添加错误高亮
 (tp-layer-push 50 60 'code-error)
 
-;; Toggle between error and normal view
+;; 在错误和正常视图之间切换
 (defun toggle-error-view ()
   (interactive)
   (tp-layer-rotate 50 60))
 ```
 
-### Status Indicator
+### 状态指示器
 
 ```elisp
 (tp-group-define task-status
@@ -740,20 +739,20 @@ Get name of the top (visible) layer.
   status-progress '(face (:foreground "yellow"))
   status-done     '(face (:foreground "green")))
 
-;; Cycle through statuses
+;; 循环切换状态
 (defun cycle-task-status ()
   (interactive)
   (tp-layer-rotate (line-beginning-position) (line-end-position)))
 ```
 
-### Temporary Highlights
+### 临时高亮
 
 ```elisp
 (tp-layer-define temp-highlight
   '(face (:background "yellow")))
 
 (defun flash-region (start end)
-  "Flash a region temporarily."
+  "临时闪烁一个区域。"
   (tp-layer-push start end 'temp-highlight)
   (run-with-timer 0.5 nil
                   (lambda ()
@@ -762,12 +761,12 @@ Get name of the top (visible) layer.
 
 ---
 
-## Aliases
+## 别名
 
-For convenience, tp.el provides these aliases:
+为方便使用，tp.el 提供以下别名：
 
-| Alias | Original Function |
-|-------|-------------------|
+| 别名 | 原函数 |
+|------|--------|
 | `tp-set` | `tp-put` |
 | `tp-layer-properties` | `tp-layer-props` |
 | `tp-layer-group-define` | `tp-group-define` |
@@ -777,18 +776,18 @@ For convenience, tp.el provides these aliases:
 
 ---
 
-## License
+## 许可证
 
-GNU General Public License v2 or later.
+GNU 通用公共许可证 v2 或更高版本。
 
 ---
 
-## Contributing
+## 贡献
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+欢迎贡献！请随时提交 issues 或 pull requests。
 
 ---
 
 <p align="center">
-  <em>tp.el - Making text properties powerful and easy to use</em>
+  <em>tp.el - 让文本属性变得强大且易用</em>
 </p>
