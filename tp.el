@@ -100,20 +100,61 @@ Appends 'tp-name property to identify the layer."
 
 ;;; Basic text property functions (similar to ov.el)
 
-(defun tp-put (start end &rest properties)
-  "Set text PROPERTIES from START to END in current buffer.
+(defun tp-put (object-or-start &optional start-or-end end-or-prop &rest properties)
+  "Set text PROPERTIES on OBJECT (string or buffer region).
+
+This function supports two calling conventions:
+
+1. With OBJECT (string or buffer):
+   (tp-put OBJECT START END PROPERTY VALUE ...)
+   (tp-put OBJECT START END \\='(PROPERTY VALUE ...))
+
+2. Without OBJECT (current buffer):
+   (tp-put START END PROPERTY VALUE ...)
+   (tp-put START END \\='(PROPERTY VALUE ...))
+
 PROPERTIES is a plist of property-value pairs.
-Return the modified region as (START . END)."
-  (when (listp (car-safe properties))
-    (setq properties (car properties)))
-  (let ((len (length properties))
-        (i 0))
-    (while (< i len)
-      (put-text-property start end
-                         (nth i properties)
-                         (nth (1+ i) properties))
-      (setq i (+ i 2))))
-  (cons start end))
+Return the modified object (string) or region (START . END) for buffer."
+  (let (object start end props)
+    ;; Determine calling convention based on first argument type
+    (cond
+     ;; First arg is a string - use object convention
+     ((stringp object-or-start)
+      (setq object object-or-start
+            start start-or-end
+            end end-or-prop
+            props properties))
+     ;; First arg is a buffer - use object convention
+     ((bufferp object-or-start)
+      (setq object object-or-start
+            start start-or-end
+            end end-or-prop
+            props properties))
+     ;; First arg is a number - use buffer region convention
+     ((numberp object-or-start)
+      (setq object nil
+            start object-or-start
+            end start-or-end
+            props (if end-or-prop
+                      (cons end-or-prop properties)
+                    properties)))
+     (t (error "Invalid first argument: %S" object-or-start)))
+    ;; Handle properties as a list
+    (when (listp (car-safe props))
+      (setq props (car props)))
+    ;; Apply properties
+    (let ((len (length props))
+          (i 0))
+      (while (< i len)
+        (put-text-property start end
+                           (nth i props)
+                           (nth (1+ i) props)
+                           object)
+        (setq i (+ i 2))))
+    ;; Return result
+    (if (stringp object)
+        object
+      (cons start end))))
 
 (defalias 'tp-set 'tp-put
   "Alias for `tp-put'.")
@@ -334,41 +375,136 @@ Signals an error if layer NAME does not exist in the region."
    start end object)
   nil)
 
-;;; Propertize string functions
+;;; Propertize functions
 
-(defun tp-propertize (string &rest properties)
-  "Return a copy of STRING with PROPERTIES applied.
+(defun tp-propertize (object-or-string &rest args)
+  "Apply text properties to OBJECT.
+
+This function supports multiple calling conventions:
+
+1. String only (create propertized string):
+   (tp-propertize STRING PROPERTY VALUE ...)
+   (tp-propertize STRING \\='(PROPERTY VALUE ...))
+
+2. With region (apply to object):
+   (tp-propertize OBJECT START END PROPERTY VALUE ...)
+   (tp-propertize OBJECT START END \\='(PROPERTY VALUE ...))
+
+When called with just a string and properties, returns a new
+propertized string.  When called with an object, start, and end,
+applies properties to the region and returns the object.
+
 PROPERTIES should be a plist of property-value pairs."
   (declare (indent defun))
-  (when (listp (car-safe properties))
-    (setq properties (car properties)))
-  (apply #'propertize string properties))
+  (cond
+   ;; Called with just string and properties (no start/end)
+   ((and (stringp object-or-string)
+         (or (null args)
+             (symbolp (car args))
+             (and (listp (car args)) (symbolp (caar args)))))
+    (let ((properties args))
+      (when (listp (car-safe properties))
+        (setq properties (car properties)))
+      (if properties
+          (apply #'propertize object-or-string properties)
+        (copy-sequence object-or-string))))
+   ;; Called with object, start, end, properties
+   ((and (or (stringp object-or-string) (bufferp object-or-string))
+         (>= (length args) 2)
+         (numberp (car args))
+         (numberp (cadr args)))
+    (let ((object object-or-string)
+          (start (car args))
+          (end (cadr args))
+          (properties (cddr args)))
+      (when (listp (car-safe properties))
+        (setq properties (car properties)))
+      (tp-put object start end properties)))
+   (t (error "Invalid arguments to tp-propertize"))))
 
-(defun tp-layer-propertize (string layer)
-  "Return STRING with properties from LAYER applied.
-LAYER must be defined in `tp-layer-alist'."
+(defun tp-layer-propertize (object layer &optional start end)
+  "Apply LAYER properties to OBJECT.
+
+OBJECT can be a string or buffer.
+LAYER must be defined in `tp-layer-alist'.
+
+Calling conventions:
+1. String (full string):
+   (tp-layer-propertize STRING LAYER)
+
+2. String with range:
+   (tp-layer-propertize STRING LAYER START END)
+
+3. Buffer with range:
+   (tp-layer-propertize BUFFER LAYER START END)
+
+Returns the modified object."
   (if-let ((layer-info (assoc layer tp-layer-alist)))
-      (apply #'propertize string (cdr layer-info))
+      (let ((props (cdr layer-info)))
+        (cond
+         ;; String without range - apply to whole string
+         ((and (stringp object) (null start))
+          (apply #'propertize object props))
+         ;; String or buffer with range
+         ((or (stringp object) (bufferp object))
+          (let ((beg (or start 0))
+                (fin (or end (if (stringp object)
+                                 (length object)
+                               (with-current-buffer object (point-max))))))
+            (tp-put object beg fin props)))
+         (t (error "Invalid object type: %S" (type-of object)))))
     (error "Layer %S doesn't exist!" layer)))
 
-(defun tp-group-propertize (string layer-group)
-  "Return STRING with all layers from LAYER-GROUP applied.
+(defun tp-group-propertize (object layer-group &optional start end)
+  "Apply all layers from LAYER-GROUP to OBJECT.
+
+OBJECT can be a string or buffer.
 LAYER-GROUP must be defined in `tp-layer-groups'.
-Layers are applied in order, with later layers on top."
+Layers are applied in order, with later layers on top.
+
+Calling conventions:
+1. String (full string):
+   (tp-group-propertize STRING LAYER-GROUP)
+
+2. String with range:
+   (tp-group-propertize STRING LAYER-GROUP START END)
+
+3. Buffer with range:
+   (tp-group-propertize BUFFER LAYER-GROUP START END)
+
+Returns the modified object."
   (if-let* ((group-info (assoc layer-group tp-layer-groups))
             (layers (cdr group-info)))
-      (let ((result string))
+      (let* ((beg (or start 0))
+             (fin (or end (if (stringp object)
+                              (length object)
+                            (with-current-buffer object (point-max)))))
+             (result (if (stringp object)
+                         (copy-sequence object)
+                       object)))
         ;; Apply base layer first
         (when-let ((first-layer (car layers)))
-          (setq result (tp-layer-propertize result first-layer)))
+          (if (stringp result)
+              (setq result (tp-layer-propertize result first-layer beg fin))
+            (tp-layer-propertize result first-layer beg fin)))
         ;; Apply additional layers using the layer system
         (dolist (layer (cdr layers))
           (when-let ((props (tp-layer-props layer)))
-            (set-text-properties 0 (length result)
-                                 (append props
-                                         (list 'tp-layers
-                                               (list (tp-at 0 result))))
-                                 result)))
+            (if (stringp result)
+                (set-text-properties beg fin
+                                     (append props
+                                             (list 'tp-layers
+                                                   (list (tp-at beg result))))
+                                     result)
+              (with-current-buffer result
+                (tp-intervals-map
+                 (lambda (i-start i-end top belows)
+                   (set-text-properties
+                    (+ beg i-start) (+ beg i-end)
+                    (append props
+                            (list 'tp-layers (append (list top) belows)))
+                    result))
+                 beg fin result)))))
         result)
     (error "Layer group %S doesn't exist!" layer-group)))
 
@@ -430,37 +566,131 @@ FUNCTION receives two arguments: STRING and INDEX."
 
 ;;; Match and regexp functions (similar to ov-match and ov-regexp)
 
-(defun tp-match (string &rest properties)
-  "Set PROPERTIES on all occurrences of STRING in current buffer.
-Returns list of (START . END) pairs for all matches."
-  (when (listp (car-safe properties))
-    (setq properties (car properties)))
-  (save-excursion
-    (goto-char (point-min))
-    (let (regions)
-      (while (search-forward string nil t)
-        (let ((beg (match-beginning 0))
-              (end (match-end 0)))
-          (when properties
-            (tp-put beg end properties))
-          (push (cons beg end) regions)))
-      (nreverse regions))))
+(defun tp-match (pattern &rest args)
+  "Set properties on all occurrences of PATTERN.
 
-(defun tp-regexp (regexp &rest properties)
-  "Set PROPERTIES on all matches of REGEXP in current buffer.
-Returns list of (START . END) pairs for all matches."
-  (when (listp (car-safe properties))
-    (setq properties (car properties)))
-  (save-excursion
-    (goto-char (point-min))
-    (let (regions)
-      (while (re-search-forward regexp nil t)
-        (let ((beg (match-beginning 0))
-              (end (match-end 0)))
-          (when properties
-            (tp-put beg end properties))
-          (push (cons beg end) regions)))
-      (nreverse regions))))
+This function supports two calling conventions:
+
+1. With OBJECT (string or buffer):
+   (tp-match PATTERN OBJECT PROPERTY VALUE ...)
+   (tp-match PATTERN OBJECT \\='(PROPERTY VALUE ...))
+
+2. Without OBJECT (current buffer):
+   (tp-match PATTERN PROPERTY VALUE ...)
+   (tp-match PATTERN \\='(PROPERTY VALUE ...))
+
+PATTERN is the string to search for.
+PROPERTIES is a plist of property-value pairs.
+Returns:
+- For strings: the modified string
+- For buffers: list of (START . END) pairs for all matches."
+  (let (object properties)
+    ;; Determine calling convention based on second argument type
+    (cond
+     ;; Second arg is a string - it's the object
+     ((and args (stringp (car args)))
+      (setq object (car args)
+            properties (cdr args)))
+     ;; Second arg is a buffer - it's the object
+     ((and args (bufferp (car args)))
+      (setq object (car args)
+            properties (cdr args)))
+     ;; No object specified, use current buffer
+     (t
+      (setq object nil
+            properties args)))
+    ;; Handle properties as a list
+    (when (listp (car-safe properties))
+      (setq properties (car properties)))
+    ;; Dispatch based on object type
+    (cond
+     ;; String object
+     ((stringp object)
+      (let ((pos 0))
+        (while (string-match (regexp-quote pattern) object pos)
+          (let ((beg (match-beginning 0))
+                (end (match-end 0)))
+            (when properties
+              (tp-put object beg end properties))
+            (setq pos end)))
+        object))
+     ;; Buffer or nil (current buffer)
+     (t
+      (let ((buf (or object (current-buffer))))
+        (with-current-buffer buf
+          (save-excursion
+            (goto-char (point-min))
+            (let (regions)
+              (while (search-forward pattern nil t)
+                (let ((beg (match-beginning 0))
+                      (end (match-end 0)))
+                  (when properties
+                    (tp-put beg end properties))
+                  (push (cons beg end) regions)))
+              (nreverse regions)))))))))
+
+(defun tp-regexp (pattern &rest args)
+  "Set properties on all matches of PATTERN (regexp).
+
+This function supports two calling conventions:
+
+1. With OBJECT (string or buffer):
+   (tp-regexp PATTERN OBJECT PROPERTY VALUE ...)
+   (tp-regexp PATTERN OBJECT \\='(PROPERTY VALUE ...))
+
+2. Without OBJECT (current buffer):
+   (tp-regexp PATTERN PROPERTY VALUE ...)
+   (tp-regexp PATTERN \\='(PROPERTY VALUE ...))
+
+PATTERN is the regexp to search for.
+PROPERTIES is a plist of property-value pairs.
+Returns:
+- For strings: the modified string
+- For buffers: list of (START . END) pairs for all matches."
+  (let (object properties)
+    ;; Determine calling convention based on second argument type
+    (cond
+     ;; Second arg is a string - it's the object
+     ((and args (stringp (car args)))
+      (setq object (car args)
+            properties (cdr args)))
+     ;; Second arg is a buffer - it's the object
+     ((and args (bufferp (car args)))
+      (setq object (car args)
+            properties (cdr args)))
+     ;; No object specified, use current buffer
+     (t
+      (setq object nil
+            properties args)))
+    ;; Handle properties as a list
+    (when (listp (car-safe properties))
+      (setq properties (car properties)))
+    ;; Dispatch based on object type
+    (cond
+     ;; String object
+     ((stringp object)
+      (let ((pos 0))
+        (while (string-match pattern object pos)
+          (let ((beg (match-beginning 0))
+                (end (match-end 0)))
+            (when properties
+              (tp-put object beg end properties))
+            (setq pos end)))
+        object))
+     ;; Buffer or nil (current buffer)
+     (t
+      (let ((buf (or object (current-buffer))))
+        (with-current-buffer buf
+          (save-excursion
+            (goto-char (point-min))
+            (let (regions)
+              (while (re-search-forward pattern nil t)
+                (let ((beg (match-beginning 0))
+                      (end (match-end 0)))
+                  (when properties
+                    (tp-put beg end properties))
+                  (push (cons beg end) regions)))
+              (nreverse regions)))))))))
 
 ;;; Layer list and query functions
 

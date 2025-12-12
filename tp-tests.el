@@ -693,5 +693,57 @@
     (set-text-properties 0 5 nil str)
     (should (tp-empty-p str))))
 
+;;; ============================================================
+;;; Object Parameter Support Tests
+;;; ============================================================
+
+(ert-deftest tp-test-put-on-string ()
+  "Test tp-put works on string objects."
+  (let ((str (copy-sequence "Hello World")))
+    (tp-put str 0 5 'face 'bold)
+    (should (eq (get-text-property 0 'face str) 'bold))
+    (should (null (get-text-property 6 'face str)))))
+
+(ert-deftest tp-test-put-on-string-returns-string ()
+  "Test tp-put returns the modified string."
+  (let* ((str (copy-sequence "Hello"))
+         (result (tp-put str 0 5 'face 'bold)))
+    (should (stringp result))
+    (should (eq (get-text-property 0 'face result) 'bold))))
+
+(ert-deftest tp-test-match-on-string ()
+  "Test tp-match works on string objects."
+  (let* ((str (copy-sequence "Hello World Hello"))
+         (result (tp-match "Hello" str 'face 'bold)))
+    (should (stringp result))
+    (should (eq (get-text-property 0 'face result) 'bold))
+    (should (eq (get-text-property 12 'face result) 'bold))
+    (should (null (get-text-property 6 'face result)))))
+
+(ert-deftest tp-test-regexp-on-string ()
+  "Test tp-regexp works on string objects."
+  (let* ((str (copy-sequence "abc 123 def 456"))
+         (result (tp-regexp "[0-9]+" str 'face 'bold)))
+    (should (stringp result))
+    (should (eq (get-text-property 4 'face result) 'bold))
+    (should (eq (get-text-property 12 'face result) 'bold))
+    (should (null (get-text-property 0 'face result)))))
+
+(ert-deftest tp-test-propertize-with-region ()
+  "Test tp-propertize with object and region."
+  (let* ((str (copy-sequence "Hello World"))
+         (result (tp-propertize str 0 5 'face 'bold)))
+    (should (stringp result))
+    (should (eq (get-text-property 0 'face result) 'bold))))
+
+(ert-deftest tp-test-layer-propertize-with-range ()
+  "Test tp-layer-propertize with start/end range."
+  (tp-test-with-temp-buffer
+    (tp-layer-define range-layer '(face bold))
+    (let* ((str (copy-sequence "Hello World"))
+           (result (tp-layer-propertize str 'range-layer 0 5)))
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold)))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
