@@ -100,45 +100,49 @@ Appends 'tp-name property to identify the layer."
 
 ;;; Basic text property functions (similar to ov.el)
 
-(defun tp-put (object-or-start &optional start-or-end end-or-prop &rest properties)
-  "Set text PROPERTIES on OBJECT (string or buffer region).
+(defun tp-put (start-or-string &optional end props-or-prop &rest rest)
+  "Set text properties on string or buffer region.
 
-This function supports two calling conventions:
+This function supports four calling conventions:
 
-1. With OBJECT (string or buffer):
-   (tp-put OBJECT START END PROPERTY VALUE ...)
-   (tp-put OBJECT START END \\='(PROPERTY VALUE ...))
-
-2. Without OBJECT (current buffer):
-   (tp-put START END PROPERTY VALUE ...)
+1. Current buffer:
    (tp-put START END \\='(PROPERTY VALUE ...))
+
+2. Specific buffer:
+   (tp-put START END \\='(PROPERTY VALUE ...) BUFFER)
+
+3. Specific string (0-indexed positions):
+   (tp-put START END \\='(PROPERTY VALUE ...) STRING)
+
+4. Entire string:
+   (tp-put STRING PROPERTY VALUE ...)
 
 PROPERTIES is a plist of property-value pairs.
 Return the modified object (string) or region (START . END) for buffer."
-  (let (object start end props)
+  (let (object start finish props)
     ;; Determine calling convention based on first argument type
     (cond
-     ;; First arg is a string - use object convention
-     ((stringp object-or-start)
-      (setq object object-or-start
-            start start-or-end
-            end end-or-prop
-            props properties))
-     ;; First arg is a buffer - use object convention
-     ((bufferp object-or-start)
-      (setq object object-or-start
-            start start-or-end
-            end end-or-prop
-            props properties))
-     ;; First arg is a number - use buffer region convention
-     ((numberp object-or-start)
-      (setq object nil
-            start object-or-start
-            end start-or-end
-            props (if end-or-prop
-                      (cons end-or-prop properties)
-                    properties)))
-     (t (error "Invalid first argument: %S" object-or-start)))
+     ;; First arg is a string - apply to entire string
+     ((stringp start-or-string)
+      (setq object start-or-string
+            start 0
+            finish (length start-or-string)
+            props (if end
+                      (if props-or-prop
+                          (cons end (cons props-or-prop rest))
+                        (list end))
+                    nil)))
+     ;; First arg is a number - region convention
+     ((numberp start-or-string)
+      (setq start start-or-string
+            finish end)
+      ;; Check if 4th arg (first of rest) is a buffer or string
+      (if (and rest (or (bufferp (car rest)) (stringp (car rest))))
+          (setq object (car rest)
+                props props-or-prop)
+        (setq object nil
+              props props-or-prop)))
+     (t (error "Invalid first argument: %S" start-or-string)))
     ;; Handle properties as a list
     (when (listp (car-safe props))
       (setq props (car props)))
@@ -146,7 +150,7 @@ Return the modified object (string) or region (START . END) for buffer."
     (let ((len (length props))
           (i 0))
       (while (< i len)
-        (put-text-property start end
+        (put-text-property start finish
                            (nth i props)
                            (nth (1+ i) props)
                            object)
@@ -154,7 +158,7 @@ Return the modified object (string) or region (START . END) for buffer."
     ;; Return result
     (if (stringp object)
         object
-      (cons start end))))
+      (cons start finish))))
 
 (defalias 'tp-set 'tp-put
   "Alias for `tp-put'.")
@@ -419,7 +423,7 @@ PROPERTIES should be a plist of property-value pairs."
           (properties (cddr args)))
       (when (listp (car-safe properties))
         (setq properties (car properties)))
-      (tp-put object start end properties)
+      (tp-put start end properties object)
       object))  ; Always return the object
    (t (error "Invalid arguments to tp-propertize"))))
 
@@ -452,7 +456,7 @@ Returns the modified object."
                 (fin (or end (if (stringp object)
                                  (length object)
                                (with-current-buffer object (point-max))))))
-            (tp-put object beg fin props)
+            (tp-put beg fin props object)
             object))  ; Always return the object
          (t (error "Invalid object type: %S" (type-of object)))))
     (error "Layer %S doesn't exist!" layer)))
@@ -613,7 +617,7 @@ Returns:
           (let ((beg (match-beginning 0))
                 (end (match-end 0)))
             (when properties
-              (tp-put object beg end properties))
+              (tp-put beg end properties object))
             ;; Advance position: for zero-width match, advance by 1 to avoid infinite loop
             (setq pos (if (= beg end) (1+ beg) end))))
         object))
@@ -628,7 +632,7 @@ Returns:
                 (let ((beg (match-beginning 0))
                       (end (match-end 0)))
                   (when properties
-                    (tp-put beg end properties))
+                    (tp-put beg end properties buf))
                   (push (cons beg end) regions)))
               (nreverse regions)))))))))
 
@@ -677,7 +681,7 @@ Returns:
           (let ((beg (match-beginning 0))
                 (end (match-end 0)))
             (when properties
-              (tp-put object beg end properties))
+              (tp-put beg end properties object))
             ;; Advance position: for zero-width match, advance by 1 to avoid infinite loop
             (setq pos (if (= beg end) (1+ beg) end))))
         object))
@@ -692,7 +696,7 @@ Returns:
                 (let ((beg (match-beginning 0))
                       (end (match-end 0)))
                   (when properties
-                    (tp-put beg end properties))
+                    (tp-put beg end properties buf))
                   (push (cons beg end) regions)))
               (nreverse regions)))))))))
 
