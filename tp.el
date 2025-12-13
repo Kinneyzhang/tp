@@ -163,10 +163,133 @@ Return the modified object (string) or region (START . END) for buffer."
 (defalias 'tp-set 'tp-put
   "Alias for `tp-put'.")
 
-(defun tp-get (position property &optional object)
-  "Get the value of PROPERTY at POSITION in OBJECT.
+(defun tp-get (pos-or-start &optional property-or-end &rest args)
+  "Get text property value(s).
+
+This function supports multiple calling conventions:
+
+1. Single position, single property:
+   (tp-get POSITION PROPERTY)
+   (tp-get POSITION PROPERTY OBJECT)
+
+2. Range, single property:
+   (tp-get START END PROPERTY)
+   (tp-get START END PROPERTY OBJECT)
+
+3. Range, all properties (returns plist):
+   (tp-get START END)
+   (tp-get START END OBJECT)
+
+For buffers, positions are 1-indexed.
+For strings, positions are 0-indexed.
 OBJECT defaults to current buffer."
-  (get-text-property position property object))
+  (cond
+   ;; (tp-get POS PROP) or (tp-get POS PROP OBJECT) - single position
+   ((and (numberp pos-or-start)
+         (symbolp property-or-end))
+    (let ((object (car args)))
+      (get-text-property pos-or-start property-or-end object)))
+   ;; (tp-get START END ...) - range form
+   ((and (numberp pos-or-start)
+         (numberp property-or-end))
+    (let* ((start pos-or-start)
+           (end property-or-end)
+           (property (car args))
+           (object (cadr args)))
+      (if property
+          ;; Get specific property from range - return first non-nil value
+          (let ((pos start)
+                (result nil))
+            (while (and (< pos end) (null result))
+              (setq result (get-text-property pos property object))
+              (setq pos (next-single-property-change pos property object end)))
+            result)
+        ;; Get all properties from range - merge into plist
+        (let ((props nil)
+              (pos start)
+              (obj (or object (current-buffer))))
+          (while (< pos end)
+            (let ((current-props (text-properties-at pos obj)))
+              (cl-loop for (key val) on current-props by #'cddr
+                       do (unless (plist-member props key)
+                            (setq props (plist-put props key val)))))
+            (setq pos (next-single-property-change pos nil obj end)))
+          props))))
+   (t (error "Invalid arguments to tp-get"))))
+
+;;; Fine-grained property manipulation for nested properties
+
+(defun tp-get-sub (position property sub-property &optional object)
+  "Get SUB-PROPERTY from PROPERTY at POSITION in OBJECT.
+For example, get :foreground from a face property.
+OBJECT defaults to current buffer."
+  (let ((prop-value (get-text-property position property object)))
+    (cond
+     ;; Property is a plist (e.g., (:foreground \"red\" :weight bold))
+     ((and (listp prop-value) (keywordp (car prop-value)))
+      (plist-get prop-value sub-property))
+     ;; Property is an alist
+     ((and (listp prop-value) (consp (car prop-value)))
+      (cdr (assoc sub-property prop-value)))
+     ;; Property is a list of face specs
+     ((listp prop-value)
+      (cl-loop for spec in prop-value
+               when (and (listp spec) (keywordp (car spec)))
+               thereis (plist-get spec sub-property)))
+     (t nil))))
+
+(defun tp-put-sub (start end property sub-property value &optional object)
+  "Set SUB-PROPERTY of PROPERTY to VALUE from START to END in OBJECT.
+Merges the sub-property into the existing property value.
+For example, set :foreground of a face property.
+OBJECT defaults to current buffer."
+  (let* ((pos start))
+    (while (< pos end)
+      (let* ((current-value (get-text-property pos property object))
+             (next-pos (or (next-single-property-change pos property object end) end))
+             (new-value
+              (cond
+               ;; No existing value - create new plist
+               ((null current-value)
+                (list sub-property value))
+               ;; Existing plist
+               ((and (listp current-value) (keywordp (car current-value)))
+                (plist-put (copy-sequence current-value) sub-property value))
+               ;; Existing symbol (e.g., 'bold) - convert to list and add
+               ((symbolp current-value)
+                (list current-value sub-property value))
+               ;; Other list - wrap and add
+               ((listp current-value)
+                (append current-value (list sub-property value)))
+               (t (list sub-property value)))))
+        (put-text-property pos next-pos property new-value object)
+        (setq pos next-pos))))
+  (if (stringp object)
+      object
+    (cons start end)))
+
+(defun tp-remove-sub (start end property sub-property &optional object)
+  "Remove SUB-PROPERTY from PROPERTY between START and END in OBJECT.
+For example, remove :foreground from a face property.
+OBJECT defaults to current buffer."
+  (let* ((pos start))
+    (while (< pos end)
+      (let* ((current-value (get-text-property pos property object))
+             (next-pos (or (next-single-property-change pos property object end) end))
+             (new-value
+              (cond
+               ;; Plist - remove the sub-property
+               ((and (listp current-value) (keywordp (car current-value)))
+                (let ((result (copy-sequence current-value)))
+                  (cl-remf result sub-property)
+                  (if result result nil)))
+               ;; Other types - leave unchanged
+               (t current-value))))
+        (if new-value
+            (put-text-property pos next-pos property new-value object)
+          (remove-text-properties pos next-pos (list property nil) object))
+        (setq pos next-pos))))
+  nil)
 
 (defun tp-remove (start end property &optional object)
   "Remove PROPERTY from text between START and END in OBJECT.

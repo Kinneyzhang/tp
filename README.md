@@ -57,25 +57,48 @@ Or with `use-package`:
 ### Setting Properties
 
 ```elisp
-;; On current buffer
-(tp-put 1 10 'face 'bold 'help-echo "Hello!")
+;; On current buffer (properties as a list)
+(tp-put 1 10 '(face bold help-echo "Hello!"))
 
-;; On a string
-(tp-put "Hello World" 0 5 'face 'bold)
+;; On a specific buffer
+(tp-put 1 10 '(face bold) some-buffer)
+
+;; On a string with range (0-indexed)
+(tp-put 0 5 '(face bold) "Hello World")
 ;; => #("Hello World" 0 5 (face bold))
 
-;; Using a property list
-(tp-put 1 10 '(face bold help-echo "test"))
+;; On entire string (flat properties)
+(tp-put "Hello World" 'face 'bold 'help-echo "test")
+;; => #("Hello World" 0 11 (face bold help-echo "test"))
 ```
 
 ### Getting Properties
 
 ```elisp
-;; Get specific property
+;; Get specific property at position
 (tp-get 5 'face)  ; => bold
+
+;; Get specific property from range
+(tp-get 1 10 'face)  ; => bold
+
+;; Get all properties from range
+(tp-get 1 10)  ; => (face bold help-echo "Hello!")
 
 ;; Get all properties at point
 (tp-at 5)  ; => (face bold help-echo "Hello!")
+```
+
+### Fine-grained Property Manipulation
+
+```elisp
+;; Get sub-property from face
+(tp-get-sub 1 'face :foreground)  ; => "red"
+
+;; Set sub-property on face
+(tp-put-sub 1 6 'face :foreground "blue")
+
+;; Remove sub-property from face
+(tp-remove-sub 1 6 'face :foreground)
 ```
 
 ### Pattern Matching
@@ -103,47 +126,101 @@ Or with `use-package`:
 Set text properties on a string or buffer region.
 
 ```elisp
-;; Buffer (current buffer)
-(tp-put START END PROPERTY VALUE ...)
+;; Current buffer (properties as a list)
 (tp-put START END '(PROPERTY VALUE ...))
 
-;; String or Buffer object
-(tp-put OBJECT START END PROPERTY VALUE ...)
-(tp-put OBJECT START END '(PROPERTY VALUE ...))
+;; Specific buffer or string
+(tp-put START END '(PROPERTY VALUE ...) OBJECT)
+
+;; Entire string (flat properties)
+(tp-put STRING PROPERTY VALUE ...)
 ```
 
 **Examples:**
 
 ```elisp
 ;; Set face on buffer region
-(tp-put 1 10 'face 'bold)  ; => (1 . 10)
+(tp-put 1 10 '(face bold))  ; => (1 . 10)
 
 ;; Set multiple properties
-(tp-put 1 10 'face 'bold 'help-echo "Click me")
+(tp-put 1 10 '(face bold help-echo "Click me"))
 
-;; Set properties on a string
-(setq my-string (tp-put "Hello World" 0 5 'face 'italic))
+;; Set on specific buffer
+(tp-put 1 10 '(face italic) my-buffer)
+
+;; Set properties on a string (0-indexed)
+(setq my-string (tp-put 0 5 '(face italic) "Hello World"))
 ;; => #("Hello World" 0 5 (face italic))
 
-;; Properties as a list
-(tp-put 1 10 '(face bold mouse-face highlight))
+;; Set properties on entire string
+(tp-put "Hello" 'face 'bold 'mouse-face 'highlight)
+;; => #("Hello" 0 5 (face bold mouse-face highlight))
 ```
 
 ---
 
 #### `tp-get` - Get Property Value
 
-```elisp
-(tp-get POSITION PROPERTY &optional OBJECT)
-```
+Get property value(s) from position or range.
 
-Get the value of PROPERTY at POSITION.
+```elisp
+;; Single position
+(tp-get POSITION PROPERTY)
+(tp-get POSITION PROPERTY OBJECT)
+
+;; Range - specific property
+(tp-get START END PROPERTY)
+(tp-get START END PROPERTY OBJECT)
+
+;; Range - all properties
+(tp-get START END)
+(tp-get START END OBJECT)
+```
 
 **Examples:**
 
 ```elisp
-(tp-get 5 'face)           ; Get from current buffer
-(tp-get 0 'face my-string) ; Get from string
+;; Get from current buffer
+(tp-get 5 'face)           ; => bold
+
+;; Get from string (0-indexed)
+(tp-get 0 'face my-string) ; => italic
+
+;; Get from range
+(tp-get 1 10 'face)        ; => bold
+
+;; Get all properties from range
+(tp-get 1 10)              ; => (face bold help-echo "test")
+```
+
+---
+
+#### Fine-grained Property Functions
+
+For manipulating sub-properties within complex properties like `face` or `display`:
+
+```elisp
+;; Get sub-property
+(tp-get-sub POSITION PROPERTY SUB-PROPERTY &optional OBJECT)
+
+;; Set sub-property
+(tp-put-sub START END PROPERTY SUB-PROPERTY VALUE &optional OBJECT)
+
+;; Remove sub-property
+(tp-remove-sub START END PROPERTY SUB-PROPERTY &optional OBJECT)
+```
+
+**Examples:**
+
+```elisp
+;; Get :foreground from face
+(tp-get-sub 1 'face :foreground)  ; => "red"
+
+;; Set :weight on face
+(tp-put-sub 1 6 'face :weight 'bold)
+
+;; Remove :background from face
+(tp-remove-sub 1 6 'face :background)
 ```
 
 ---

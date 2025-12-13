@@ -754,5 +754,80 @@
       (should (stringp result))
       (should (eq (get-text-property 0 'face result) 'bold)))))
 
+;;; ============================================================
+;;; Enhanced tp-get Tests
+;;; ============================================================
+
+(ert-deftest tp-test-get-single-position ()
+  "Test tp-get with single position."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-put 1 6 '(face bold))
+    (should (eq (tp-get 1 'face) 'bold))
+    (should (eq (tp-get 3 'face) 'bold))))
+
+(ert-deftest tp-test-get-range-property ()
+  "Test tp-get with range and specific property."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-put 1 6 '(face bold))
+    (should (eq (tp-get 1 6 'face) 'bold))
+    (should (null (tp-get 7 12 'face)))))
+
+(ert-deftest tp-test-get-range-all-properties ()
+  "Test tp-get with range returns all properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-put 1 6 '(face bold help-echo "test"))
+    (let ((props (tp-get 1 6)))
+      (should (eq (plist-get props 'face) 'bold))
+      (should (equal (plist-get props 'help-echo) "test")))))
+
+(ert-deftest tp-test-get-range-on-string ()
+  "Test tp-get with range on string object."
+  (let ((str (copy-sequence "Hello World")))
+    (tp-put 0 5 '(face bold) str)
+    (should (eq (tp-get 0 5 'face str) 'bold))
+    (should (null (tp-get 6 11 'face str)))))
+
+;;; ============================================================
+;;; Fine-grained Property Manipulation Tests
+;;; ============================================================
+
+(ert-deftest tp-test-get-sub-property ()
+  "Test tp-get-sub retrieves sub-property from face."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (put-text-property 1 6 'face '(:foreground "red" :weight bold))
+    (should (equal (tp-get-sub 1 'face :foreground) "red"))
+    (should (eq (tp-get-sub 1 'face :weight) 'bold))
+    (should (null (tp-get-sub 1 'face :background)))))
+
+(ert-deftest tp-test-put-sub-property ()
+  "Test tp-put-sub sets sub-property on face."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-put-sub 1 6 'face :foreground "blue")
+    (should (equal (tp-get-sub 1 'face :foreground) "blue"))
+    ;; Add another sub-property
+    (tp-put-sub 1 6 'face :weight 'bold)
+    (should (eq (tp-get-sub 1 'face :weight) 'bold))
+    (should (equal (tp-get-sub 1 'face :foreground) "blue"))))
+
+(ert-deftest tp-test-remove-sub-property ()
+  "Test tp-remove-sub removes sub-property from face."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (put-text-property 1 6 'face '(:foreground "red" :weight bold))
+    (tp-remove-sub 1 6 'face :foreground)
+    (should (null (tp-get-sub 1 'face :foreground)))
+    (should (eq (tp-get-sub 1 'face :weight) 'bold))))
+
+(ert-deftest tp-test-sub-property-on-string ()
+  "Test fine-grained property manipulation on strings."
+  (let ((str (copy-sequence "Hello")))
+    (tp-put-sub 0 5 'face :foreground "green" str)
+    (should (equal (tp-get-sub 0 'face :foreground str) "green"))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

@@ -56,25 +56,48 @@
 ### 设置属性
 
 ```elisp
-;; 在当前缓冲区
-(tp-put 1 10 'face 'bold 'help-echo "Hello!")
+;; 在当前缓冲区（属性作为列表）
+(tp-put 1 10 '(face bold help-echo "Hello!"))
 
-;; 在字符串上
-(tp-put "Hello World" 0 5 'face 'bold)
+;; 在特定缓冲区
+(tp-put 1 10 '(face bold) some-buffer)
+
+;; 在字符串上（0 索引）
+(tp-put 0 5 '(face bold) "Hello World")
 ;; => #("Hello World" 0 5 (face bold))
 
-;; 使用属性列表
-(tp-put 1 10 '(face bold help-echo "test"))
+;; 在整个字符串上（平铺属性）
+(tp-put "Hello World" 'face 'bold 'help-echo "test")
+;; => #("Hello World" 0 11 (face bold help-echo "test"))
 ```
 
 ### 获取属性
 
 ```elisp
-;; 获取特定属性
+;; 获取特定位置的属性
 (tp-get 5 'face)  ; => bold
+
+;; 获取范围内的特定属性
+(tp-get 1 10 'face)  ; => bold
+
+;; 获取范围内的所有属性
+(tp-get 1 10)  ; => (face bold help-echo "Hello!")
 
 ;; 获取该位置的所有属性
 (tp-at 5)  ; => (face bold help-echo "Hello!")
+```
+
+### 细粒度属性操作
+
+```elisp
+;; 获取 face 的子属性
+(tp-get-sub 1 'face :foreground)  ; => "red"
+
+;; 设置 face 的子属性
+(tp-put-sub 1 6 'face :foreground "blue")
+
+;; 移除 face 的子属性
+(tp-remove-sub 1 6 'face :foreground)
 ```
 
 ### 模式匹配
@@ -102,47 +125,101 @@
 在字符串或缓冲区区域上设置文本属性。
 
 ```elisp
-;; 缓冲区（当前缓冲区）
-(tp-put START END PROPERTY VALUE ...)
+;; 当前缓冲区（属性作为列表）
 (tp-put START END '(PROPERTY VALUE ...))
 
-;; 字符串或缓冲区对象
-(tp-put OBJECT START END PROPERTY VALUE ...)
-(tp-put OBJECT START END '(PROPERTY VALUE ...))
+;; 特定缓冲区或字符串
+(tp-put START END '(PROPERTY VALUE ...) OBJECT)
+
+;; 整个字符串（平铺属性）
+(tp-put STRING PROPERTY VALUE ...)
 ```
 
 **示例：**
 
 ```elisp
 ;; 在缓冲区区域设置 face
-(tp-put 1 10 'face 'bold)  ; => (1 . 10)
+(tp-put 1 10 '(face bold))  ; => (1 . 10)
 
 ;; 设置多个属性
-(tp-put 1 10 'face 'bold 'help-echo "Click me")
+(tp-put 1 10 '(face bold help-echo "Click me"))
 
-;; 在字符串上设置属性
-(setq my-string (tp-put "Hello World" 0 5 'face 'italic))
+;; 在特定缓冲区设置
+(tp-put 1 10 '(face italic) my-buffer)
+
+;; 在字符串上设置属性（0 索引）
+(setq my-string (tp-put 0 5 '(face italic) "Hello World"))
 ;; => #("Hello World" 0 5 (face italic))
 
-;; 属性作为列表
-(tp-put 1 10 '(face bold mouse-face highlight))
+;; 在整个字符串上设置属性
+(tp-put "Hello" 'face 'bold 'mouse-face 'highlight)
+;; => #("Hello" 0 5 (face bold mouse-face highlight))
 ```
 
 ---
 
 #### `tp-get` - 获取属性值
 
-```elisp
-(tp-get POSITION PROPERTY &optional OBJECT)
-```
+从位置或范围获取属性值。
 
-获取 POSITION 位置的 PROPERTY 值。
+```elisp
+;; 单个位置
+(tp-get POSITION PROPERTY)
+(tp-get POSITION PROPERTY OBJECT)
+
+;; 范围 - 特定属性
+(tp-get START END PROPERTY)
+(tp-get START END PROPERTY OBJECT)
+
+;; 范围 - 所有属性
+(tp-get START END)
+(tp-get START END OBJECT)
+```
 
 **示例：**
 
 ```elisp
-(tp-get 5 'face)           ; 从当前缓冲区获取
-(tp-get 0 'face my-string) ; 从字符串获取
+;; 从当前缓冲区获取
+(tp-get 5 'face)           ; => bold
+
+;; 从字符串获取（0 索引）
+(tp-get 0 'face my-string) ; => italic
+
+;; 从范围获取
+(tp-get 1 10 'face)        ; => bold
+
+;; 获取范围内的所有属性
+(tp-get 1 10)              ; => (face bold help-echo "test")
+```
+
+---
+
+#### 细粒度属性函数
+
+用于操作复杂属性（如 `face` 或 `display`）内的子属性：
+
+```elisp
+;; 获取子属性
+(tp-get-sub POSITION PROPERTY SUB-PROPERTY &optional OBJECT)
+
+;; 设置子属性
+(tp-put-sub START END PROPERTY SUB-PROPERTY VALUE &optional OBJECT)
+
+;; 移除子属性
+(tp-remove-sub START END PROPERTY SUB-PROPERTY &optional OBJECT)
+```
+
+**示例：**
+
+```elisp
+;; 获取 face 的 :foreground
+(tp-get-sub 1 'face :foreground)  ; => "red"
+
+;; 设置 face 的 :weight
+(tp-put-sub 1 6 'face :weight 'bold)
+
+;; 移除 face 的 :background
+(tp-remove-sub 1 6 'face :background)
 ```
 
 ---
