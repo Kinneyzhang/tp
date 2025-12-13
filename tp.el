@@ -100,7 +100,7 @@ Appends 'tp-name property to identify the layer."
 
 ;;; Basic text property functions (similar to ov.el)
 
-(defun tp-put (start-or-string &optional end props-or-prop &rest rest)
+(defun tp-put (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Set text properties on string or buffer region.
 
 This function supports four calling conventions:
@@ -123,25 +123,27 @@ Return the modified object (string) or region (START . END) for buffer."
     ;; Determine calling convention based on first argument type
     (cond
      ;; First arg is a string - apply to entire string
+     ;; In this case: end-or-prop is first property, props-or-val is first value
      ((stringp start-or-string)
       (setq object start-or-string
             start 0
             finish (length start-or-string)
-            props (if end
-                      (if props-or-prop
-                          (cons end (cons props-or-prop rest))
-                        (list end))
+            props (if end-or-prop
+                      (if props-or-val
+                          (cons end-or-prop (cons props-or-val rest))
+                        (list end-or-prop))
                     nil)))
      ;; First arg is a number - region convention
+     ;; In this case: end-or-prop is end position, props-or-val is plist
      ((numberp start-or-string)
       (setq start start-or-string
-            finish end)
+            finish end-or-prop)
       ;; Check if 4th arg (first of rest) is a buffer or string
       (if (and rest (or (bufferp (car rest)) (stringp (car rest))))
           (setq object (car rest)
-                props props-or-prop)
+                props props-or-val)
         (setq object nil
-              props props-or-prop)))
+              props props-or-val)))
      (t (error "Invalid first argument: %S" start-or-string)))
     ;; Handle properties as a list
     (when (listp (car-safe props))
