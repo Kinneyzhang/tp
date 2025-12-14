@@ -47,8 +47,74 @@ Stores individual layer definitions.")
   "Alist where each element is (GROUP-NAME . (LAYER-NAME1 LAYER-NAME2 ...)).
 Stores layer group definitions, where each group contains multiple layer names.")
 
+(defmacro tp-define-layer (name &rest layers)
+  "Define a text property layer or layer group named NAME.
+
+Single layer:
+  (tp-define-layer layer-1 \\='(face (:background \"cyan\") line-prefix \">>\"))
+
+Multiple layers (first defined layer is the top layer):
+  (tp-define-layer layers-2
+    \\='layer-1
+    \\='(face (:background \"red\") line-prefix \">>\")
+    \\='(face (:background \"green\" :weight bold) line-prefix \"::\"))
+
+LAYERS can be:
+- A single plist for a single layer definition
+- Multiple items where each can be:
+  - A symbol referencing another defined layer
+  - A plist defining an anonymous sub-layer
+
+For multiple layers, they are stored as a group in `tp-layer-groups'.
+The first layer in the definition is the top layer."
+  (declare (indent defun))
+  ;; Determine if this is a single layer (one plist argument) or multiple layers
+  (let ((is-single-layer
+         (and (= (length layers) 1)
+              (listp (car layers))
+              ;; A plist has an even number of elements (key-value pairs)
+              (cl-evenp (length (car layers)))
+              ;; The first element is a property name (symbol, not nil)
+              (symbolp (caar layers)))))
+    (if is-single-layer
+        ;; Single layer: (tp-define-layer name '(plist...))
+        (let ((properties (car layers)))
+          `(progn
+             (if (assoc ',name tp-layer-alist)
+                 (setf (cdr (assoc ',name tp-layer-alist)) ',properties)
+               (push (cons ',name ',properties) tp-layer-alist))
+             (assoc ',name tp-layer-alist)))
+      ;; Multiple layers: (tp-define-layer name 'layer1 '(plist1) '(plist2) ...)
+      (let ((layer-names nil)
+            (idx 0)
+            (layer-defs nil))
+        (dolist (layer layers)
+          (cond
+           ;; Reference to existing layer
+           ((symbolp layer)
+            (push layer layer-names))
+           ;; Plist layer - create with auto-generated name
+           ((listp layer)
+            (let ((sub-name (intern (format "%s-layer-%d" name idx))))
+              (push `(if (assoc ',sub-name tp-layer-alist)
+                         (setf (cdr (assoc ',sub-name tp-layer-alist)) ',layer)
+                       (push (cons ',sub-name ',layer) tp-layer-alist))
+                    layer-defs)
+              (push sub-name layer-names)
+              (cl-incf idx)))))
+        (setq layer-names (nreverse layer-names))
+        (setq layer-defs (nreverse layer-defs))
+        `(progn
+           ,@layer-defs
+           (if (assoc ',name tp-layer-groups)
+               (setf (cdr (assoc ',name tp-layer-groups)) ',layer-names)
+             (push (cons ',name ',layer-names) tp-layer-groups))
+           (assoc ',name tp-layer-groups))))))
+
+;;; Legacy aliases for backward compatibility
 (defmacro tp-layer-define (name properties)
   "Define a text property layer named NAME with PROPERTIES.
+DEPRECATED: Use `tp-define-layer' instead.
 The layer is stored in `tp-layer-alist'.
 PROPERTIES should be a plist of text properties."
   (declare (indent defun))
@@ -60,15 +126,18 @@ PROPERTIES should be a plist of text properties."
 
 (defmacro tp-group-define (name &rest layers)
   "Define a layer group named NAME containing LAYERS.
-LAYERS are specified as alternating NAME PROPERTIES pairs.
-The first layer in the definition is the top layer (visible by default).
-All layers are stored in `tp-layer-alist' and the group in `tp-layer-groups'."
+DEPRECATED: Use `tp-define-layer' instead.
+LAYERS are specified as alternating NAME PROPERTIES pairs."
   (declare (indent defun))
   `(let ((layer-names
           (nreverse
            (-map (lambda (lst)
-                   (let ((layer-name (car lst)))
-                     (eval `(tp-layer-define ,layer-name ,(cadr lst)))
+                   (let* ((layer-name (car lst))
+                          ;; Evaluate the quoted plist to get the actual plist
+                          (props (eval (cadr lst))))
+                     (if (assoc layer-name tp-layer-alist)
+                         (setf (cdr (assoc layer-name tp-layer-alist)) props)
+                       (push (cons layer-name props) tp-layer-alist))
                      layer-name))
                  (-partition 2 ',layers)))))
      (if (assoc ',name tp-layer-groups)
