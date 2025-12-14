@@ -829,5 +829,224 @@
     (tp-put-sub 0 5 'face :foreground "green" str)
     (should (equal (tp-get-sub 0 'face :foreground str) "green"))))
 
+;;; ============================================================
+;;; New API Tests (tp-reset, tp-set, tp-set-face, tp-set-display, tp-add)
+;;; ============================================================
+
+(ert-deftest tp-test-reset ()
+  "Test tp-reset completely replaces all properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face bold help-echo "test"))
+    ;; tp-reset should completely replace
+    (tp-reset 1 6 '(mouse-face highlight))
+    (should (eq (tp-get 1 'mouse-face) 'highlight))
+    (should (null (tp-get 1 'face)))
+    (should (null (tp-get 1 'help-echo)))))
+
+(ert-deftest tp-test-reset-on-string ()
+  "Test tp-reset on string."
+  (let ((str (copy-sequence "Hello World")))
+    (tp-set 0 5 '(face bold help-echo "test") str)
+    (tp-reset 0 5 '(mouse-face highlight) str)
+    (should (eq (get-text-property 0 'mouse-face str) 'highlight))
+    (should (null (get-text-property 0 'face str)))))
+
+(ert-deftest tp-test-reset-entire-string ()
+  "Test tp-reset on entire string."
+  (let* ((str (tp-set "Hello" 'face 'bold 'help-echo "test"))
+         (result (tp-reset str 'mouse-face 'highlight)))
+    (should (eq (get-text-property 0 'mouse-face result) 'highlight))
+    (should (null (get-text-property 0 'face result)))))
+
+(ert-deftest tp-test-set-preserves-other-properties ()
+  "Test tp-set preserves unspecified properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face bold help-echo "test"))
+    ;; tp-set should only replace specified properties
+    (tp-set 1 6 '(face italic))
+    (should (eq (tp-get 1 'face) 'italic))
+    (should (equal (tp-get 1 'help-echo) "test"))))
+
+(ert-deftest tp-test-set-face ()
+  "Test tp-set-face sets only face property."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face bold help-echo "test"))
+    (tp-set-face 1 6 'italic)
+    (should (eq (tp-get 1 'face) 'italic))
+    (should (equal (tp-get 1 'help-echo) "test"))))
+
+(ert-deftest tp-test-set-face-on-string ()
+  "Test tp-set-face on string."
+  (let ((str (copy-sequence "Hello")))
+    (tp-set 0 5 '(help-echo "test") str)
+    (tp-set-face 0 5 'bold str)
+    (should (eq (get-text-property 0 'face str) 'bold))
+    (should (equal (get-text-property 0 'help-echo str) "test"))))
+
+(ert-deftest tp-test-set-face-entire-string ()
+  "Test tp-set-face on entire string."
+  (let* ((str (copy-sequence "Hello"))
+         (result (tp-set-face str 'bold)))
+    (should (eq (get-text-property 0 'face result) 'bold))))
+
+(ert-deftest tp-test-set-display ()
+  "Test tp-set-display sets only display property."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face bold help-echo "test"))
+    (tp-set-display 1 6 '(space :width 10))
+    (should (equal (tp-get 1 'display) '(space :width 10)))
+    (should (eq (tp-get 1 'face) 'bold))))
+
+(ert-deftest tp-test-add ()
+  "Test tp-add adds/updates properties without replacing."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face bold help-echo "test"))
+    (tp-add 1 6 '(mouse-face highlight))
+    (should (eq (tp-get 1 'face) 'bold))
+    (should (equal (tp-get 1 'help-echo) "test"))
+    (should (eq (tp-get 1 'mouse-face) 'highlight))))
+
+(ert-deftest tp-test-add-deep-merge ()
+  "Test tp-add deeply merges nested properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face (:foreground "red" :weight bold)))
+    (tp-add 1 6 '(face (:background "blue")))
+    (let ((face (tp-get 1 'face)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (eq (plist-get face :weight) 'bold))
+      (should (equal (plist-get face :background) "blue")))))
+
+(ert-deftest tp-test-add-on-string ()
+  "Test tp-add on string."
+  (let ((str (copy-sequence "Hello")))
+    (tp-set 0 5 '(face bold) str)
+    (tp-add 0 5 '(help-echo "test") str)
+    (should (eq (get-text-property 0 'face str) 'bold))
+    (should (equal (get-text-property 0 'help-echo str) "test"))))
+
+;;; ============================================================
+;;; Enhanced tp-get Tests
+;;; ============================================================
+
+(ert-deftest tp-test-get-nested-sub-property ()
+  "Test tp-get with nested sub-properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (put-text-property 1 6 'face '(:foreground "red" :box (:color "blue" :line-width 2)))
+    (should (equal (tp-get 1 'face :foreground) "red"))
+    (should (equal (tp-get 1 'face :box :color) "blue"))
+    (should (equal (tp-get 1 'face :box :line-width) 2))))
+
+(ert-deftest tp-test-get-display-sub-property ()
+  "Test tp-get with display sub-properties that are plists."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    ;; Use a plist-style display property
+    (put-text-property 1 6 'display '(:height 1.5 :width 10))
+    (should (equal (tp-get 1 'display :height) 1.5))
+    (should (equal (tp-get 1 'display :width) 10))))
+
+;;; ============================================================
+;;; Enhanced tp-remove Tests
+;;; ============================================================
+
+(ert-deftest tp-test-remove-sub-property-with-path ()
+  "Test tp-remove with sub-property path."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (put-text-property 1 6 'face '(:foreground "red" :underline (:style wave :color "blue")))
+    ;; Remove just :underline from face
+    (tp-remove 1 6 '(face :underline))
+    (let ((face (tp-get 1 'face)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (null (plist-get face :underline))))))
+
+(ert-deftest tp-test-remove-nested-sub-properties ()
+  "Test tp-remove with nested sub-properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (put-text-property 1 6 'face '(:foreground "red" :underline (:style wave :position t :color "blue")))
+    ;; Remove :style and :position from :underline, keep :color
+    (tp-remove 1 6 '(face :underline (:style :position)))
+    (let* ((face (tp-get 1 'face))
+           (underline (plist-get face :underline)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (equal (plist-get underline :color) "blue"))
+      (should (null (plist-get underline :style)))
+      (should (null (plist-get underline :position))))))
+
+;;; ============================================================
+;;; Match Pattern Format Tests
+;;; ============================================================
+
+(ert-deftest tp-test-match-pattern-string-format ()
+  "Test tp-match with (pattern string) format."
+  (let* ((str (copy-sequence "Hello world"))
+         (result (tp-match '("world" "Hello world") '(face bold))))
+    (should (stringp result))
+    (should (eq (get-text-property 6 'face result) 'bold))
+    (should (null (get-text-property 0 'face result)))))
+
+(ert-deftest tp-test-match-reset ()
+  "Test tp-match-reset completely replaces properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-set 1 6 '(help-echo "original"))
+    (tp-match-reset "Hello" '(face bold))
+    (should (eq (tp-get 1 'face) 'bold))
+    ;; Properties should be completely replaced
+    (should (null (tp-get 1 'help-echo)))))
+
+(ert-deftest tp-test-match-add ()
+  "Test tp-match-add adds/updates properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-set 1 6 '(help-echo "original"))
+    (tp-match-add "Hello" '(face bold))
+    (should (eq (tp-get 1 'face) 'bold))
+    ;; Original properties should be preserved
+    (should (equal (tp-get 1 'help-echo) "original"))))
+
+(ert-deftest tp-test-regexp-reset ()
+  "Test tp-regexp-reset completely replaces properties."
+  (tp-test-with-temp-buffer
+    (insert "abc 123 def 456")
+    (tp-set 5 8 '(help-echo "original"))
+    (tp-regexp-reset "[0-9]+" '(face bold))
+    (should (eq (tp-get 5 'face) 'bold))
+    ;; Properties should be completely replaced
+    (should (null (tp-get 5 'help-echo)))))
+
+(ert-deftest tp-test-regexp-add ()
+  "Test tp-regexp-add adds/updates properties."
+  (tp-test-with-temp-buffer
+    (insert "abc 123 def 456")
+    (tp-set 5 8 '(help-echo "original"))
+    (tp-regexp-add "[0-9]+" '(face bold))
+    (should (eq (tp-get 5 'face) 'bold))
+    ;; Original properties should be preserved
+    (should (equal (tp-get 5 'help-echo) "original"))))
+
+(ert-deftest tp-test-match-reset-on-string ()
+  "Test tp-match-reset on string."
+  (let* ((str (copy-sequence "Hello World Hello"))
+         (result (tp-match-reset "Hello" str '(face bold))))
+    (should (eq (get-text-property 0 'face result) 'bold))
+    (should (eq (get-text-property 12 'face result) 'bold))))
+
+(ert-deftest tp-test-regexp-add-on-string ()
+  "Test tp-regexp-add on string."
+  (let ((str (copy-sequence "abc 123 def 456")))
+    (tp-set 4 7 '(help-echo "original") str)
+    (tp-regexp-add "[0-9]+" str '(face bold))
+    (should (eq (get-text-property 4 'face str) 'bold))
+    (should (equal (get-text-property 4 'help-echo str) "original"))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

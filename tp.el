@@ -100,30 +100,16 @@ Appends 'tp-name property to identify the layer."
 
 ;;; Basic text property functions (similar to ov.el)
 
-(defun tp-put (start-or-string &optional end-or-prop props-or-val &rest rest)
-  "Set text properties on string or buffer region.
-
-This function supports four calling conventions:
-
-1. Current buffer:
-   (tp-put START END \\='(PROPERTY VALUE ...))
-
-2. Specific buffer:
-   (tp-put START END \\='(PROPERTY VALUE ...) BUFFER)
-
-3. Specific string (0-indexed positions):
-   (tp-put START END \\='(PROPERTY VALUE ...) STRING)
-
-4. Entire string:
-   (tp-put STRING PROPERTY VALUE ...)
-
-PROPERTIES is a plist of property-value pairs.
-Return the modified object (string) or region (START . END) for buffer."
+(defun tp--parse-args (start-or-string end-or-prop props-or-val rest)
+  "Parse flexible function arguments and return (OBJECT START END PROPS).
+Supports four calling conventions:
+1. Buffer region: (START END PROPS)
+2. Buffer region with object: (START END PROPS OBJECT)
+3. String region: (START END PROPS STRING)
+4. Entire string: (STRING PROP VAL ...)"
   (let (object start finish props)
-    ;; Determine calling convention based on first argument type
     (cond
      ;; First arg is a string - apply to entire string
-     ;; In this case: end-or-prop is first property, props-or-val is first value
      ((stringp start-or-string)
       (setq object start-or-string
             start 0
@@ -134,7 +120,6 @@ Return the modified object (string) or region (START . END) for buffer."
                         (list end-or-prop))
                     nil)))
      ;; First arg is a number - region convention
-     ;; In this case: end-or-prop is end position, props-or-val is plist
      ((numberp start-or-string)
       (setq start start-or-string
             finish end-or-prop)
@@ -148,7 +133,57 @@ Return the modified object (string) or region (START . END) for buffer."
     ;; Handle properties as a list
     (when (listp (car-safe props))
       (setq props (car props)))
-    ;; Apply properties
+    (list object start finish props)))
+
+(defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
+  "Completely replace all text properties with PROPS.
+
+This function supports four calling conventions:
+
+1. Current buffer:
+   (tp-reset START END \\='(PROPERTY VALUE ...))
+
+2. Specific buffer:
+   (tp-reset START END \\='(PROPERTY VALUE ...) BUFFER)
+
+3. Specific string (0-indexed positions):
+   (tp-reset START END \\='(PROPERTY VALUE ...) STRING)
+
+4. Entire string:
+   (tp-reset STRING PROPERTY VALUE ...)
+
+Unlike `tp-set', this completely replaces all existing properties.
+Return the modified object (string) or region (START . END) for buffer."
+  (pcase-let ((`(,object ,start ,finish ,props)
+               (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+    ;; Completely replace all properties
+    (set-text-properties start finish props object)
+    (if (stringp object)
+        object
+      (cons start finish))))
+
+(defun tp-set (start-or-string &optional end-or-prop props-or-val &rest rest)
+  "Set text properties on string or buffer region.
+
+This function supports four calling conventions:
+
+1. Current buffer:
+   (tp-set START END \\='(PROPERTY VALUE ...))
+
+2. Specific buffer:
+   (tp-set START END \\='(PROPERTY VALUE ...) BUFFER)
+
+3. Specific string (0-indexed positions):
+   (tp-set START END \\='(PROPERTY VALUE ...) STRING)
+
+4. Entire string:
+   (tp-set STRING PROPERTY VALUE ...)
+
+This replaces only the properties specified, preserving other properties.
+Return the modified object (string) or region (START . END) for buffer."
+  (pcase-let ((`(,object ,start ,finish ,props)
+               (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+    ;; Apply properties individually (preserves other properties)
     (let ((len (length props))
           (i 0))
       (while (< i len)
@@ -157,16 +192,190 @@ Return the modified object (string) or region (START . END) for buffer."
                            (nth (1+ i) props)
                            object)
         (setq i (+ i 2))))
-    ;; Return result
     (if (stringp object)
         object
       (cons start finish))))
 
-(defalias 'tp-set 'tp-put
-  "Alias for `tp-put'.")
+(defalias 'tp-put 'tp-set
+  "Alias for `tp-set'.")
+
+(defun tp-set-face (start-or-string &optional end-or-face face-or-object &rest rest)
+  "Set face property on string or buffer region.
+
+This function supports four calling conventions:
+
+1. Current buffer:
+   (tp-set-face START END FACE)
+
+2. Specific buffer:
+   (tp-set-face START END FACE BUFFER)
+
+3. Specific string (0-indexed positions):
+   (tp-set-face START END FACE STRING)
+
+4. Entire string:
+   (tp-set-face STRING FACE)
+
+This replaces only the face property, preserving other properties.
+Return the modified object (string) or region (START . END) for buffer."
+  (let (object start finish face)
+    (cond
+     ;; First arg is a string - apply to entire string
+     ((stringp start-or-string)
+      (setq object start-or-string
+            start 0
+            finish (length start-or-string)
+            face end-or-face))
+     ;; First arg is a number - region convention
+     ((numberp start-or-string)
+      (setq start start-or-string
+            finish end-or-face
+            face face-or-object
+            object (car rest)))
+     (t (error "Invalid first argument: %S" start-or-string)))
+    (put-text-property start finish 'face face object)
+    (if (stringp object)
+        object
+      (cons start finish))))
+
+(defun tp-set-display (start-or-string &optional end-or-display display-or-object &rest rest)
+  "Set display property on string or buffer region.
+
+This function supports four calling conventions:
+
+1. Current buffer:
+   (tp-set-display START END DISPLAY)
+
+2. Specific buffer:
+   (tp-set-display START END DISPLAY BUFFER)
+
+3. Specific string (0-indexed positions):
+   (tp-set-display START END DISPLAY STRING)
+
+4. Entire string:
+   (tp-set-display STRING DISPLAY)
+
+This replaces only the display property, preserving other properties.
+Return the modified object (string) or region (START . END) for buffer."
+  (let (object start finish display)
+    (cond
+     ;; First arg is a string - apply to entire string
+     ((stringp start-or-string)
+      (setq object start-or-string
+            start 0
+            finish (length start-or-string)
+            display end-or-display))
+     ;; First arg is a number - region convention
+     ((numberp start-or-string)
+      (setq start start-or-string
+            finish end-or-display
+            display display-or-object
+            object (car rest)))
+     (t (error "Invalid first argument: %S" start-or-string)))
+    (put-text-property start finish 'display display object)
+    (if (stringp object)
+        object
+      (cons start finish))))
+
+(defun tp--deep-merge-plist (base new)
+  "Deep merge NEW plist into BASE plist.
+For nested plists (starting with keyword), recursively merge.
+NEW values override BASE values."
+  (let ((result (copy-sequence base)))
+    (cl-loop for (key val) on new by #'cddr
+             do (let ((base-val (plist-get result key)))
+                  (setq result
+                        (plist-put result key
+                                   (cond
+                                    ;; Both are plists - recursively merge
+                                    ((and (listp val) (keywordp (car-safe val))
+                                          (listp base-val) (keywordp (car-safe base-val)))
+                                     (tp--deep-merge-plist base-val val))
+                                    ;; Otherwise use new value
+                                    (t val))))))
+    result))
+
+(defun tp-add (start-or-string &optional end-or-prop props-or-val &rest rest)
+  "Add or update text properties, preserving existing properties.
+
+This function supports four calling conventions:
+
+1. Current buffer:
+   (tp-add START END \\='(PROPERTY VALUE ...))
+
+2. Specific buffer:
+   (tp-add START END \\='(PROPERTY VALUE ...) BUFFER)
+
+3. Specific string (0-indexed positions):
+   (tp-add START END \\='(PROPERTY VALUE ...) STRING)
+
+4. Entire string:
+   (tp-add STRING PROPERTY VALUE ...)
+
+Unlike `tp-set', this deeply merges nested properties.
+For example, \\='(face (:underline (:style wave))) will merge with
+existing face properties rather than replacing them entirely.
+
+Return the modified object (string) or region (START . END) for buffer."
+  (pcase-let ((`(,object ,start ,finish ,props)
+               (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+    ;; Process each property with deep merging
+    (let ((pos start))
+      (while (< pos finish)
+        (let* ((current-props (text-properties-at pos object))
+               (next-pos (or (next-property-change pos object finish) finish)))
+          ;; Merge each property in props
+          (cl-loop for (key val) on props by #'cddr
+                   do (let* ((current-val (plist-get current-props key))
+                             (new-val
+                              (cond
+                               ;; Both are plists - deep merge
+                               ((and (listp val) (keywordp (car-safe val))
+                                     (listp current-val) (keywordp (car-safe current-val)))
+                                (tp--deep-merge-plist current-val val))
+                               ;; Otherwise use new value
+                               (t val))))
+                        (put-text-property pos next-pos key new-val object)))
+          (setq pos next-pos))))
+    (if (stringp object)
+        object
+      (cons start finish))))
+
+(defun tp--get-nested (value path)
+  "Get nested value from VALUE following PATH.
+PATH is a list of keys/symbols to traverse nested structures.
+Supports plists, alists, and special display property formats."
+  (if (null path)
+      value
+    (let* ((key (car path))
+           (rest (cdr path))
+           (next-value
+            (cond
+             ;; Value is a plist with keyword keys
+             ((and (listp value) (keywordp (car value)))
+              (plist-get value key))
+             ;; Value is an alist
+             ((and (listp value) (consp (car value)))
+              (cdr (assoc key value)))
+             ;; Value is a list of specs (e.g., display property)
+             ((listp value)
+              (or (plist-get value key)
+                  (cdr (assoc key value))
+                  (cl-loop for spec in value
+                           when (and (listp spec)
+                                     (eq (car spec) key))
+                           return (if (listp (cdr spec))
+                                      (if (= (length (cdr spec)) 1)
+                                          (cadr spec)
+                                        (cdr spec))
+                                    (cdr spec))
+                           when (and (listp spec) (keywordp (car spec)))
+                           thereis (plist-get spec key))))
+             (t nil))))
+      (tp--get-nested next-value rest))))
 
 (defun tp-get (pos-or-start &optional property-or-end &rest args)
-  "Get text property value(s).
+  "Get text property value(s) with support for nested sub-properties.
 
 This function supports multiple calling conventions:
 
@@ -174,11 +383,20 @@ This function supports multiple calling conventions:
    (tp-get POSITION PROPERTY)
    (tp-get POSITION PROPERTY OBJECT)
 
-2. Range, single property:
+2. Single position, nested sub-property:
+   (tp-get POSITION PROPERTY SUB-KEY ...)
+   (tp-get 5 \\='face :foreground)
+   (tp-get 5 \\='face :box :color)
+   (tp-get 5 \\='display \\='space :width)
+
+3. Range, single property:
    (tp-get START END PROPERTY)
    (tp-get START END PROPERTY OBJECT)
 
-3. Range, all properties (returns plist):
+4. Range, nested sub-property:
+   (tp-get START END PROPERTY SUB-KEY ...)
+
+5. Range, all properties (returns plist):
    (tp-get START END)
    (tp-get START END OBJECT)
 
@@ -186,24 +404,58 @@ For buffers, positions are 1-indexed.
 For strings, positions are 0-indexed.
 OBJECT defaults to current buffer."
   (cond
-   ;; (tp-get POS PROP) or (tp-get POS PROP OBJECT) - single position
+   ;; (tp-get POS PROP ...) or (tp-get POS PROP OBJECT) - single position
    ((and (numberp pos-or-start)
          (symbolp property-or-end))
-    (let ((object (car args)))
-      (get-text-property pos-or-start property-or-end object)))
+    (let* ((prop-value (get-text-property pos-or-start property-or-end nil))
+           ;; Determine if last arg is object or sub-property path
+           (sub-path args)
+           (object nil))
+      ;; Check if last arg could be an object
+      (when (and args
+                 (let ((last (car (last args))))
+                   (or (bufferp last) (stringp last))))
+        (setq object (car (last args)))
+        (setq sub-path (butlast args))
+        (setq prop-value (get-text-property pos-or-start property-or-end object)))
+      (if sub-path
+          (tp--get-nested prop-value sub-path)
+        prop-value)))
    ;; (tp-get START END ...) - range form
    ((and (numberp pos-or-start)
          (numberp property-or-end))
     (let* ((start pos-or-start)
            (end property-or-end)
-           (property (car args))
-           (object (cadr args)))
+           (rest-args args)
+           (property nil)
+           (sub-path nil)
+           (object nil))
+      ;; Parse remaining args
+      (when rest-args
+        (if (symbolp (car rest-args))
+            (progn
+              (setq property (car rest-args))
+              (setq rest-args (cdr rest-args))
+              ;; Remaining args could be sub-path and/or object
+              (when rest-args
+                (if (or (bufferp (car (last rest-args)))
+                        (stringp (car (last rest-args))))
+                    (progn
+                      (setq object (car (last rest-args)))
+                      (setq sub-path (butlast rest-args)))
+                  (setq sub-path rest-args))))
+          ;; First arg is object (buffer/string)
+          (when (or (bufferp (car rest-args)) (stringp (car rest-args)))
+            (setq object (car rest-args)))))
       (if property
           ;; Get specific property from range - return first non-nil value
           (let ((pos start)
                 (result nil))
             (while (and (< pos end) (null result))
-              (setq result (get-text-property pos property object))
+              (let ((prop-value (get-text-property pos property object)))
+                (setq result (if sub-path
+                                 (tp--get-nested prop-value sub-path)
+                               prop-value)))
               (setq pos (next-single-property-change pos property object end)))
             result)
         ;; Get all properties from range - merge into plist
@@ -293,10 +545,67 @@ OBJECT defaults to current buffer."
         (setq pos next-pos))))
   nil)
 
+(defun tp--remove-nested-keys (plist keys-to-remove)
+  "Remove KEYS-TO-REMOVE from PLIST.
+Returns the modified plist, or nil if empty after removal."
+  (let ((result (copy-sequence plist)))
+    (dolist (key keys-to-remove)
+      (cl-remf result key))
+    (if (null result) nil result)))
+
 (defun tp-remove (start end property &optional object)
-  "Remove PROPERTY from text between START and END in OBJECT.
+  "Remove PROPERTY or sub-properties from text between START and END.
+
+PROPERTY can be:
+- A symbol: Remove entire property
+  (tp-remove 1 10 \\='face)
+
+- A list (PROP SUB-KEY): Remove sub-property from PROP
+  (tp-remove 1 10 \\='(face :underline))
+
+- A list (PROP SUB-KEY (NESTED-KEYS...)): Remove nested sub-properties
+  (tp-remove 1 10 \\='(face :underline (:style :position)))
+  This removes :style and :position from :underline, keeping other keys like :color.
+  If no keys remain in :underline after removal, :underline itself is removed.
+
 OBJECT defaults to current buffer."
-  (remove-text-properties start end (list property nil) object))
+  (cond
+   ;; Simple property removal
+   ((symbolp property)
+    (remove-text-properties start end (list property nil) object))
+   ;; Nested property removal
+   ((listp property)
+    (let* ((prop-name (car property))
+           (sub-key (cadr property))
+           (nested-keys (caddr property)))
+      (if (null nested-keys)
+          ;; Remove sub-key from property
+          (tp-remove-sub start end prop-name sub-key object)
+        ;; Remove nested keys from sub-key
+        (let ((pos start))
+          (while (< pos end)
+            (let* ((current-value (get-text-property pos prop-name object))
+                   (next-pos (or (next-single-property-change pos prop-name object end) end)))
+              (when current-value
+                (let* ((sub-value (if (and (listp current-value) (keywordp (car current-value)))
+                                      (plist-get current-value sub-key)
+                                    nil))
+                       (new-sub-value (when (and (listp sub-value) (keywordp (car sub-value)))
+                                        (tp--remove-nested-keys sub-value nested-keys)))
+                       (new-value
+                        (cond
+                         ((and (listp current-value) (keywordp (car current-value)))
+                          (let ((result (copy-sequence current-value)))
+                            (if new-sub-value
+                                (plist-put result sub-key new-sub-value)
+                              ;; Remove sub-key entirely if no keys remain
+                              (cl-remf result sub-key))
+                            (if (null result) nil result)))
+                         (t current-value))))
+                  (if new-value
+                      (put-text-property pos next-pos prop-name new-value object)
+                    (remove-text-properties pos next-pos (list prop-name nil) object))))
+              (setq pos next-pos)))))))))
 
 (defun tp-remove-list (start end properties &optional object)
   "Remove list of PROPERTIES from text between START and END in OBJECT.
@@ -504,10 +813,12 @@ Signals an error if layer NAME does not exist in the region."
    start end object)
   nil)
 
-;;; Propertize functions
+;;; Propertize functions (deprecated - use tp-set instead)
 
 (defun tp-propertize (object-or-string &rest args)
   "Apply text properties to OBJECT.
+
+This function is DEPRECATED. Use `tp-set' instead.
 
 This function supports multiple calling conventions:
 
@@ -548,9 +859,11 @@ PROPERTIES should be a plist of property-value pairs."
           (properties (cddr args)))
       (when (listp (car-safe properties))
         (setq properties (car properties)))
-      (tp-put start end properties object)
+      (tp-set start end properties object)
       object))  ; Always return the object
    (t (error "Invalid arguments to tp-propertize"))))
+
+(make-obsolete 'tp-propertize 'tp-set "0.2.0")
 
 (defun tp-layer-propertize (object layer &optional start end)
   "Apply LAYER properties to OBJECT.
@@ -697,78 +1010,182 @@ FUNCTION receives two arguments: STRING and INDEX."
 
 ;;; Match and regexp functions (similar to ov-match and ov-regexp)
 
-(defun tp-match (pattern &rest args)
-  "Set properties on all occurrences of PATTERN.
-
-This function supports two calling conventions:
-
-1. With OBJECT (string or buffer):
-   (tp-match PATTERN OBJECT PROPERTY VALUE ...)
-   (tp-match PATTERN OBJECT \\='(PROPERTY VALUE ...))
-
-2. Without OBJECT (current buffer):
-   (tp-match PATTERN PROPERTY VALUE ...)
-   (tp-match PATTERN \\='(PROPERTY VALUE ...))
-
-PATTERN is the string to search for.
-PROPERTIES is a plist of property-value pairs.
-Returns:
-- For strings: the modified string
-- For buffers: list of (START . END) pairs for all matches."
-  (let (object properties)
-    ;; Determine calling convention based on second argument type
+(defun tp--match-apply (pattern properties apply-fn &optional object)
+  "Internal function to apply APPLY-FN to matches of PATTERN.
+PATTERN can be a string or (PATTERN STRING) for substring matching.
+APPLY-FN is called with (START END PROPS OBJECT) for each match.
+Returns modified object or list of regions."
+  (let ((search-pattern pattern)
+        (search-object object))
+    ;; Handle (PATTERN STRING) format
+    (when (and (listp pattern) (stringp (car pattern)) (stringp (cadr pattern)))
+      (setq search-pattern (car pattern)
+            search-object (cadr pattern)))
     (cond
-     ;; Second arg is a string - it's the object
+     ;; String object
+     ((stringp search-object)
+      (let ((pos 0))
+        (while (string-match (regexp-quote search-pattern) search-object pos)
+          (let ((beg (match-beginning 0))
+                (end (match-end 0)))
+            (when properties
+              (funcall apply-fn beg end properties search-object))
+            (setq pos (if (= beg end) (1+ beg) end))))
+        search-object))
+     ;; Buffer or nil (current buffer)
+     (t
+      (let ((buf (or search-object (current-buffer))))
+        (with-current-buffer buf
+          (save-excursion
+            (goto-char (point-min))
+            (let (regions)
+              (while (search-forward search-pattern nil t)
+                (let ((beg (match-beginning 0))
+                      (end (match-end 0)))
+                  (when properties
+                    (funcall apply-fn beg end properties buf))
+                  (push (cons beg end) regions)))
+              (nreverse regions)))))))))
+
+(defun tp--regexp-apply (pattern properties apply-fn &optional object)
+  "Internal function to apply APPLY-FN to regexp matches of PATTERN.
+APPLY-FN is called with (START END PROPS OBJECT) for each match.
+Returns modified object or list of regions."
+  (cond
+   ;; String object
+   ((stringp object)
+    (let ((pos 0))
+      (while (string-match pattern object pos)
+        (let ((beg (match-beginning 0))
+              (end (match-end 0)))
+          (when properties
+            (funcall apply-fn beg end properties object))
+          (setq pos (if (= beg end) (1+ beg) end))))
+      object))
+   ;; Buffer or nil (current buffer)
+   (t
+    (let ((buf (or object (current-buffer))))
+      (with-current-buffer buf
+        (save-excursion
+          (goto-char (point-min))
+          (let (regions)
+            (while (re-search-forward pattern nil t)
+              (let ((beg (match-beginning 0))
+                    (end (match-end 0)))
+                (when properties
+                  (funcall apply-fn beg end properties buf))
+                (push (cons beg end) regions)))
+            (nreverse regions))))))))
+
+(defun tp--parse-match-args (args)
+  "Parse match/regexp function ARGS.
+Returns (OBJECT . PROPERTIES)."
+  (let (object properties)
+    (cond
+     ;; First arg is a string - it's the object
      ((and args (stringp (car args)))
       (setq object (car args)
             properties (cdr args)))
-     ;; Second arg is a buffer - it's the object
+     ;; First arg is a buffer - it's the object
      ((and args (bufferp (car args)))
       (setq object (car args)
             properties (cdr args)))
-     ;; No object specified, use current buffer
+     ;; No object specified
      (t
       (setq object nil
             properties args)))
     ;; Handle properties as a list
     (when (listp (car-safe properties))
       (setq properties (car properties)))
-    ;; Dispatch based on object type
-    (cond
-     ;; String object
-     ((stringp object)
-      (let ((pos 0))
-        (while (string-match (regexp-quote pattern) object pos)
-          (let ((beg (match-beginning 0))
-                (end (match-end 0)))
-            (when properties
-              (tp-put beg end properties object))
-            ;; Advance position: for zero-width match, advance by 1 to avoid infinite loop
-            (setq pos (if (= beg end) (1+ beg) end))))
-        object))
-     ;; Buffer or nil (current buffer)
-     (t
-      (let ((buf (or object (current-buffer))))
-        (with-current-buffer buf
-          (save-excursion
-            (goto-char (point-min))
-            (let (regions)
-              (while (search-forward pattern nil t)
-                (let ((beg (match-beginning 0))
-                      (end (match-end 0)))
-                  (when properties
-                    (tp-put beg end properties buf))
-                  (push (cons beg end) regions)))
-              (nreverse regions)))))))))
+    (cons object properties)))
+
+(defun tp-match (pattern &rest args)
+  "Set properties on all occurrences of PATTERN.
+
+This function supports multiple calling conventions:
+
+1. With OBJECT (string or buffer):
+   (tp-match PATTERN OBJECT PROPERTY VALUE ...)
+   (tp-match PATTERN OBJECT \\='(PROPERTY VALUE ...))
+   (tp-match PATTERN \\='(PROPERTY VALUE ...) OBJECT)
+
+2. Without OBJECT (current buffer):
+   (tp-match PATTERN PROPERTY VALUE ...)
+   (tp-match PATTERN \\='(PROPERTY VALUE ...))
+
+3. With pattern as (PATTERN STRING) to match within STRING:
+   (tp-match \\='(\"world\" \"Hello world\") \\='(face bold))
+
+PATTERN is the string to search for.
+PROPERTIES is a plist of property-value pairs.
+Returns:
+- For strings: the modified string
+- For buffers: list of (START . END) pairs for all matches."
+  (let* ((parsed (tp--parse-match-args args))
+         (object (car parsed))
+         (properties (cdr parsed)))
+    ;; Handle (PATTERN STRING) format
+    (when (and (listp pattern) (stringp (car pattern)))
+      (when (stringp (cadr pattern))
+        (setq object (cadr pattern)))
+      (setq pattern (car pattern)))
+    (tp--match-apply pattern properties #'tp-set object)))
+
+(defun tp-match-reset (pattern &rest args)
+  "Reset (completely replace) properties on all occurrences of PATTERN.
+Same calling conventions as `tp-match'.
+Unlike `tp-match', this completely replaces all existing properties."
+  (let* ((parsed (tp--parse-match-args args))
+         (object (car parsed))
+         (properties (cdr parsed)))
+    (when (and (listp pattern) (stringp (car pattern)))
+      (when (stringp (cadr pattern))
+        (setq object (cadr pattern)))
+      (setq pattern (car pattern)))
+    (tp--match-apply pattern properties
+                     (lambda (start end props obj)
+                       (set-text-properties start end props obj))
+                     object)))
+
+(defun tp-match-add (pattern &rest args)
+  "Add/update properties on all occurrences of PATTERN.
+Same calling conventions as `tp-match'.
+Unlike `tp-match', this deeply merges nested properties."
+  (let* ((parsed (tp--parse-match-args args))
+         (object (car parsed))
+         (properties (cdr parsed)))
+    (when (and (listp pattern) (stringp (car pattern)))
+      (when (stringp (cadr pattern))
+        (setq object (cadr pattern)))
+      (setq pattern (car pattern)))
+    (tp--match-apply pattern properties
+                     (lambda (start end props obj)
+                       ;; Deep merge for each position
+                       (let ((pos start))
+                         (while (< pos end)
+                           (let* ((current-props (text-properties-at pos obj))
+                                  (next-pos (or (next-property-change pos obj end) end)))
+                             (cl-loop for (key val) on props by #'cddr
+                                      do (let* ((current-val (plist-get current-props key))
+                                                (new-val
+                                                 (cond
+                                                  ((and (listp val) (keywordp (car-safe val))
+                                                        (listp current-val) (keywordp (car-safe current-val)))
+                                                   (tp--deep-merge-plist current-val val))
+                                                  (t val))))
+                                           (put-text-property pos next-pos key new-val obj)))
+                             (setq pos next-pos)))))
+                     object)))
 
 (defun tp-regexp (pattern &rest args)
   "Set properties on all matches of PATTERN (regexp).
 
-This function supports two calling conventions:
+This function supports multiple calling conventions:
 
 1. With OBJECT (string or buffer):
    (tp-regexp PATTERN OBJECT PROPERTY VALUE ...)
    (tp-regexp PATTERN OBJECT \\='(PROPERTY VALUE ...))
+   (tp-regexp PATTERN \\='(PROPERTY VALUE ...) OBJECT)
 
 2. Without OBJECT (current buffer):
    (tp-regexp PATTERN PROPERTY VALUE ...)
@@ -779,51 +1196,48 @@ PROPERTIES is a plist of property-value pairs.
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (let (object properties)
-    ;; Determine calling convention based on second argument type
-    (cond
-     ;; Second arg is a string - it's the object
-     ((and args (stringp (car args)))
-      (setq object (car args)
-            properties (cdr args)))
-     ;; Second arg is a buffer - it's the object
-     ((and args (bufferp (car args)))
-      (setq object (car args)
-            properties (cdr args)))
-     ;; No object specified, use current buffer
-     (t
-      (setq object nil
-            properties args)))
-    ;; Handle properties as a list
-    (when (listp (car-safe properties))
-      (setq properties (car properties)))
-    ;; Dispatch based on object type
-    (cond
-     ;; String object
-     ((stringp object)
-      (let ((pos 0))
-        (while (string-match pattern object pos)
-          (let ((beg (match-beginning 0))
-                (end (match-end 0)))
-            (when properties
-              (tp-put beg end properties object))
-            ;; Advance position: for zero-width match, advance by 1 to avoid infinite loop
-            (setq pos (if (= beg end) (1+ beg) end))))
-        object))
-     ;; Buffer or nil (current buffer)
-     (t
-      (let ((buf (or object (current-buffer))))
-        (with-current-buffer buf
-          (save-excursion
-            (goto-char (point-min))
-            (let (regions)
-              (while (re-search-forward pattern nil t)
-                (let ((beg (match-beginning 0))
-                      (end (match-end 0)))
-                  (when properties
-                    (tp-put beg end properties buf))
-                  (push (cons beg end) regions)))
-              (nreverse regions)))))))))
+  (let* ((parsed (tp--parse-match-args args))
+         (object (car parsed))
+         (properties (cdr parsed)))
+    (tp--regexp-apply pattern properties #'tp-set object)))
+
+(defun tp-regexp-reset (pattern &rest args)
+  "Reset (completely replace) properties on all regexp matches of PATTERN.
+Same calling conventions as `tp-regexp'.
+Unlike `tp-regexp', this completely replaces all existing properties."
+  (let* ((parsed (tp--parse-match-args args))
+         (object (car parsed))
+         (properties (cdr parsed)))
+    (tp--regexp-apply pattern properties
+                      (lambda (start end props obj)
+                        (set-text-properties start end props obj))
+                      object)))
+
+(defun tp-regexp-add (pattern &rest args)
+  "Add/update properties on all regexp matches of PATTERN.
+Same calling conventions as `tp-regexp'.
+Unlike `tp-regexp', this deeply merges nested properties."
+  (let* ((parsed (tp--parse-match-args args))
+         (object (car parsed))
+         (properties (cdr parsed)))
+    (tp--regexp-apply pattern properties
+                      (lambda (start end props obj)
+                        ;; Deep merge for each position
+                        (let ((pos start))
+                          (while (< pos end)
+                            (let* ((current-props (text-properties-at pos obj))
+                                   (next-pos (or (next-property-change pos obj end) end)))
+                              (cl-loop for (key val) on props by #'cddr
+                                       do (let* ((current-val (plist-get current-props key))
+                                                 (new-val
+                                                  (cond
+                                                   ((and (listp val) (keywordp (car-safe val))
+                                                         (listp current-val) (keywordp (car-safe current-val)))
+                                                    (tp--deep-merge-plist current-val val))
+                                                   (t val))))
+                                            (put-text-property pos next-pos key new-val obj)))
+                              (setq pos next-pos)))))
+                      object)))
 
 ;;; Layer list and query functions
 
