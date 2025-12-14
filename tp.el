@@ -413,7 +413,7 @@ Example: (tp--get-nested \\='(:a 1 :b 2 :c 3) \\='((:a :b))) => (:a 1 :b 2)"
              ((and (listp key) (not (null key)))
               (when (and (listp value) (keywordp (car value)))
                 (let ((result nil))
-                  (dolist (k (reverse key))
+                  (dolist (k key)
                     (let ((v (plist-get value k)))
                       (when v
                         (setq result (plist-put result k v)))))
