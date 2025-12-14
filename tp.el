@@ -31,6 +31,7 @@
 
 (require 'cl-lib)
 (require 'dash)
+(require 'seq)
 
 ;;; tp layer define
 
@@ -69,21 +70,23 @@ For multiple layers, they are stored as a group in `tp-layer-groups'.
 The first layer in the definition is the top layer."
   (declare (indent defun))
   ;; Determine if this is a single layer (one plist argument) or multiple layers
-  (let ((is-single-layer
-         (and (= (length layers) 1)
-              (listp (car layers))
-              ;; A plist has an even number of elements (key-value pairs)
-              (cl-evenp (length (car layers)))
-              ;; The first element is a property name (symbol, not nil)
-              (symbolp (caar layers)))))
-    (if is-single-layer
-        ;; Single layer: (tp-define-layer name '(plist...))
-        (let ((properties (car layers)))
-          `(progn
-             (if (assoc ',name tp-layer-alist)
-                 (setf (cdr (assoc ',name tp-layer-alist)) ',properties)
-               (push (cons ',name ',properties) tp-layer-alist))
-             (assoc ',name tp-layer-alist)))
+  (let ((first-layer (car layers)))
+    (let ((is-single-layer
+           (and (= (length layers) 1)
+                first-layer
+                (listp first-layer)
+                ;; A plist has an even number of elements (key-value pairs)
+                (cl-evenp (length first-layer))
+                ;; The first element is a property name (symbol, not nil)
+                (symbolp (car first-layer)))))
+      (if is-single-layer
+          ;; Single layer: (tp-define-layer name '(plist...))
+          (let ((properties first-layer))
+            `(progn
+               (if (assoc ',name tp-layer-alist)
+                   (setf (cdr (assoc ',name tp-layer-alist)) ',properties)
+                 (push (cons ',name ',properties) tp-layer-alist))
+               (assoc ',name tp-layer-alist)))
       ;; Multiple layers: (tp-define-layer name 'layer1 '(plist1) '(plist2) ...)
       (let ((layer-names nil)
             (idx 0)
@@ -109,7 +112,7 @@ The first layer in the definition is the top layer."
            (if (assoc ',name tp-layer-groups)
                (setf (cdr (assoc ',name tp-layer-groups)) ',layer-names)
              (push (cons ',name ',layer-names) tp-layer-groups))
-           (assoc ',name tp-layer-groups))))))
+           (assoc ',name tp-layer-groups)))))))
 
 (defun tp-layer-props (layer-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.
