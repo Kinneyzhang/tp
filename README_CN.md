@@ -501,44 +501,6 @@
 
 ---
 
-### 属性化函数
-
-#### `tp-layer-propertize` - 将图层应用到对象
-
-```elisp
-(tp-layer-propertize OBJECT LAYER &optional START END)
-```
-
-将预定义图层的属性应用到对象。
-
-**示例：**
-
-```elisp
-;; 首先定义一个图层
-(tp-layer-define highlight '(face (:background "yellow")))
-
-;; 应用到字符串
-(tp-layer-propertize "Important" 'highlight)
-
-;; 应用到子字符串
-(tp-layer-propertize "Hello World" 'highlight 0 5)
-
-;; 应用到缓冲区区域
-(tp-layer-propertize (current-buffer) 'highlight 1 10)
-```
-
----
-
-#### `tp-group-propertize` - 应用图层组
-
-```elisp
-(tp-group-propertize OBJECT LAYER-GROUP &optional START END)
-```
-
-将图层组中的所有图层应用到对象。
-
----
-
 ### 搜索和导航函数
 
 #### `tp-forward` / `tp-backward`
@@ -1122,7 +1084,6 @@
 
 | 别名 | 原函数 |
 |------|--------|
-| `tp-put` | `tp-set` |
 | `tp-layer-properties` | `tp-layer-props` |
 | `tp-layer-group-properties` | `tp-group-props` |
 | `tp-layer-group-undefine` | `tp-group-undefine` |

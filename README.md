@@ -502,44 +502,6 @@ Add/merge properties on regexp matches with deep merge support.
 
 ---
 
-### Propertize Functions
-
-#### `tp-layer-propertize` - Apply Layer to Object
-
-```elisp
-(tp-layer-propertize OBJECT LAYER &optional START END)
-```
-
-Apply a predefined layer's properties to an object.
-
-**Examples:**
-
-```elisp
-;; Define a layer first
-(tp-layer-define highlight '(face (:background "yellow")))
-
-;; Apply to string
-(tp-layer-propertize "Important" 'highlight)
-
-;; Apply to substring
-(tp-layer-propertize "Hello World" 'highlight 0 5)
-
-;; Apply to buffer region
-(tp-layer-propertize (current-buffer) 'highlight 1 10)
-```
-
----
-
-#### `tp-group-propertize` - Apply Layer Group
-
-```elisp
-(tp-group-propertize OBJECT LAYER-GROUP &optional START END)
-```
-
-Apply all layers from a layer group to an object.
-
----
-
 ### Search & Navigation Functions
 
 #### `tp-forward` / `tp-backward`
@@ -1123,7 +1085,6 @@ For convenience, tp.el provides these aliases:
 
 | Alias | Original Function |
 |-------|-------------------|
-| `tp-put` | `tp-set` |
 | `tp-layer-properties` | `tp-layer-props` |
 | `tp-layer-group-properties` | `tp-group-props` |
 | `tp-layer-group-undefine` | `tp-group-undefine` |
