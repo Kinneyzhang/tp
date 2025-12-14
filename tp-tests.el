@@ -34,39 +34,39 @@
 ;;; ============================================================
 
 (ert-deftest tp-test-put-and-get ()
-  "Test tp-put and tp-get basic functionality."
+  "Test tp-set and tp-get basic functionality."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     ;; Set a single property
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (should (eq (tp-get 1 'face) 'bold))
     (should (eq (tp-get 3 'face) 'bold))
     (should (null (tp-get 7 'face)))
     ;; Set multiple properties
-    (tp-put 7 12 '(face italic help-echo "test"))
+    (tp-set 7 12 '(face italic help-echo "test"))
     (should (eq (tp-get 7 'face) 'italic))
     (should (equal (tp-get 7 'help-echo) "test"))))
 
 (ert-deftest tp-test-put-with-list ()
-  "Test tp-put accepts properties as a list."
+  "Test tp-set accepts properties as a list."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put 1 6 '(face bold help-echo "greeting"))
+    (tp-set 1 6 '(face bold help-echo "greeting"))
     (should (eq (tp-get 1 'face) 'bold))
     (should (equal (tp-get 1 'help-echo) "greeting"))))
 
 (ert-deftest tp-test-put-returns-region ()
-  "Test tp-put returns the modified region."
+  "Test tp-set returns the modified region."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (let ((result (tp-put 1 6 '(face bold))))
+    (let ((result (tp-set 1 6 '(face bold))))
       (should (equal result '(1 . 6))))))
 
 (ert-deftest tp-test-remove ()
   "Test tp-remove removes a specific property."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put 1 6 '(face bold help-echo "test"))
+    (tp-set 1 6 '(face bold help-echo "test"))
     (should (eq (tp-get 1 'face) 'bold))
     (tp-remove 1 6 'face)
     (should (null (tp-get 1 'face)))
@@ -76,7 +76,7 @@
   "Test tp-remove-list removes multiple properties."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put 1 6 '(face bold help-echo "test" mouse-face highlight))
+    (tp-set 1 6 '(face bold help-echo "test" mouse-face highlight))
     (tp-remove-list 1 6 '(face help-echo))
     (should (null (tp-get 1 'face)))
     (should (null (tp-get 1 'help-echo)))
@@ -86,8 +86,8 @@
   "Test tp-clear removes all properties."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
-    (tp-put 7 12 '(face italic))
+    (tp-set 1 6 '(face bold))
+    (tp-set 7 12 '(face italic))
     (tp-clear 1 12)
     (should (null (tp-get 1 'face)))
     (should (null (tp-get 7 'face)))))
@@ -96,7 +96,7 @@
   "Test tp-clear defaults to entire buffer."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 12 '(face bold))
+    (tp-set 1 12 '(face bold))
     (tp-clear)
     (should (null (tp-get 1 'face)))
     (should (null (tp-get 7 'face)))))
@@ -105,7 +105,7 @@
   "Test tp-at returns all properties at point."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put 1 6 '(face bold help-echo "test"))
+    (tp-set 1 6 '(face bold help-echo "test"))
     (let ((props (tp-at 1)))
       (should (eq (plist-get props 'face) 'bold))
       (should (equal (plist-get props 'help-echo) "test")))))
@@ -114,7 +114,7 @@
   "Test tp-at defaults to current point."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (goto-char 3)
     (should (eq (plist-get (tp-at) 'face) 'bold))))
 
@@ -123,8 +123,8 @@
   (tp-test-with-temp-buffer
     (insert "Hello World")
     ;; Put both properties on the same overlapping region for proper merging
-    (tp-put 1 12 '(face bold))
-    (tp-put 1 12 '(help-echo "test"))
+    (tp-set 1 12 '(face bold))
+    (tp-set 1 12 '(help-echo "test"))
     (let ((props (tp-plist 1 12)))
       (should (eq (plist-get props 'face) 'bold))
       (should (equal (plist-get props 'help-echo) "test")))))
@@ -142,8 +142,8 @@
   "Test tp-intervals returns property intervals."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
-    (tp-put 7 12 '(face italic))
+    (tp-set 1 6 '(face bold))
+    (tp-set 7 12 '(face italic))
     (let ((intervals (tp-intervals 1 12)))
       (should (>= (length intervals) 2)))))
 
@@ -474,28 +474,6 @@
     (should (eq (tp-layer-top 1 6) 'layer2))))
 
 ;;; ============================================================
-;;; Propertize String Tests
-;;; ============================================================
-
-(ert-deftest tp-test-propertize ()
-  "Test tp-propertize adds properties to string."
-  (let ((str (tp-propertize "Hello" 'face 'bold)))
-    (should (eq (get-text-property 0 'face str) 'bold))))
-
-(ert-deftest tp-test-propertize-with-list ()
-  "Test tp-propertize accepts properties as list."
-  (let ((str (tp-propertize "Hello" '(face bold help-echo "test"))))
-    (should (eq (get-text-property 0 'face str) 'bold))
-    (should (equal (get-text-property 0 'help-echo str) "test"))))
-
-(ert-deftest tp-test-propertize-with-region ()
-  "Test tp-propertize with object and region."
-  (let* ((str (copy-sequence "Hello World"))
-         (result (tp-propertize str 0 5 'face 'bold)))
-    (should (stringp result))
-    (should (eq (get-text-property 0 'face result) 'bold))))
-
-;;; ============================================================
 ;;; Match and Regexp Tests
 ;;; ============================================================
 
@@ -541,7 +519,7 @@
   "Test tp-forward finds next property."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 7 12 '(face bold))
+    (tp-set 7 12 '(face bold))
     (goto-char 1)
     ;; text-property-search-forward may not exist in all Emacs versions
     (skip-unless (fboundp 'text-property-search-forward))
@@ -553,7 +531,7 @@
   "Test tp-backward finds previous property."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (goto-char 12)
     ;; text-property-search-backward may not exist in all Emacs versions
     ;; Skip test if function is not available
@@ -566,7 +544,7 @@
   "Test tp-next returns next position with property."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 7 12 '(face bold))
+    (tp-set 7 12 '(face bold))
     (let ((pos (tp-next 1 'face)))
       (should (= pos 7)))))
 
@@ -574,7 +552,7 @@
   "Test tp-prev returns previous position with property."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (let ((pos (tp-prev 12 'face)))
       (should (= pos 1)))))
 
@@ -582,7 +560,7 @@
   "Test tp-goto-next moves point."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 7 12 '(face bold))
+    (tp-set 7 12 '(face bold))
     (goto-char 1)
     (tp-goto-next 'face)
     (should (= (point) 7))))
@@ -591,7 +569,7 @@
   "Test tp-goto-prev moves point."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (goto-char 12)
     (tp-goto-prev 'face)
     (should (= (point) 1))))
@@ -604,8 +582,8 @@
   "Test tp-in finds regions with property."
   (tp-test-with-temp-buffer
     (insert "Hello World Test")
-    (tp-put 1 6 '(my-prop value1))
-    (tp-put 7 12 '(my-prop value2))
+    (tp-set 1 6 '(my-prop value1))
+    (tp-set 7 12 '(my-prop value2))
     (let ((regions (tp-in 'my-prop)))
       (should (= (length regions) 2)))))
 
@@ -613,8 +591,8 @@
   "Test tp-in filters by value."
   (tp-test-with-temp-buffer
     (insert "Hello World Test")
-    (tp-put 1 6 '(my-prop value1))
-    (tp-put 7 12 '(my-prop value2))
+    (tp-set 1 6 '(my-prop value1))
+    (tp-set 7 12 '(my-prop value2))
     (let ((regions (tp-in 'my-prop 'value1)))
       (should (= (length regions) 1))
       (should (equal (car (car regions)) 1)))))
@@ -623,8 +601,8 @@
   "Test tp-all returns all regions with properties."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
-    (tp-put 7 12 '(face italic))
+    (tp-set 1 6 '(face bold))
+    (tp-set 7 12 '(face italic))
     (let ((regions (tp-all)))
       (should (>= (length regions) 2)))))
 
@@ -632,8 +610,8 @@
   "Test tp-regions-map applies function to regions."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
-    (tp-put 1 6 '(marker t))
-    (tp-put 13 18 '(marker t))
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 18 '(marker t))
     (let ((result nil))
       (tp-regions-map
        (lambda (start end idx)
@@ -645,8 +623,8 @@
   "Test tp-strings-map applies function to strings."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
-    (tp-put 1 6 '(marker t))
-    (tp-put 13 18 '(marker t))
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 18 '(marker t))
     (let ((result nil))
       (tp-strings-map
        (lambda (str idx)
@@ -688,8 +666,8 @@
   "Test overlapping property regions."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 8 '(prop1 val1))
-    (tp-put 5 12 '(prop2 val2))
+    (tp-set 1 8 '(prop1 val1))
+    (tp-set 5 12 '(prop2 val2))
     (should (eq (tp-get 1 'prop1) 'val1))
     (should (null (tp-get 1 'prop2)))
     (should (eq (tp-get 6 'prop1) 'val1))
@@ -701,7 +679,7 @@
   "Test operations on single character."
   (tp-test-with-temp-buffer
     (insert "H")
-    (tp-put 1 2 '(face bold))
+    (tp-set 1 2 '(face bold))
     (should (eq (tp-get 1 'face) 'bold))))
 
 (ert-deftest tp-test-layer-on-string ()
@@ -715,23 +693,23 @@
 ;;; ============================================================
 
 (ert-deftest tp-test-put-on-string ()
-  "Test tp-put works on string objects."
+  "Test tp-set works on string objects."
   (let ((str (copy-sequence "Hello World")))
-    (tp-put 0 5 '(face bold) str)
+    (tp-set 0 5 '(face bold) str)
     (should (eq (get-text-property 0 'face str) 'bold))
     (should (null (get-text-property 6 'face str)))))
 
 (ert-deftest tp-test-put-on-string-returns-string ()
-  "Test tp-put returns the modified string."
+  "Test tp-set returns the modified string."
   (let* ((str (copy-sequence "Hello"))
-         (result (tp-put 0 5 '(face bold) str)))
+         (result (tp-set 0 5 '(face bold) str)))
     (should (stringp result))
     (should (eq (get-text-property 0 'face result) 'bold))))
 
 (ert-deftest tp-test-put-entire-string ()
-  "Test tp-put applies to entire string with flat properties."
+  "Test tp-set applies to entire string with flat properties."
   (let* ((str (copy-sequence "Hello"))
-         (result (tp-put str 'face 'bold 'help-echo "test")))
+         (result (tp-set str 'face 'bold 'help-echo "test")))
     (should (stringp result))
     (should (eq (get-text-property 0 'face result) 'bold))
     (should (equal (get-text-property 0 'help-echo result) "test"))
@@ -763,7 +741,7 @@
   "Test tp-get with single position."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (should (eq (tp-get 1 'face) 'bold))
     (should (eq (tp-get 3 'face) 'bold))))
 
@@ -772,7 +750,7 @@
 Returns list of (START END VALUE) intervals."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold))
+    (tp-set 1 6 '(face bold))
     (should (equal (tp-get 1 6 'face) '((1 6 bold))))
     (should (null (tp-get 7 12 'face)))))
 
@@ -780,7 +758,7 @@ Returns list of (START END VALUE) intervals."
   "Test tp-get with range returns all property intervals."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-put 1 6 '(face bold help-echo "test"))
+    (tp-set 1 6 '(face bold help-echo "test"))
     (let ((intervals (tp-get 1 6)))
       (should (= (length intervals) 1))
       (let ((props (caddr (car intervals))))
@@ -791,7 +769,7 @@ Returns list of (START END VALUE) intervals."
   "Test tp-get with range on string object.
 Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello World")))
-    (tp-put 0 5 '(face bold) str)
+    (tp-set 0 5 '(face bold) str)
     (should (equal (tp-get 0 5 'face str) '((0 5 bold))))
     (should (null (tp-get 6 11 'face str)))))
 

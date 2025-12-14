@@ -231,9 +231,6 @@ Return the modified object (string) or region (START . END) for buffer."
         object
       (cons start finish))))
 
-(defalias 'tp-put 'tp-set
-  "Alias for `tp-set'.")
-
 (defun tp--parse-single-prop-args (start-or-string end-or-val val-or-object rest)
   "Parse arguments for single-property functions like tp-set-face.
 Returns (OBJECT START END VALUE)."
@@ -1508,58 +1505,6 @@ OBJECT defaults to current buffer."
 OBJECT defaults to current buffer."
   (when-let ((intervals (tp-intervals start end object)))
     (plist-get (nth 2 (car intervals)) 'tp-name)))
-
-;;; Propertize functions (deprecated - use tp-set instead)
-
-(defun tp-propertize (object-or-string &rest args)
-  "Apply text properties to OBJECT.
-
-This function is DEPRECATED. Use `tp-set' instead.
-
-This function supports multiple calling conventions:
-
-1. String only (create propertized string):
-   (tp-propertize STRING PROPERTY VALUE ...)
-   (tp-propertize STRING \\='(PROPERTY VALUE ...))
-
-2. With region (apply to object):
-   (tp-propertize OBJECT START END PROPERTY VALUE ...)
-   (tp-propertize OBJECT START END \\='(PROPERTY VALUE ...))
-
-When called with just a string and properties, returns a new
-propertized string.  When called with an object, start, and end,
-applies properties to the region and returns the object.
-
-PROPERTIES should be a plist of property-value pairs."
-  (declare (indent defun))
-  (cond
-   ;; Called with just string and properties (no start/end)
-   ;; Detect by checking if first arg is not a number (not a start position)
-   ((and (stringp object-or-string)
-         (or (null args)
-             (not (numberp (car args)))))
-    (let ((properties args))
-      (when (listp (car-safe properties))
-        (setq properties (car properties)))
-      (if properties
-          (apply #'propertize object-or-string properties)
-        (copy-sequence object-or-string))))
-   ;; Called with object, start, end, properties
-   ((and (or (stringp object-or-string) (bufferp object-or-string))
-         (>= (length args) 2)
-         (numberp (car args))
-         (numberp (cadr args)))
-    (let ((object object-or-string)
-          (start (car args))
-          (end (cadr args))
-          (properties (cddr args)))
-      (when (listp (car-safe properties))
-        (setq properties (car properties)))
-      (tp-set start end properties object)
-      object))  ; Always return the object
-   (t (error "Invalid arguments to tp-propertize"))))
-
-(make-obsolete 'tp-propertize 'tp-set "0.2.0")
 
 ;;; Search functions
 
