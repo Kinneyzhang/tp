@@ -543,27 +543,30 @@ OBJECT defaults to current buffer."
          ((or (bufferp (car rest-args)) (stringp (car rest-args)))
           (setq object (car rest-args)))))
       (if property
-          ;; Get specific property from range - return first non-nil value
+          ;; Get specific property from range - return list of (START END VALUE) for all intervals
           (let ((pos start)
-                (result nil))
-            (while (and (< pos end) (null result))
-              (let ((prop-value (get-text-property pos property object)))
-                (setq result (if sub-path
-                                 (tp--get-nested prop-value sub-path)
-                               prop-value)))
-              (setq pos (next-single-property-change pos property object end)))
-            result)
-        ;; Get all properties from range - merge into plist
-        (let ((props nil)
+                (intervals nil))
+            (while (< pos end)
+              (let* ((prop-value (get-text-property pos property object))
+                     (next-pos (or (next-single-property-change pos property object end) end))
+                     (value (if sub-path
+                                (tp--get-nested prop-value sub-path)
+                              prop-value)))
+                (when value
+                  (push (list pos next-pos value) intervals))
+                (setq pos next-pos)))
+            (nreverse intervals))
+        ;; Get all properties from range - return list of (START END PLIST) intervals
+        (let ((intervals nil)
               (pos start)
               (obj (or object (current-buffer))))
           (while (< pos end)
-            (let ((current-props (text-properties-at pos obj)))
-              (cl-loop for (key val) on current-props by #'cddr
-                       do (unless (plist-member props key)
-                            (setq props (plist-put props key val)))))
-            (setq pos (next-single-property-change pos nil obj end)))
-          props))))
+            (let* ((current-props (text-properties-at pos obj))
+                   (next-pos (or (next-property-change pos obj end) end)))
+              (when current-props
+                (push (list pos next-pos current-props) intervals))
+              (setq pos next-pos)))
+          (nreverse intervals)))))
    (t (error "Invalid arguments to tp-get"))))
 
 ;;; Fine-grained property manipulation for nested properties
@@ -1223,7 +1226,10 @@ Returns modified object or list of regions."
 
 (defun tp--parse-match-args (args)
   "Parse match/regexp function ARGS.
-Returns (OBJECT . PROPERTIES)."
+Returns (OBJECT . PROPERTIES).
+Handles two calling conventions:
+1. (OBJECT PROPERTY VALUE ...) or (OBJECT \\='(PROPERTY VALUE ...))
+2. (\\='(PROPERTY VALUE ...) OBJECT) or (PROPERTY VALUE ... OBJECT)"
   (let (object properties)
     (cond
      ;; First arg is a string - it's the object
@@ -1234,12 +1240,32 @@ Returns (OBJECT . PROPERTIES)."
      ((and args (bufferp (car args)))
       (setq object (car args)
             properties (cdr args)))
+     ;; First arg is a list (properties) and last arg might be object
+     ((and args (listp (car args)))
+      (let ((last-arg (car (last args))))
+        (if (or (stringp last-arg) (bufferp last-arg))
+            ;; Last arg is object: '(props) object
+            (setq object last-arg
+                  properties (car args))
+          ;; No object, just properties
+          (setq object nil
+                properties (car args)))))
+     ;; Check if last arg is an object (for flat property args)
+     ((and args (>= (length args) 2))
+      (let ((last-arg (car (last args))))
+        (if (or (stringp last-arg) (bufferp last-arg))
+            ;; Last arg is object: prop val ... object
+            (setq object last-arg
+                  properties (butlast args))
+          ;; No object, all are properties
+          (setq object nil
+                properties args))))
      ;; No object specified
      (t
       (setq object nil
             properties args)))
-    ;; Handle properties as a list
-    (when (listp (car-safe properties))
+    ;; Handle properties as a list (normalize)
+    (when (and (listp (car-safe properties)) (= (length properties) 1))
       (setq properties (car properties)))
     (cons object properties)))
 

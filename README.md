@@ -294,6 +294,8 @@ Set only the display property, preserving other properties.
 
 Get property value(s) from position or range, with support for nested sub-properties.
 
+For range queries, returns a list of `(START END VALUE)` intervals, allowing you to see all property values across the range.
+
 ```elisp
 ;; Single position
 (tp-get POSITION PROPERTY)
@@ -302,7 +304,7 @@ Get property value(s) from position or range, with support for nested sub-proper
 ;; Nested sub-property access
 (tp-get POSITION PROPERTY SUB-KEY ...)
 
-;; Range - specific property
+;; Range - specific property (returns list of intervals)
 (tp-get START END PROPERTY)
 (tp-get START END PROPERTY OBJECT)
 
@@ -310,7 +312,7 @@ Get property value(s) from position or range, with support for nested sub-proper
 (tp-get START END '(PROPERTY) OBJECT)
 (tp-get START END '(PROPERTY SUB-KEY ...) OBJECT)
 
-;; Range - all properties
+;; Range - all properties (returns list of intervals)
 (tp-get START END)
 (tp-get START END OBJECT)
 
@@ -334,18 +336,23 @@ Get property value(s) from position or range, with support for nested sub-proper
 ;; Get from string (0-indexed)
 (tp-get 0 'face my-string) ; => italic
 
-;; Get from range
-(tp-get 1 10 'face)        ; => bold
+;; Get from range - returns list of (START END VALUE) intervals
+(tp-get 1 10 'face)        ; => ((1 6 bold))
+
+;; Get with multiple intervals
+(tp-set 0 5 '(face bold) str)
+(tp-set 12 17 '(face italic) str)
+(tp-get 0 17 'face str)    ; => ((0 5 bold) (12 17 italic))
 
 ;; Get with property path as list
-(tp-get 5 20 '(face :underline :style) my-string)
+(tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
 
 ;; Get all properties from range
-(tp-get 1 10)              ; => (face bold help-echo "test")
+(tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
 
 ;; Get from entire string
-(tp-get "Hello World")              ; => all properties
-(tp-get "Hello World" 'face)        ; => face value
+(tp-get "Hello World")              ; => all properties at position 0
+(tp-get "Hello World" 'face)        ; => face value at position 0
 (tp-get "Hello World" 'face :foreground)  ; => foreground color
 ```
 

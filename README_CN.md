@@ -293,6 +293,8 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 从位置或范围获取属性值，支持嵌套子属性访问。
 
+对于范围查询，返回 `(START END VALUE)` 区间列表，让你可以查看范围内所有的属性值。
+
 ```elisp
 ;; 单个位置
 (tp-get POSITION PROPERTY)
@@ -301,7 +303,7 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 ;; 嵌套子属性访问
 (tp-get POSITION PROPERTY SUB-KEY ...)
 
-;; 范围 - 特定属性
+;; 范围 - 特定属性（返回区间列表）
 (tp-get START END PROPERTY)
 (tp-get START END PROPERTY OBJECT)
 
@@ -309,7 +311,7 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 (tp-get START END '(PROPERTY) OBJECT)
 (tp-get START END '(PROPERTY SUB-KEY ...) OBJECT)
 
-;; 范围 - 所有属性
+;; 范围 - 所有属性（返回区间列表）
 (tp-get START END)
 (tp-get START END OBJECT)
 
@@ -333,18 +335,23 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 ;; 从字符串获取（0 索引）
 (tp-get 0 'face my-string) ; => italic
 
-;; 从范围获取
-(tp-get 1 10 'face)        ; => bold
+;; 从范围获取 - 返回 (START END VALUE) 区间列表
+(tp-get 1 10 'face)        ; => ((1 6 bold))
+
+;; 获取多个区间
+(tp-set 0 5 '(face bold) str)
+(tp-set 12 17 '(face italic) str)
+(tp-get 0 17 'face str)    ; => ((0 5 bold) (12 17 italic))
 
 ;; 使用列表形式的属性路径
-(tp-get 5 20 '(face :underline :style) my-string)
+(tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
 
 ;; 获取范围内的所有属性
-(tp-get 1 10)              ; => (face bold help-echo "test")
+(tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
 
 ;; 从整个字符串获取
-(tp-get "Hello World")              ; => 所有属性
-(tp-get "Hello World" 'face)        ; => face 值
+(tp-get "Hello World")              ; => 位置 0 处的所有属性
+(tp-get "Hello World" 'face)        ; => 位置 0 处的 face 值
 (tp-get "Hello World" 'face :foreground)  ; => 前景色
 ```
 

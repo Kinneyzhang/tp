@@ -767,27 +767,31 @@
     (should (eq (tp-get 3 'face) 'bold))))
 
 (ert-deftest tp-test-get-range-property ()
-  "Test tp-get with range and specific property."
+  "Test tp-get with range and specific property.
+Returns list of (START END VALUE) intervals."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-put 1 6 '(face bold))
-    (should (eq (tp-get 1 6 'face) 'bold))
+    (should (equal (tp-get 1 6 'face) '((1 6 bold))))
     (should (null (tp-get 7 12 'face)))))
 
 (ert-deftest tp-test-get-range-all-properties ()
-  "Test tp-get with range returns all properties."
+  "Test tp-get with range returns all property intervals."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-put 1 6 '(face bold help-echo "test"))
-    (let ((props (tp-get 1 6)))
-      (should (eq (plist-get props 'face) 'bold))
-      (should (equal (plist-get props 'help-echo) "test")))))
+    (let ((intervals (tp-get 1 6)))
+      (should (= (length intervals) 1))
+      (let ((props (caddr (car intervals))))
+        (should (eq (plist-get props 'face) 'bold))
+        (should (equal (plist-get props 'help-echo) "test"))))))
 
 (ert-deftest tp-test-get-range-on-string ()
-  "Test tp-get with range on string object."
+  "Test tp-get with range on string object.
+Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello World")))
     (tp-put 0 5 '(face bold) str)
-    (should (eq (tp-get 0 5 'face str) 'bold))
+    (should (equal (tp-get 0 5 'face str) '((0 5 bold))))
     (should (null (tp-get 6 11 'face str)))))
 
 ;;; ============================================================
@@ -1048,6 +1052,34 @@
     (should (eq (get-text-property 4 'face str) 'bold))
     (should (equal (get-text-property 4 'help-echo str) "original"))))
 
+(ert-deftest tp-test-match-string-as-last-arg ()
+  "Test tp-match with string as last argument."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (let ((result (tp-match "Hello" '(face bold) str)))
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold))
+      (should (eq (get-text-property 12 'face result) 'bold))
+      (should (null (get-text-property 6 'face result))))))
+
+(ert-deftest tp-test-regexp-string-as-last-arg ()
+  "Test tp-regexp with string as last argument."
+  (let ((str (copy-sequence "abc 123 def 456")))
+    (let ((result (tp-regexp "[0-9]+" '(face italic) str)))
+      (should (stringp result))
+      (should (eq (get-text-property 4 'face result) 'italic))
+      (should (eq (get-text-property 12 'face result) 'italic))
+      (should (null (get-text-property 0 'face result))))))
+
+(ert-deftest tp-test-get-range-multiple-intervals ()
+  "Test tp-get returns all property intervals in a range."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(face bold) str)
+    (tp-set 12 17 '(face italic) str)
+    (let ((intervals (tp-get 0 17 'face str)))
+      (should (= (length intervals) 2))
+      (should (equal (car intervals) '(0 5 bold)))
+      (should (equal (cadr intervals) '(12 17 italic))))))
+
 ;;; ============================================================
 ;;; New API Tests - Issue 1: tp-add face prepending
 ;;; ============================================================
@@ -1153,23 +1185,25 @@
     (should (equal (tp-get str 'face :box :line-width) 2))))
 
 (ert-deftest tp-test-get-range-with-list-prop-path ()
-  "Test tp-get with property path as list."
+  "Test tp-get with property path as list.
+Returns list of (START END VALUE) intervals."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (put-text-property 1 6 'face '(:foreground "red" :underline (:style wave)) nil)
-    ;; Get with list path
-    (should (equal (tp-get 1 6 '(face)) '(:foreground "red" :underline (:style wave))))
-    (should (equal (tp-get 1 6 '(face :foreground)) "red"))
-    (should (eq (tp-get 1 6 '(face :underline :style)) 'wave))))
+    ;; Get with list path - returns intervals
+    (should (equal (tp-get 1 6 '(face)) '((1 6 (:foreground "red" :underline (:style wave))))))
+    (should (equal (tp-get 1 6 '(face :foreground)) '((1 6 "red"))))
+    (should (equal (tp-get 1 6 '(face :underline :style)) '((1 6 wave))))))
 
 (ert-deftest tp-test-get-range-with-list-prop-path-on-string ()
-  "Test tp-get with property path as list on string."
+  "Test tp-get with property path as list on string.
+Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello World")))
     (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave)) str)
-    ;; Get with list path and object
-    (should (equal (tp-get 0 5 '(face) str) '(:foreground "red" :underline (:style wave))))
-    (should (equal (tp-get 0 5 '(face :foreground) str) "red"))
-    (should (eq (tp-get 0 5 '(face :underline :style) str) 'wave))))
+    ;; Get with list path and object - returns intervals
+    (should (equal (tp-get 0 5 '(face) str) '((0 5 (:foreground "red" :underline (:style wave))))))
+    (should (equal (tp-get 0 5 '(face :foreground) str) '((0 5 "red"))))
+    (should (equal (tp-get 0 5 '(face :underline :style) str) '((0 5 wave))))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
