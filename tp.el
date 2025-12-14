@@ -199,6 +199,26 @@ Return the modified object (string) or region (START . END) for buffer."
 (defalias 'tp-put 'tp-set
   "Alias for `tp-set'.")
 
+(defun tp--parse-single-prop-args (start-or-string end-or-val val-or-object rest)
+  "Parse arguments for single-property functions like tp-set-face.
+Returns (OBJECT START END VALUE)."
+  (let (object start finish value)
+    (cond
+     ;; First arg is a string - apply to entire string
+     ((stringp start-or-string)
+      (setq object start-or-string
+            start 0
+            finish (length start-or-string)
+            value end-or-val))
+     ;; First arg is a number - region convention
+     ((numberp start-or-string)
+      (setq start start-or-string
+            finish end-or-val
+            value val-or-object
+            object (car rest)))
+     (t (error "Invalid first argument: %S" start-or-string)))
+    (list object start finish value)))
+
 (defun tp-set-face (start-or-string &optional end-or-face face-or-object &rest rest)
   "Set face property on string or buffer region.
 
@@ -218,21 +238,8 @@ This function supports four calling conventions:
 
 This replaces only the face property, preserving other properties.
 Return the modified object (string) or region (START . END) for buffer."
-  (let (object start finish face)
-    (cond
-     ;; First arg is a string - apply to entire string
-     ((stringp start-or-string)
-      (setq object start-or-string
-            start 0
-            finish (length start-or-string)
-            face end-or-face))
-     ;; First arg is a number - region convention
-     ((numberp start-or-string)
-      (setq start start-or-string
-            finish end-or-face
-            face face-or-object
-            object (car rest)))
-     (t (error "Invalid first argument: %S" start-or-string)))
+  (pcase-let ((`(,object ,start ,finish ,face)
+               (tp--parse-single-prop-args start-or-string end-or-face face-or-object rest)))
     (put-text-property start finish 'face face object)
     (if (stringp object)
         object
@@ -257,21 +264,8 @@ This function supports four calling conventions:
 
 This replaces only the display property, preserving other properties.
 Return the modified object (string) or region (START . END) for buffer."
-  (let (object start finish display)
-    (cond
-     ;; First arg is a string - apply to entire string
-     ((stringp start-or-string)
-      (setq object start-or-string
-            start 0
-            finish (length start-or-string)
-            display end-or-display))
-     ;; First arg is a number - region convention
-     ((numberp start-or-string)
-      (setq start start-or-string
-            finish end-or-display
-            display display-or-object
-            object (car rest)))
-     (t (error "Invalid first argument: %S" start-or-string)))
+  (pcase-let ((`(,object ,start ,finish ,display)
+               (tp--parse-single-prop-args start-or-string end-or-display display-or-object rest)))
     (put-text-property start finish 'display display object)
     (if (stringp object)
         object
@@ -1099,6 +1093,34 @@ Returns (OBJECT . PROPERTIES)."
       (setq properties (car properties)))
     (cons object properties)))
 
+(defun tp--parse-pattern-format (pattern object)
+  "Parse PATTERN for (PATTERN STRING) format.
+Returns (PARSED-PATTERN . OBJECT)."
+  (if (and (listp pattern) (stringp (car pattern)))
+      (cons (car pattern)
+            (if (stringp (cadr pattern))
+                (cadr pattern)
+              object))
+    (cons pattern object)))
+
+(defun tp--deep-merge-apply (start end props obj)
+  "Apply PROPS to OBJ from START to END with deep merge.
+Merges nested plists instead of replacing them."
+  (let ((pos start))
+    (while (< pos end)
+      (let* ((current-props (text-properties-at pos obj))
+             (next-pos (or (next-property-change pos obj end) end)))
+        (cl-loop for (key val) on props by #'cddr
+                 do (let* ((current-val (plist-get current-props key))
+                           (new-val
+                            (cond
+                             ((and (listp val) (keywordp (car-safe val))
+                                   (listp current-val) (keywordp (car-safe current-val)))
+                              (tp--deep-merge-plist current-val val))
+                             (t val))))
+                      (put-text-property pos next-pos key new-val obj)))
+        (setq pos next-pos)))))
+
 (defun tp-match (pattern &rest args)
   "Set properties on all occurrences of PATTERN.
 
@@ -1123,12 +1145,10 @@ Returns:
 - For buffers: list of (START . END) pairs for all matches."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
-         (properties (cdr parsed)))
-    ;; Handle (PATTERN STRING) format
-    (when (and (listp pattern) (stringp (car pattern)))
-      (when (stringp (cadr pattern))
-        (setq object (cadr pattern)))
-      (setq pattern (car pattern)))
+         (properties (cdr parsed))
+         (parsed-pattern (tp--parse-pattern-format pattern object)))
+    (setq pattern (car parsed-pattern)
+          object (cdr parsed-pattern))
     (tp--match-apply pattern properties #'tp-set object)))
 
 (defun tp-match-reset (pattern &rest args)
@@ -1137,11 +1157,10 @@ Same calling conventions as `tp-match'.
 Unlike `tp-match', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
-         (properties (cdr parsed)))
-    (when (and (listp pattern) (stringp (car pattern)))
-      (when (stringp (cadr pattern))
-        (setq object (cadr pattern)))
-      (setq pattern (car pattern)))
+         (properties (cdr parsed))
+         (parsed-pattern (tp--parse-pattern-format pattern object)))
+    (setq pattern (car parsed-pattern)
+          object (cdr parsed-pattern))
     (tp--match-apply pattern properties
                      (lambda (start end props obj)
                        (set-text-properties start end props obj))
@@ -1153,29 +1172,11 @@ Same calling conventions as `tp-match'.
 Unlike `tp-match', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
-         (properties (cdr parsed)))
-    (when (and (listp pattern) (stringp (car pattern)))
-      (when (stringp (cadr pattern))
-        (setq object (cadr pattern)))
-      (setq pattern (car pattern)))
-    (tp--match-apply pattern properties
-                     (lambda (start end props obj)
-                       ;; Deep merge for each position
-                       (let ((pos start))
-                         (while (< pos end)
-                           (let* ((current-props (text-properties-at pos obj))
-                                  (next-pos (or (next-property-change pos obj end) end)))
-                             (cl-loop for (key val) on props by #'cddr
-                                      do (let* ((current-val (plist-get current-props key))
-                                                (new-val
-                                                 (cond
-                                                  ((and (listp val) (keywordp (car-safe val))
-                                                        (listp current-val) (keywordp (car-safe current-val)))
-                                                   (tp--deep-merge-plist current-val val))
-                                                  (t val))))
-                                           (put-text-property pos next-pos key new-val obj)))
-                             (setq pos next-pos)))))
-                     object)))
+         (properties (cdr parsed))
+         (parsed-pattern (tp--parse-pattern-format pattern object)))
+    (setq pattern (car parsed-pattern)
+          object (cdr parsed-pattern))
+    (tp--match-apply pattern properties #'tp--deep-merge-apply object)))
 
 (defun tp-regexp (pattern &rest args)
   "Set properties on all matches of PATTERN (regexp).
@@ -1220,24 +1221,7 @@ Unlike `tp-regexp', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
          (properties (cdr parsed)))
-    (tp--regexp-apply pattern properties
-                      (lambda (start end props obj)
-                        ;; Deep merge for each position
-                        (let ((pos start))
-                          (while (< pos end)
-                            (let* ((current-props (text-properties-at pos obj))
-                                   (next-pos (or (next-property-change pos obj end) end)))
-                              (cl-loop for (key val) on props by #'cddr
-                                       do (let* ((current-val (plist-get current-props key))
-                                                 (new-val
-                                                  (cond
-                                                   ((and (listp val) (keywordp (car-safe val))
-                                                         (listp current-val) (keywordp (car-safe current-val)))
-                                                    (tp--deep-merge-plist current-val val))
-                                                   (t val))))
-                                            (put-text-property pos next-pos key new-val obj)))
-                              (setq pos next-pos)))))
-                      object)))
+    (tp--regexp-apply pattern properties #'tp--deep-merge-apply object)))
 
 ;;; Layer list and query functions
 

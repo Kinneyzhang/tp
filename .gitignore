@@ -1,0 +1,9 @@
+# Dependencies
+dash.el
+
+# Emacs compiled files
+*.elc
+
+# Backup files
+*~
+\#*\#
