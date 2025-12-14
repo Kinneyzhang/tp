@@ -398,13 +398,26 @@ Return the modified object (string) or region (START . END) for buffer."
 (defun tp--get-nested (value path)
   "Get nested value from VALUE following PATH.
 PATH is a list of keys/symbols to traverse nested structures.
-Supports plists, alists, and special display property formats."
+Supports plists, alists, and special display property formats.
+
+If an element in PATH is a list of keys, extract those keys from the
+current value and return a plist with those keys.
+Example: (tp--get-nested \\='(:a 1 :b 2 :c 3) \\='((:a :b))) => (:a 1 :b 2)"
   (if (null path)
       value
     (let* ((key (car path))
            (rest (cdr path))
            (next-value
             (cond
+             ;; Key is a list of keys - extract multiple keys from value
+             ((and (listp key) (not (null key)))
+              (when (and (listp value) (keywordp (car value)))
+                (let ((result nil))
+                  (dolist (k (reverse key))
+                    (let ((v (plist-get value k)))
+                      (when v
+                        (setq result (plist-put result k v)))))
+                  result)))
              ;; Value is a plist with keyword keys
              ((and (listp value) (keywordp (car value)))
               (plist-get value key))

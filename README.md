@@ -312,6 +312,12 @@ For range and entire string queries, returns a list of `(START END VALUE)` inter
 (tp-get START END '(PROPERTY) OBJECT)
 (tp-get START END '(PROPERTY SUB-KEY ...) OBJECT)
 
+;; Range with deeply nested property path
+(tp-get START END '(PROPERTY SUB-KEY SUB-SUB-KEY ...) OBJECT)
+
+;; Range extracting multiple keys from nested property
+(tp-get START END '(PROPERTY SUB-KEY (KEY1 KEY2 ...)) OBJECT)
+
 ;; Range - all properties (returns list of intervals)
 (tp-get START END)
 (tp-get START END OBJECT)
@@ -320,6 +326,7 @@ For range and entire string queries, returns a list of `(START END VALUE)` inter
 (tp-get STRING)
 (tp-get STRING PROPERTY)
 (tp-get STRING PROPERTY SUB-KEY ...)
+(tp-get STRING PROPERTY SUB-KEY '(KEY1 KEY2 ...))
 (tp-get STRING '(PROPERTY SUB-KEY ...))
 ```
 
@@ -347,6 +354,13 @@ For range and entire string queries, returns a list of `(START END VALUE)` inter
 
 ;; Get with property path as list
 (tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
+
+;; Get deeply nested property from entire string
+(tp-get str 'face :underline :color)  ; => ((0 5 "green") (6 11 "yellow"))
+
+;; Get multiple keys from nested property
+(tp-get str 'face :underline '(:color :style))
+;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
 ;; Get all properties from range
 (tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))

@@ -1239,5 +1239,38 @@ Returns list of (START END VALUE) intervals."
       (should (equal (car intervals) '(0 5 bold)))
       (should (equal (cadr intervals) '(12 17 italic))))))
 
+(ert-deftest tp-test-get-deeply-nested-property ()
+  "Test tp-get with deeply nested property path."
+  (let ((str (copy-sequence "Hello World")))
+    (put-text-property 0 5 'face '(:foreground "red" :underline (:color "green" :style wave)) str)
+    (put-text-property 6 11 'face '(:foreground "blue" :underline (:color "yellow" :style line)) str)
+    ;; Test deeply nested single key from entire string
+    (let ((intervals (tp-get str 'face :underline :color)))
+      (should (= (length intervals) 2))
+      (should (equal (caddr (car intervals)) "green"))
+      (should (equal (caddr (cadr intervals)) "yellow")))
+    ;; Test range with deeply nested key
+    (let ((intervals (tp-get 0 7 '(face :underline :color) str)))
+      (should (= (length intervals) 2))
+      (should (equal (caddr (car intervals)) "green")))))
+
+(ert-deftest tp-test-get-multiple-nested-keys ()
+  "Test tp-get with multiple keys from nested property."
+  (let ((str (copy-sequence "Hello World")))
+    (put-text-property 0 5 'face '(:foreground "red" :underline (:color "green" :style wave)) str)
+    (put-text-property 6 11 'face '(:foreground "blue" :underline (:color "yellow" :style line)) str)
+    ;; Test extracting multiple keys from entire string
+    (let ((intervals (tp-get str 'face :underline '(:color :style))))
+      (should (= (length intervals) 2))
+      (let ((val1 (caddr (car intervals)))
+            (val2 (caddr (cadr intervals))))
+        (should (equal (plist-get val1 :color) "green"))
+        (should (eq (plist-get val1 :style) 'wave))
+        (should (equal (plist-get val2 :color) "yellow"))
+        (should (eq (plist-get val2 :style) 'line))))
+    ;; Test range with multiple keys
+    (let ((intervals (tp-get 0 7 '(face :underline (:color :style)) str)))
+      (should (= (length intervals) 2)))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

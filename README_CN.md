@@ -311,6 +311,12 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 (tp-get START END '(PROPERTY) OBJECT)
 (tp-get START END '(PROPERTY SUB-KEY ...) OBJECT)
 
+;; 范围 - 深层嵌套属性路径
+(tp-get START END '(PROPERTY SUB-KEY SUB-SUB-KEY ...) OBJECT)
+
+;; 范围 - 从嵌套属性中提取多个键
+(tp-get START END '(PROPERTY SUB-KEY (KEY1 KEY2 ...)) OBJECT)
+
 ;; 范围 - 所有属性（返回区间列表）
 (tp-get START END)
 (tp-get START END OBJECT)
@@ -319,6 +325,7 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 (tp-get STRING)
 (tp-get STRING PROPERTY)
 (tp-get STRING PROPERTY SUB-KEY ...)
+(tp-get STRING PROPERTY SUB-KEY '(KEY1 KEY2 ...))
 (tp-get STRING '(PROPERTY SUB-KEY ...))
 ```
 
@@ -346,6 +353,13 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 ;; 使用列表形式的属性路径
 (tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
+
+;; 从整个字符串获取深层嵌套属性
+(tp-get str 'face :underline :color)  ; => ((0 5 "green") (6 11 "yellow"))
+
+;; 从嵌套属性中获取多个键
+(tp-get str 'face :underline '(:color :style))
+;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
 ;; 获取范围内的所有属性
 (tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
