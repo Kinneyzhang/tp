@@ -292,8 +292,16 @@ NEW values override BASE values."
 (defun tp--prepend-face (new-face existing-face)
   "Prepend NEW-FACE to EXISTING-FACE for the face property.
 Returns a face value where NEW-FACE takes precedence.
+
+Examples:
+  (tp--prepend-face \\='shadow \\='bold)  => (shadow bold)
+  (tp--prepend-face \\='shadow \\='(bold italic))  => (shadow bold italic)
+  (tp--prepend-face \\='(:foreground \"red\") \\='(:background \"blue\"))
+    => (:background \"blue\" :foreground \"red\")  ; merged plist
+
 If NEW-FACE is a plist (like (:foreground \"red\")), deeply merge it.
-If NEW-FACE is a symbol or list of faces, prepend it to create a face list."
+If NEW-FACE is a symbol or list of faces, prepend it to create a face list.
+Duplicate faces are not added."
   (cond
    ;; No existing face - just use new face
    ((null existing-face) new-face)
@@ -470,6 +478,9 @@ For strings, positions are 0-indexed.
 OBJECT defaults to current buffer."
   (cond
    ;; (tp-get STRING ...) - entire string
+   ;; Note: When getting properties from an entire string, we sample from
+   ;; position 0. This assumes the string has uniform properties across its
+   ;; length, which is the common case for strings created with tp-set.
    ((stringp pos-or-start-or-string)
     (let ((str pos-or-start-or-string))
       (if (null property-or-end)
@@ -723,9 +734,9 @@ Returns the modified string for string input, or nil for buffer operations."
        ;; (tp-remove str 'face 'help-echo ...) - multiple properties
        ((symbolp end-or-prop)
         (let ((props (cons end-or-prop (cons prop-or-sub rest))))
-          (dolist (prop props)
-            (when (symbolp prop)
-              (remove-text-properties start end (list prop nil) str)))))
+          ;; Filter to only include valid property symbols (not nil)
+          (dolist (prop (cl-remove-if-not #'symbolp props))
+            (remove-text-properties start end (list prop nil) str))))
        ;; (tp-remove str '(face :underline)) - nested property spec
        ((listp end-or-prop)
         (tp--remove-property start end end-or-prop str)))
