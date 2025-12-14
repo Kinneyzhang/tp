@@ -407,20 +407,34 @@ Example: (tp--get-nested \\='(:a 1 :b 2 :c 3) \\='((:a :b))) => (:a 1 :b 2)"
       value
     (let* ((key (car path))
            (rest (cdr path))
+           ;; Check if value is a plist-like structure
+           ;; A plist starts with keyword, or starts with symbol followed by keywords
+           ;; e.g., (:foreground "red") or (shadow :foreground "red")
+           (is-plist-like (and (listp value)
+                               (or (keywordp (car value))
+                                   (and (symbolp (car value))
+                                        (cdr value)
+                                        (keywordp (cadr value))))))
            (next-value
             (cond
              ;; Key is a list of keys - extract multiple keys from value
              ((and (listp key) (not (null key)))
-              (when (and (listp value) (keywordp (car value)))
-                (let ((result nil))
+              (when is-plist-like
+                (let ((result nil)
+                      (plist-part (if (keywordp (car value))
+                                      value
+                                    (cdr value))))
                   (dolist (k key)
-                    (let ((v (plist-get value k)))
+                    (let ((v (plist-get plist-part k)))
                       (when v
                         (setq result (plist-put result k v)))))
                   result)))
-             ;; Value is a plist with keyword keys
-             ((and (listp value) (keywordp (car value)))
-              (plist-get value key))
+             ;; Value is a plist or plist-like (symbol followed by plist)
+             (is-plist-like
+              (let ((plist-part (if (keywordp (car value))
+                                    value
+                                  (cdr value))))
+                (plist-get plist-part key)))
              ;; Value is an alist
              ((and (listp value) (consp (car value)))
               (cdr (assoc key value)))
