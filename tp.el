@@ -457,7 +457,7 @@ This function supports multiple calling conventions:
 5. Range, nested sub-property:
    (tp-get START END PROPERTY SUB-KEY ...)
 
-6. Range, all properties (returns plist):
+6. Range, all properties:
    (tp-get START END)
    (tp-get START END OBJECT)
 
@@ -473,25 +473,70 @@ This function supports multiple calling conventions:
    (tp-get str \\='face :underline)
    (tp-get str \\='face :underline :style)
 
+10. Entire string with property path as list:
+    (tp-get STRING \\='(PROPERTY SUB-KEY ...))
+    (tp-get str \\='(face :foreground))
+
+For range and entire string queries, returns a list of (START END VALUE)
+intervals, allowing you to see all property values across the range.
+
+For single position queries, returns the property value at that position.
+
 For buffers, positions are 1-indexed.
 For strings, positions are 0-indexed.
 OBJECT defaults to current buffer."
   (cond
    ;; (tp-get STRING ...) - entire string
-   ;; Note: When getting properties from an entire string, we sample from
-   ;; position 0. This assumes the string has uniform properties across its
-   ;; length, which is the common case for strings created with tp-set.
+   ;; Returns list of (START END VALUE) intervals for all property values
    ((stringp pos-or-start-or-string)
-    (let ((str pos-or-start-or-string))
-      (if (null property-or-end)
-          ;; (tp-get str) - return all properties
-          (text-properties-at 0 str)
-        ;; (tp-get str 'face ...) - get specific property with optional sub-path
-        (let* ((prop-value (get-text-property 0 property-or-end str))
-               (sub-path args))
-          (if sub-path
-              (tp--get-nested prop-value sub-path)
-            prop-value)))))
+    (let* ((str pos-or-start-or-string)
+           (len (length str))
+           (property nil)
+           (sub-path nil))
+      (cond
+       ;; (tp-get str) - return all property intervals
+       ((null property-or-end)
+        (let ((intervals nil)
+              (pos 0))
+          (while (< pos len)
+            (let* ((current-props (text-properties-at pos str))
+                   (next-pos (or (next-property-change pos str len) len)))
+              (when current-props
+                (push (list pos next-pos current-props) intervals))
+              (setq pos next-pos)))
+          (nreverse intervals)))
+       ;; (tp-get str '(face :foreground)) - property path as list
+       ((listp property-or-end)
+        (setq property (car property-or-end))
+        (setq sub-path (cdr property-or-end))
+        (let ((intervals nil)
+              (pos 0))
+          (while (< pos len)
+            (let* ((prop-value (get-text-property pos property str))
+                   (next-pos (or (next-single-property-change pos property str len) len))
+                   (value (if sub-path
+                              (tp--get-nested prop-value sub-path)
+                            prop-value)))
+              (when value
+                (push (list pos next-pos value) intervals))
+              (setq pos next-pos)))
+          (nreverse intervals)))
+       ;; (tp-get str 'face ...) - property as symbol with optional sub-path
+       ((symbolp property-or-end)
+        (setq property property-or-end)
+        (setq sub-path args)
+        (let ((intervals nil)
+              (pos 0))
+          (while (< pos len)
+            (let* ((prop-value (get-text-property pos property str))
+                   (next-pos (or (next-single-property-change pos property str len) len))
+                   (value (if sub-path
+                              (tp--get-nested prop-value sub-path)
+                            prop-value)))
+              (when value
+                (push (list pos next-pos value) intervals))
+              (setq pos next-pos)))
+          (nreverse intervals))))))
    ;; (tp-get POS PROP ...) or (tp-get POS PROP OBJECT) - single position with symbol property
    ((and (numberp pos-or-start-or-string)
          (symbolp property-or-end))

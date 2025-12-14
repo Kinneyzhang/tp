@@ -1164,25 +1164,37 @@ Returns list of (START END VALUE) intervals."
 ;;; ============================================================
 
 (ert-deftest tp-test-get-entire-string-all-props ()
-  "Test tp-get returns all properties from entire string."
+  "Test tp-get returns all property intervals from entire string."
   (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
-    (let ((props (tp-get str)))
-      (should (eq (plist-get props 'face) 'bold))
-      (should (equal (plist-get props 'help-echo) "test")))))
+    (let ((intervals (tp-get str)))
+      (should (= (length intervals) 1))
+      (let ((props (caddr (car intervals))))
+        (should (eq (plist-get props 'face) 'bold))
+        (should (equal (plist-get props 'help-echo) "test"))))))
 
 (ert-deftest tp-test-get-entire-string-single-prop ()
-  "Test tp-get returns single property from entire string."
+  "Test tp-get returns single property intervals from entire string."
   (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
-    (should (eq (tp-get str 'face) 'bold))
-    (should (equal (tp-get str 'help-echo) "test"))))
+    (let ((face-intervals (tp-get str 'face))
+          (help-intervals (tp-get str 'help-echo)))
+      (should (= (length face-intervals) 1))
+      (should (eq (caddr (car face-intervals)) 'bold))
+      (should (= (length help-intervals) 1))
+      (should (equal (caddr (car help-intervals)) "test")))))
 
 (ert-deftest tp-test-get-entire-string-nested-prop ()
-  "Test tp-get returns nested property from entire string."
+  "Test tp-get returns nested property intervals from entire string."
   (let ((str (copy-sequence "Hello")))
     (put-text-property 0 5 'face '(:foreground "red" :box (:color "blue" :line-width 2)) str)
-    (should (equal (tp-get str 'face :foreground) "red"))
-    (should (equal (tp-get str 'face :box :color) "blue"))
-    (should (equal (tp-get str 'face :box :line-width) 2))))
+    (let ((fg-intervals (tp-get str 'face :foreground))
+          (box-color-intervals (tp-get str 'face :box :color))
+          (box-width-intervals (tp-get str 'face :box :line-width)))
+      (should (= (length fg-intervals) 1))
+      (should (equal (caddr (car fg-intervals)) "red"))
+      (should (= (length box-color-intervals) 1))
+      (should (equal (caddr (car box-color-intervals)) "blue"))
+      (should (= (length box-width-intervals) 1))
+      (should (equal (caddr (car box-width-intervals)) 2)))))
 
 (ert-deftest tp-test-get-range-with-list-prop-path ()
   "Test tp-get with property path as list.
@@ -1204,6 +1216,28 @@ Returns list of (START END VALUE) intervals."
     (should (equal (tp-get 0 5 '(face) str) '((0 5 (:foreground "red" :underline (:style wave))))))
     (should (equal (tp-get 0 5 '(face :foreground) str) '((0 5 "red"))))
     (should (equal (tp-get 0 5 '(face :underline :style) str) '((0 5 wave))))))
+
+(ert-deftest tp-test-get-entire-string-with-list-prop-path ()
+  "Test tp-get with property path as list on entire string.
+Returns list of (START END VALUE) intervals."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (put-text-property 0 5 'face '(:foreground "red") str)
+    (put-text-property 12 17 'face '(:foreground "blue") str)
+    ;; Get with list path for entire string
+    (let ((intervals (tp-get str '(face :foreground))))
+      (should (= (length intervals) 2))
+      (should (equal (car intervals) '(0 5 "red")))
+      (should (equal (cadr intervals) '(12 17 "blue"))))))
+
+(ert-deftest tp-test-get-entire-string-multiple-intervals ()
+  "Test tp-get returns multiple intervals from entire string."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(face bold) str)
+    (tp-set 12 17 '(face italic) str)
+    (let ((intervals (tp-get str 'face)))
+      (should (= (length intervals) 2))
+      (should (equal (car intervals) '(0 5 bold)))
+      (should (equal (cadr intervals) '(12 17 italic))))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

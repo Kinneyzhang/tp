@@ -294,7 +294,7 @@ Set only the display property, preserving other properties.
 
 Get property value(s) from position or range, with support for nested sub-properties.
 
-For range queries, returns a list of `(START END VALUE)` intervals, allowing you to see all property values across the range.
+For range and entire string queries, returns a list of `(START END VALUE)` intervals, allowing you to see all property values across the range.
 
 ```elisp
 ;; Single position
@@ -316,10 +316,11 @@ For range queries, returns a list of `(START END VALUE)` intervals, allowing you
 (tp-get START END)
 (tp-get START END OBJECT)
 
-;; Entire string
+;; Entire string (returns list of intervals)
 (tp-get STRING)
 (tp-get STRING PROPERTY)
 (tp-get STRING PROPERTY SUB-KEY ...)
+(tp-get STRING '(PROPERTY SUB-KEY ...))
 ```
 
 **Examples:**
@@ -350,10 +351,11 @@ For range queries, returns a list of `(START END VALUE)` intervals, allowing you
 ;; Get all properties from range
 (tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
 
-;; Get from entire string
-(tp-get "Hello World")              ; => all properties at position 0
-(tp-get "Hello World" 'face)        ; => face value at position 0
-(tp-get "Hello World" 'face :foreground)  ; => foreground color
+;; Get from entire string - returns list of intervals
+(tp-get str)               ; => ((0 5 (face bold)) (12 17 (face italic)))
+(tp-get str 'face)         ; => ((0 5 bold) (12 17 italic))
+(tp-get str 'face :foreground)    ; => ((0 5 "red") (12 17 "blue"))
+(tp-get str '(face :foreground))  ; => ((0 5 "red") (12 17 "blue"))
 ```
 
 ---
