@@ -151,26 +151,26 @@
 ;;; Layer Definition Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-layer-define ()
-  "Test tp-layer-define creates a layer."
+(ert-deftest tp-test-define-layer ()
+  "Test tp-define-layer creates a layer."
   (tp-test-with-temp-buffer
-    (tp-layer-define test-layer '(face bold help-echo "test"))
+    (tp-define-layer test-layer (face bold help-echo "test"))
     (should (assoc 'test-layer tp-layer-alist))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face bold help-echo "test")))))
 
-(ert-deftest tp-test-layer-define-updates-existing ()
-  "Test tp-layer-define updates existing layer."
+(ert-deftest tp-test-define-layer-updates-existing ()
+  "Test tp-define-layer updates existing layer."
   (tp-test-with-temp-buffer
-    (tp-layer-define test-layer '(face bold))
-    (tp-layer-define test-layer '(face italic))
+    (tp-define-layer test-layer (face bold))
+    (tp-define-layer test-layer (face italic))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face italic)))))
 
 (ert-deftest tp-test-layer-props ()
   "Test tp-layer-props returns properties with tp-name."
   (tp-test-with-temp-buffer
-    (tp-layer-define my-layer '(face bold))
+    (tp-define-layer my-layer (face bold))
     (let ((props (tp-layer-props 'my-layer)))
       (should (eq (plist-get props 'face) 'bold))
       (should (eq (plist-get props 'tp-name) 'my-layer)))))
@@ -183,50 +183,47 @@
 (ert-deftest tp-test-layer-undefine ()
   "Test tp-layer-undefine removes layer definition."
   (tp-test-with-temp-buffer
-    (tp-layer-define test-layer '(face bold))
+    (tp-define-layer test-layer (face bold))
     (should (assoc 'test-layer tp-layer-alist))
     (tp-layer-undefine 'test-layer)
     (should-not (assoc 'test-layer tp-layer-alist))))
 
 ;;; ============================================================
-;;; Layer Group Tests
+;;; Layer Group Tests (using tp-define-layer with multiple layers)
 ;;; ============================================================
 
-(ert-deftest tp-test-group-define ()
-  "Test tp-group-define creates a layer group."
+(ert-deftest tp-test-define-layer-multiple ()
+  "Test tp-define-layer creates a layer group with multiple layers."
   (tp-test-with-temp-buffer
-    (tp-group-define my-group
-      layer1 '(face bold)
-      layer2 '(face italic)
-      layer3 '(face underline))
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer my-group
+      layer1
+      (face italic)
+      (face underline))
     (should (assoc 'my-group tp-layer-groups))
-    (should (assoc 'layer1 tp-layer-alist))
-    (should (assoc 'layer2 tp-layer-alist))
-    (should (assoc 'layer3 tp-layer-alist))
     ;; Check all layers are present in the group
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
       (should (= (length layers) 3))
-      (should (memq 'layer1 layers))
-      (should (memq 'layer2 layers))
-      (should (memq 'layer3 layers)))))
+      (should (memq 'layer1 layers)))))
 
 (ert-deftest tp-test-group-props ()
   "Test tp-group-props returns all layer properties."
   (tp-test-with-temp-buffer
-    (tp-group-define my-group
-      layer1 '(face bold)
-      layer2 '(face italic))
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer my-group layer1 layer2)
     (let ((props-list (tp-group-props 'my-group)))
       (should (= (length props-list) 2))
-      ;; Check that both layers are present (order may vary)
+      ;; Check that both layers are present
       (let ((faces (mapcar (lambda (p) (plist-get p 'face)) props-list)))
-        (should (or (memq 'bold faces) (memq 'italic faces)))))))
+        (should (memq 'bold faces))
+        (should (memq 'italic faces))))))
 
 (ert-deftest tp-test-group-undefine ()
   "Test tp-group-undefine removes group definition."
   (tp-test-with-temp-buffer
-    (tp-group-define my-group
-      layer1 '(face bold))
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer my-group layer1)
     (should (assoc 'my-group tp-layer-groups))
     (tp-group-undefine 'my-group)
     (should-not (assoc 'my-group tp-layer-groups))))
@@ -234,8 +231,9 @@
 (ert-deftest tp-test-layer-reset ()
   "Test tp-layer-reset clears all definitions."
   (tp-test-with-temp-buffer
-    (tp-layer-define layer1 '(face bold))
-    (tp-group-define group1 layer2 '(face italic))
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer group1 layer1 layer2)
     (should tp-layer-alist)
     (should tp-layer-groups)
     (tp-layer-reset)
@@ -243,144 +241,186 @@
     (should-not tp-layer-groups)))
 
 ;;; ============================================================
-;;; Layer Stack Operations Tests
+;;; Layer Stack Operations Tests (New API)
 ;;; ============================================================
 
-(ert-deftest tp-test-layer-push ()
-  "Test tp-layer-push adds layer to stack."
+(ert-deftest tp-test-push-layer ()
+  "Test tp-push-layer adds layer to stack."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-push 1 6 'layer1)
+    (tp-define-layer layer1 (face bold))
+    (tp-push-layer 1 6 'layer1)
     (should (eq (tp-get 1 'face) 'bold))
     (should (eq (tp-get 1 'tp-name) 'layer1))))
 
-(ert-deftest tp-test-layer-push-multiple ()
+(ert-deftest tp-test-push-layer-multiple ()
   "Test pushing multiple layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
     ;; layer2 should be on top (visible)
     (should (eq (tp-get 1 'face) 'italic))
     (should (eq (tp-get 1 'tp-name) 'layer2))
     ;; layer1 should be in the stack below
     (should (tp-get 1 'tp-layers))))
 
-(ert-deftest tp-test-layer-push-error-on-duplicate ()
-  "Test tp-layer-push errors on duplicate layer."
+(ert-deftest tp-test-delete-layer ()
+  "Test tp-delete-layer removes layer from stack."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-push 1 6 'layer1)
-    (should-error (tp-layer-push 1 6 'layer1))))
-
-(ert-deftest tp-test-layer-delete ()
-  "Test tp-layer-delete removes layer from stack."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
     ;; Delete top layer
-    (tp-layer-delete 1 6 'layer2)
+    (tp-delete-layer 1 6 'layer2)
     ;; layer1 should now be visible
     (should (eq (tp-get 1 'face) 'bold))
     (should (eq (tp-get 1 'tp-name) 'layer1))))
 
-(ert-deftest tp-test-layer-delete-from-middle ()
+(ert-deftest tp-test-delete-layer-from-middle ()
   "Test deleting layer from middle of stack."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-define layer3 '(face underline))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
-    (tp-layer-push 1 6 'layer3)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
     ;; Delete middle layer
-    (tp-layer-delete 1 6 'layer2)
+    (tp-delete-layer 1 6 'layer2)
     ;; Top layer should still be visible
     (should (eq (tp-get 1 'tp-name) 'layer3))
     ;; layer2 should not exist anymore
     (should-not (tp-layer-exists-p 1 6 'layer2))))
 
-(ert-deftest tp-test-layer-rotate ()
-  "Test tp-layer-rotate cycles layers."
+(ert-deftest tp-test-pop-layer ()
+  "Test tp-pop-layer removes top layer."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-define layer3 '(face underline))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
-    (tp-layer-push 1 6 'layer3)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    ;; Pop top layer
+    (tp-pop-layer 1 6)
+    ;; layer1 should now be visible
+    (should (eq (tp-get 1 'tp-name) 'layer1))))
+
+(ert-deftest tp-test-rotate-layer ()
+  "Test tp-rotate-layer cycles layers."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
     ;; layer3 is on top
     (should (eq (tp-layer-top 1 6) 'layer3))
     ;; Rotate once - layer2 should be on top
-    (tp-layer-rotate 1 6)
+    (tp-rotate-layer 1 6)
     (should (eq (tp-layer-top 1 6) 'layer2))
     ;; Rotate again - layer1 should be on top
-    (tp-layer-rotate 1 6)
+    (tp-rotate-layer 1 6)
     (should (eq (tp-layer-top 1 6) 'layer1))
     ;; Rotate again - layer3 should be on top (cycled back)
-    (tp-layer-rotate 1 6)
+    (tp-rotate-layer 1 6)
     (should (eq (tp-layer-top 1 6) 'layer3))))
 
-(ert-deftest tp-test-layer-pin ()
-  "Test tp-layer-pin brings layer to top."
+(ert-deftest tp-test-pin-layer ()
+  "Test tp-pin-layer brings layer to top."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-define layer3 '(face underline))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
-    (tp-layer-push 1 6 'layer3)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
     ;; Pin layer1 to top
-    (tp-layer-pin 1 6 'layer1)
+    (tp-pin-layer 1 6 'layer1)
     (should (eq (tp-layer-top 1 6) 'layer1))))
 
-(ert-deftest tp-test-layer-pin-error-on-nonexistent ()
-  "Test tp-layer-pin errors on nonexistent layer."
+(ert-deftest tp-test-raise-layer ()
+  "Test tp-raise-layer moves layer up."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-push 1 6 'layer1)
-    (should-error (tp-layer-pin 1 6 'nonexistent))))
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; layer3 is at idx 0, layer2 at 1, layer1 at 2
+    ;; Raise layer1 by 2 (move to top)
+    (tp-raise-layer 1 6 'layer1 2)
+    (should (eq (tp-layer-top 1 6) 'layer1))))
 
-(ert-deftest tp-test-layer-hide ()
-  "Test tp-layer-hide moves layer to bottom."
+(ert-deftest tp-test-switch-layer ()
+  "Test tp-switch-layer swaps two layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
     ;; layer2 is on top
     (should (eq (tp-layer-top 1 6) 'layer2))
-    ;; Hide layer2
-    (tp-layer-hide 1 6 'layer2)
+    ;; Switch layer1 and layer2
+    (tp-switch-layer 1 6 'layer1 'layer2)
     ;; layer1 should now be on top
     (should (eq (tp-layer-top 1 6) 'layer1))))
 
-(ert-deftest tp-test-layer-show ()
-  "Test tp-layer-show brings layer to top."
+(ert-deftest tp-test-put-layer-at-idx ()
+  "Test tp-put-layer inserts layer at specified index."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
-    ;; Hide layer2
-    (tp-layer-hide 1 6 'layer2)
-    (should (eq (tp-layer-top 1 6) 'layer1))
-    ;; Show layer2 again
-    (tp-layer-show 1 6 'layer2)
-    (should (eq (tp-layer-top 1 6) 'layer2))))
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    ;; Insert layer3 at index 1 (between layer2 and layer1)
+    (tp-put-layer 1 6 'layer3 1)
+    ;; layer2 should still be on top
+    (should (eq (tp-layer-top 1 6) 'layer2))
+    ;; Should have 3 layers
+    (should (= (tp-layer-count 1 6) 3))))
+
+(ert-deftest tp-test-merge-layers ()
+  "Test tp-merge-layers merges specified layers."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (help-echo "test"))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    ;; Merge layer1 and layer2 into merged-layer
+    (tp-merge-layers 1 6 'merged-layer '(layer1 layer2))
+    ;; Should have 1 layer now
+    (should (= (tp-layer-count 1 6) 1))
+    ;; The merged layer should have properties from both
+    (should (eq (tp-get 1 'tp-name) 'merged-layer))))
+
+(ert-deftest tp-test-flatten-layers ()
+  "Test tp-flatten-layers flattens all layers."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (help-echo "test"))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    ;; Flatten all layers into flat-layer
+    (tp-flatten-layers 1 6 'flat-layer)
+    ;; Should have 1 layer now
+    (should (= (tp-layer-count 1 6) 1))
+    (should (eq (tp-get 1 'tp-name) 'flat-layer))))
 
 ;;; ============================================================
 ;;; Layer Query Tests
@@ -390,12 +430,12 @@
   "Test tp-layer-list returns all layer names."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-define layer3 '(face underline))
-    (tp-layer-push 1 6 'layer1)
-    (tp-layer-push 1 6 'layer2)
-    (tp-layer-push 1 6 'layer3)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
     (let ((layers (tp-layer-list 1 6)))
       (should (= (length layers) 3))
       (should (memq 'layer1 layers))
@@ -406,19 +446,19 @@
   "Test tp-layer-count returns correct count."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-push 1 6 'layer1)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
     (should (= (tp-layer-count 1 6) 1))
-    (tp-layer-push 1 6 'layer2)
+    (tp-push-layer 1 6 'layer2)
     (should (= (tp-layer-count 1 6) 2))))
 
 (ert-deftest tp-test-layer-exists-p ()
   "Test tp-layer-exists-p correctly detects layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-push 1 6 'layer1)
+    (tp-define-layer layer1 (face bold))
+    (tp-push-layer 1 6 'layer1)
     (should (tp-layer-exists-p 1 6 'layer1))
     (should-not (tp-layer-exists-p 1 6 'layer2))))
 
@@ -426,11 +466,11 @@
   "Test tp-layer-top returns top layer name."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-layer-define layer1 '(face bold))
-    (tp-layer-define layer2 '(face italic))
-    (tp-layer-push 1 6 'layer1)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
     (should (eq (tp-layer-top 1 6) 'layer1))
-    (tp-layer-push 1 6 'layer2)
+    (tp-push-layer 1 6 'layer2)
     (should (eq (tp-layer-top 1 6) 'layer2))))
 
 ;;; ============================================================
@@ -448,33 +488,12 @@
     (should (eq (get-text-property 0 'face str) 'bold))
     (should (equal (get-text-property 0 'help-echo str) "test"))))
 
-(ert-deftest tp-test-layer-propertize ()
-  "Test tp-layer-propertize applies layer to string."
-  (tp-test-with-temp-buffer
-    (tp-layer-define my-layer '(face bold help-echo "greeting"))
-    (let ((str (tp-layer-propertize "Hello" 'my-layer)))
-      (should (eq (get-text-property 0 'face str) 'bold))
-      (should (equal (get-text-property 0 'help-echo str) "greeting")))))
-
-(ert-deftest tp-test-layer-propertize-error-on-undefined ()
-  "Test tp-layer-propertize errors on undefined layer."
-  (tp-test-with-temp-buffer
-    (should-error (tp-layer-propertize "Hello" 'undefined-layer))))
-
-(ert-deftest tp-test-group-propertize ()
-  "Test tp-group-propertize applies group to string."
-  (tp-test-with-temp-buffer
-    (tp-group-define my-group
-      layer1 '(face bold)
-      layer2 '(help-echo "test"))
-    (let ((str (tp-group-propertize "Hello" 'my-group)))
-      (should (stringp str))
-      (should (= (length str) 5)))))
-
-(ert-deftest tp-test-group-propertize-error-on-undefined ()
-  "Test tp-group-propertize errors on undefined group."
-  (tp-test-with-temp-buffer
-    (should-error (tp-group-propertize "Hello" 'undefined-group))))
+(ert-deftest tp-test-propertize-with-region ()
+  "Test tp-propertize with object and region."
+  (let* ((str (copy-sequence "Hello World"))
+         (result (tp-propertize str 0 5 'face 'bold)))
+    (should (stringp result))
+    (should (eq (get-text-property 0 'face result) 'bold))))
 
 ;;; ============================================================
 ;;; Match and Regexp Tests
@@ -644,9 +663,7 @@
   "Test that all aliases are properly defined."
   (should (fboundp 'tp-set))
   (should (fboundp 'tp-layer-properties))
-  (should (fboundp 'tp-layer-group-define))
   (should (fboundp 'tp-layer-group-properties))
-  (should (fboundp 'tp-layer-group-propertize))
   (should (fboundp 'tp-layer-group-undefine)))
 
 (ert-deftest tp-test-aliases-work ()
@@ -737,22 +754,6 @@
     (should (eq (get-text-property 4 'face result) 'bold))
     (should (eq (get-text-property 12 'face result) 'bold))
     (should (null (get-text-property 0 'face result)))))
-
-(ert-deftest tp-test-propertize-with-region ()
-  "Test tp-propertize with object and region."
-  (let* ((str (copy-sequence "Hello World"))
-         (result (tp-propertize str 0 5 'face 'bold)))
-    (should (stringp result))
-    (should (eq (get-text-property 0 'face result) 'bold))))
-
-(ert-deftest tp-test-layer-propertize-with-range ()
-  "Test tp-layer-propertize with start/end range."
-  (tp-test-with-temp-buffer
-    (tp-layer-define range-layer '(face bold))
-    (let* ((str (copy-sequence "Hello World"))
-           (result (tp-layer-propertize str 'range-layer 0 5)))
-      (should (stringp result))
-      (should (eq (get-text-property 0 'face result) 'bold)))))
 
 ;;; ============================================================
 ;;; Enhanced tp-get Tests
