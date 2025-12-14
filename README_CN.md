@@ -22,11 +22,13 @@
 
 ## 功能特性
 
-- ✅ **统一对象支持**：`tp-put`、`tp-match`、`tp-regexp` 等函数同时支持字符串和缓冲区
+- ✅ **统一对象支持**：`tp-set`、`tp-match`、`tp-regexp` 等函数同时支持字符串和缓冲区
+- ✅ **清晰语义**：`tp-reset`（替换全部）、`tp-set`（替换指定）、`tp-add`（深度合并）
+- ✅ **嵌套属性访问**：使用路径语法获取/设置/移除嵌套子属性
 - ✅ **创新图层系统**：堆叠、轮换和管理多层属性
 - ✅ **图层组**：定义可复用的相关图层集合
 - ✅ **搜索和导航**：查找并导航带属性的文本
-- ✅ **模式匹配**：将属性应用到字符串/正则匹配
+- ✅ **模式匹配**：将属性应用到字符串/正则匹配，支持 reset/add 变体
 - ✅ **简洁 API**：一致的命名和调用约定
 
 ## 系统要求
@@ -55,20 +57,46 @@
 
 ### 设置属性
 
+tp.el 提供三个主要的属性设置函数，每个有不同的语义：
+
+```elisp
+;; tp-set: 只替换指定的属性，保留其他属性
+(tp-set 1 10 '(face bold help-echo "Hello!"))
+
+;; tp-reset: 完全替换所有属性
+(tp-reset 1 10 '(face bold))  ; 其他任何属性都会被移除
+
+;; tp-add: 深度合并嵌套属性
+(tp-add 1 10 '(face (:underline t)))  ; 与现有 face 合并
+```
+
+这三个函数都支持四种调用约定：
+
 ```elisp
 ;; 在当前缓冲区（属性作为列表）
-(tp-put 1 10 '(face bold help-echo "Hello!"))
+(tp-set 1 10 '(face bold help-echo "Hello!"))
 
 ;; 在特定缓冲区
-(tp-put 1 10 '(face bold) some-buffer)
+(tp-set 1 10 '(face bold) some-buffer)
 
 ;; 在字符串上（0 索引）
-(tp-put 0 5 '(face bold) "Hello World")
+(tp-set 0 5 '(face bold) "Hello World")
 ;; => #("Hello World" 0 5 (face bold))
 
 ;; 在整个字符串上（平铺属性）
-(tp-put "Hello World" 'face 'bold 'help-echo "test")
+(tp-set "Hello World" 'face 'bold 'help-echo "test")
 ;; => #("Hello World" 0 11 (face bold help-echo "test"))
+```
+
+### 单属性设置器
+
+```elisp
+;; 只设置 face 属性
+(tp-set-face 1 10 'bold)
+(tp-set-face "Hello" 'italic)  ; 整个字符串
+
+;; 只设置 display 属性
+(tp-set-display 1 10 '(space :width 10))
 ```
 
 ### 获取属性
@@ -76,6 +104,10 @@
 ```elisp
 ;; 获取特定位置的属性
 (tp-get 5 'face)  ; => bold
+
+;; 获取嵌套子属性
+(tp-get 5 'face :foreground)  ; => "red"
+(tp-get 5 'face :box :color)  ; => "blue"（深度嵌套）
 
 ;; 获取范围内的特定属性
 (tp-get 1 10 'face)  ; => bold
@@ -87,31 +119,44 @@
 (tp-at 5)  ; => (face bold help-echo "Hello!")
 ```
 
-### 细粒度属性操作
+### 移除属性
 
 ```elisp
-;; 获取 face 的子属性
-(tp-get-sub 1 'face :foreground)  ; => "red"
+;; 移除整个属性
+(tp-remove 1 10 'face)
 
-;; 设置 face 的子属性
-(tp-put-sub 1 6 'face :foreground "blue")
+;; 移除子属性
+(tp-remove 1 10 '(face :underline))
 
-;; 移除 face 的子属性
-(tp-remove-sub 1 6 'face :foreground)
+;; 移除嵌套子属性（保留其他）
+(tp-remove 1 10 '(face :underline (:style :position)))
+;; 从 :underline 中移除 :style 和 :position，如果存在 :color 则保留
 ```
 
 ### 模式匹配
 
 ```elisp
 ;; 将属性应用到缓冲区中所有 "TODO" 出现的位置
-(tp-match "TODO" 'face 'warning)
+(tp-match "TODO" '(face warning))
 
 ;; 应用到字符串
-(tp-match "world" "Hello world world" 'face 'bold)
+(tp-match "world" "Hello world world" '(face bold))
 ;; => #("Hello world world" 6 11 (face bold) 12 17 (face bold))
 
+;; 使用 (PATTERN STRING) 格式匹配
+(tp-match '("world" "Hello world") '(face bold))
+;; => #("Hello world" 6 11 (face bold))
+
 ;; 使用正则表达式
-(tp-regexp "\\b[0-9]+\\b" 'face 'font-lock-number-face)
+(tp-regexp "\\b[0-9]+\\b" '(face font-lock-number-face))
+
+;; reset 变体（替换匹配处的所有属性）
+(tp-match-reset "TODO" '(face warning))
+(tp-regexp-reset "[0-9]+" '(face bold))
+
+;; add 变体（深度合并匹配处的属性）
+(tp-match-add "TODO" '(face (:underline t)))
+(tp-regexp-add "[0-9]+" '(face (:weight bold)))
 ```
 
 ---
@@ -120,52 +165,136 @@
 
 ### 核心属性函数
 
-#### `tp-put` - 设置文本属性
+#### `tp-set` - 设置文本属性
 
-在字符串或缓冲区区域上设置文本属性。
+在字符串或缓冲区区域上设置文本属性。只替换指定的属性，保留其他属性。
 
 ```elisp
 ;; 当前缓冲区（属性作为列表）
-(tp-put START END '(PROPERTY VALUE ...))
+(tp-set START END '(PROPERTY VALUE ...))
 
 ;; 特定缓冲区或字符串
-(tp-put START END '(PROPERTY VALUE ...) OBJECT)
+(tp-set START END '(PROPERTY VALUE ...) OBJECT)
 
 ;; 整个字符串（平铺属性）
-(tp-put STRING PROPERTY VALUE ...)
+(tp-set STRING PROPERTY VALUE ...)
 ```
 
 **示例：**
 
 ```elisp
 ;; 在缓冲区区域设置 face
-(tp-put 1 10 '(face bold))  ; => (1 . 10)
+(tp-set 1 10 '(face bold))  ; => (1 . 10)
 
 ;; 设置多个属性
-(tp-put 1 10 '(face bold help-echo "Click me"))
+(tp-set 1 10 '(face bold help-echo "Click me"))
 
 ;; 在特定缓冲区设置
-(tp-put 1 10 '(face italic) my-buffer)
+(tp-set 1 10 '(face italic) my-buffer)
 
 ;; 在字符串上设置属性（0 索引）
-(setq my-string (tp-put 0 5 '(face italic) "Hello World"))
+(setq my-string (tp-set 0 5 '(face italic) "Hello World"))
 ;; => #("Hello World" 0 5 (face italic))
 
 ;; 在整个字符串上设置属性
-(tp-put "Hello" 'face 'bold 'mouse-face 'highlight)
+(tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
+```
+
+---
+
+#### `tp-reset` - 替换所有属性
+
+用指定的属性完全替换所有文本属性。
+
+```elisp
+(tp-reset START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-reset STRING PROPERTY VALUE ...)
+```
+
+**示例：**
+
+```elisp
+;; 替换区域中的所有属性
+(tp-reset 1 10 '(face bold))  ; 任何现有属性都会被移除
+
+;; 在字符串上
+(tp-reset "Hello" 'face 'italic)
+```
+
+---
+
+#### `tp-add` - 添加/合并属性
+
+添加或更新属性，支持嵌套属性列表的深度合并。
+
+```elisp
+(tp-add START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-add STRING PROPERTY VALUE ...)
+```
+
+**示例：**
+
+```elisp
+;; 添加属性（保留现有，合并嵌套）
+(tp-add 1 10 '(help-echo "tooltip"))
+
+;; 深度合并 face 属性
+(tp-set 1 10 '(face (:foreground "red")))
+(tp-add 1 10 '(face (:background "blue")))
+;; 结果: face 是 (:foreground "red" :background "blue")
+```
+
+---
+
+#### `tp-set-face` - 设置 Face 属性
+
+只设置 face 属性，保留其他属性。
+
+```elisp
+(tp-set-face START END FACE &optional OBJECT)
+(tp-set-face STRING FACE)
+```
+
+**示例：**
+
+```elisp
+(tp-set-face 1 10 'bold)
+(tp-set-face 1 10 '(:foreground "red" :weight bold))
+(tp-set-face "Hello" 'italic)
+```
+
+---
+
+#### `tp-set-display` - 设置 Display 属性
+
+只设置 display 属性，保留其他属性。
+
+```elisp
+(tp-set-display START END DISPLAY &optional OBJECT)
+(tp-set-display STRING DISPLAY)
+```
+
+**示例：**
+
+```elisp
+(tp-set-display 1 10 '(space :width 10))
+(tp-set-display "  " '(space :width 20))
 ```
 
 ---
 
 #### `tp-get` - 获取属性值
 
-从位置或范围获取属性值。
+从位置或范围获取属性值，支持嵌套子属性访问。
 
 ```elisp
 ;; 单个位置
 (tp-get POSITION PROPERTY)
 (tp-get POSITION PROPERTY OBJECT)
+
+;; 嵌套子属性访问
+(tp-get POSITION PROPERTY SUB-KEY ...)
 
 ;; 范围 - 特定属性
 (tp-get START END PROPERTY)
@@ -181,6 +310,11 @@
 ```elisp
 ;; 从当前缓冲区获取
 (tp-get 5 'face)           ; => bold
+
+;; 获取嵌套子属性
+(tp-get 5 'face :foreground)      ; => "red"
+(tp-get 5 'face :box :color)      ; => "blue"
+(tp-get 5 'display :width)        ; => 10
 
 ;; 从字符串获取（0 索引）
 (tp-get 0 'face my-string) ; => italic
@@ -243,16 +377,32 @@
 
 #### `tp-remove` - 移除属性
 
-```elisp
-(tp-remove START END PROPERTY &optional OBJECT)
-```
+从区域中移除属性或嵌套子属性。
 
-从区域中移除特定属性。
+```elisp
+;; 移除整个属性
+(tp-remove START END PROPERTY &optional OBJECT)
+
+;; 移除子属性
+(tp-remove START END '(PROPERTY SUB-KEY) &optional OBJECT)
+
+;; 移除嵌套子属性
+(tp-remove START END '(PROPERTY SUB-KEY (NESTED-KEYS...)) &optional OBJECT)
+```
 
 **示例：**
 
 ```elisp
-(tp-remove 1 10 'face)  ; 移除 face 属性
+;; 移除整个属性
+(tp-remove 1 10 'face)
+
+;; 从 face 移除子属性
+(tp-remove 1 10 '(face :underline))
+
+;; 移除特定嵌套键，保留其他
+(tp-remove 1 10 '(face :underline (:style :position)))
+;; 从 :underline 移除 :style 和 :position
+;; 如果 :underline 中存在 :color，则保留
 ```
 
 ---
@@ -290,34 +440,121 @@
 
 ---
 
-### 属性化函数
+### 模式匹配函数
 
-#### `tp-propertize` - 创建带属性的字符串
+#### `tp-match` - 匹配字符串
 
 ```elisp
-;; 创建带属性的字符串
-(tp-propertize STRING PROPERTY VALUE ...)
-(tp-propertize STRING '(PROPERTY VALUE ...))
+;; 缓冲区
+(tp-match PATTERN '(PROPERTY VALUE ...))
 
-;; 应用到对象的区域
-(tp-propertize OBJECT START END PROPERTY VALUE ...)
+;; 字符串或缓冲区对象
+(tp-match PATTERN OBJECT '(PROPERTY VALUE ...))
+
+;; 使用 (PATTERN STRING) 格式
+(tp-match '(PATTERN STRING) '(PROPERTY VALUE ...))
+```
+
+在所有字符串模式匹配处设置属性。
+
+**示例：**
+
+```elisp
+;; 在缓冲区中 - 返回 (START . END) 对的列表
+(tp-match "TODO" '(face warning))
+;; => ((10 . 14) (50 . 54) ...)
+
+;; 在字符串上 - 返回修改后的字符串
+(tp-match "o" "Hello World" '(face bold))
+;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
+
+;; 使用 (PATTERN STRING) 格式
+(tp-match '("world" "Hello world") '(face bold))
+;; => #("Hello world" 6 11 (face bold))
+```
+
+---
+
+#### `tp-match-reset` - 匹配并重置
+
+重置（完全替换）匹配处的所有属性。
+
+```elisp
+(tp-match-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
 ```
 
 **示例：**
 
 ```elisp
-;; 简单用法 - 返回带属性的字符串
-(tp-propertize "Hello" 'face 'bold)
-;; => #("Hello" 0 5 (face bold))
-
-;; 使用属性列表
-(tp-propertize "World" '(face italic help-echo "greeting"))
-
-;; 应用到子字符串
-(tp-propertize "Hello World" 6 11 'face 'underline)
+(tp-match-reset "TODO" '(face warning))
+;; 替换匹配文本上的所有属性
 ```
 
 ---
+
+#### `tp-match-add` - 匹配并添加
+
+在匹配处添加/合并属性，支持深度合并。
+
+```elisp
+(tp-match-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+```
+
+**示例：**
+
+```elisp
+(tp-match-add "TODO" '(face (:underline t)))
+;; 与现有属性合并
+```
+
+---
+
+#### `tp-regexp` - 匹配正则表达式
+
+```elisp
+;; 缓冲区
+(tp-regexp PATTERN '(PROPERTY VALUE ...))
+
+;; 字符串或缓冲区对象
+(tp-regexp PATTERN OBJECT '(PROPERTY VALUE ...))
+```
+
+在所有正则表达式匹配处设置属性。
+
+**示例：**
+
+```elisp
+;; 高亮缓冲区中的所有数字
+(tp-regexp "[0-9]+" '(face font-lock-number-face))
+
+;; 在字符串上
+(tp-regexp "[A-Z]+" "Hello WORLD" '(face bold))
+;; => #("Hello WORLD" 6 11 (face bold))
+```
+
+---
+
+#### `tp-regexp-reset` - 正则匹配并重置
+
+重置（完全替换）正则匹配处的所有属性。
+
+```elisp
+(tp-regexp-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+```
+
+---
+
+#### `tp-regexp-add` - 正则匹配并添加
+
+在正则匹配处添加/合并属性，支持深度合并。
+
+```elisp
+(tp-regexp-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+```
+
+---
+
+### 属性化函数
 
 #### `tp-layer-propertize` - 将图层应用到对象
 
@@ -352,59 +589,6 @@
 ```
 
 将图层组中的所有图层应用到对象。
-
----
-
-### 模式匹配函数
-
-#### `tp-match` - 匹配字符串
-
-```elisp
-;; 缓冲区
-(tp-match PATTERN PROPERTY VALUE ...)
-
-;; 字符串或缓冲区对象
-(tp-match PATTERN OBJECT PROPERTY VALUE ...)
-```
-
-在所有字符串模式匹配处设置属性。
-
-**示例：**
-
-```elisp
-;; 在缓冲区中 - 返回 (START . END) 对的列表
-(tp-match "TODO" 'face 'warning)
-;; => ((10 . 14) (50 . 54) ...)
-
-;; 在字符串上 - 返回修改后的字符串
-(tp-match "o" "Hello World" 'face 'bold)
-;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
-```
-
----
-
-#### `tp-regexp` - 匹配正则表达式
-
-```elisp
-;; 缓冲区
-(tp-regexp PATTERN PROPERTY VALUE ...)
-
-;; 字符串或缓冲区对象
-(tp-regexp PATTERN OBJECT PROPERTY VALUE ...)
-```
-
-在所有正则表达式匹配处设置属性。
-
-**示例：**
-
-```elisp
-;; 高亮缓冲区中的所有数字
-(tp-regexp "[0-9]+" 'face 'font-lock-number-face)
-
-;; 在字符串上
-(tp-regexp "[A-Z]+" "Hello WORLD" 'face 'bold)
-;; => #("Hello WORLD" 6 11 (face bold))
-```
 
 ---
 
@@ -844,12 +1028,18 @@
 
 | 别名 | 原函数 |
 |------|--------|
-| `tp-set` | `tp-put` |
+| `tp-put` | `tp-set` |
 | `tp-layer-properties` | `tp-layer-props` |
 | `tp-layer-group-define` | `tp-group-define` |
 | `tp-layer-group-properties` | `tp-group-props` |
 | `tp-layer-group-propertize` | `tp-group-propertize` |
 | `tp-layer-group-undefine` | `tp-group-undefine` |
+
+### 已弃用函数
+
+| 函数 | 替代 | 说明 |
+|------|------|------|
+| `tp-propertize` | `tp-set` | 新代码请使用 `tp-set` |
 
 ---
 

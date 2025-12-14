@@ -23,11 +23,13 @@
 
 ## Features
 
-- ✅ **Unified Object Support**: Functions like `tp-put`, `tp-match`, `tp-regexp` work on both strings and buffers
+- ✅ **Unified Object Support**: Functions like `tp-set`, `tp-match`, `tp-regexp` work on both strings and buffers
+- ✅ **Clear Semantics**: `tp-reset` (replace all), `tp-set` (replace specified), `tp-add` (deep merge)
+- ✅ **Nested Property Access**: Get/set/remove nested sub-properties with path syntax
 - ✅ **Innovative Layer System**: Stack, rotate, and manage multiple layers of properties
 - ✅ **Layer Groups**: Define reusable sets of related layers
 - ✅ **Search & Navigation**: Find and navigate through propertized text
-- ✅ **Pattern Matching**: Apply properties to string/regexp matches
+- ✅ **Pattern Matching**: Apply properties to string/regexp matches with reset/add variants
 - ✅ **Clean API**: Consistent naming and calling conventions
 
 ## Requirements
@@ -56,20 +58,46 @@ Or with `use-package`:
 
 ### Setting Properties
 
+tp.el provides three main functions for setting properties, each with different semantics:
+
+```elisp
+;; tp-set: Replace only specified properties, preserve others
+(tp-set 1 10 '(face bold help-echo "Hello!"))
+
+;; tp-reset: Completely replace ALL properties
+(tp-reset 1 10 '(face bold))  ; Any other properties are removed
+
+;; tp-add: Deep merge nested properties
+(tp-add 1 10 '(face (:underline t)))  ; Merges with existing face
+```
+
+All three functions support four calling conventions:
+
 ```elisp
 ;; On current buffer (properties as a list)
-(tp-put 1 10 '(face bold help-echo "Hello!"))
+(tp-set 1 10 '(face bold help-echo "Hello!"))
 
 ;; On a specific buffer
-(tp-put 1 10 '(face bold) some-buffer)
+(tp-set 1 10 '(face bold) some-buffer)
 
 ;; On a string with range (0-indexed)
-(tp-put 0 5 '(face bold) "Hello World")
+(tp-set 0 5 '(face bold) "Hello World")
 ;; => #("Hello World" 0 5 (face bold))
 
 ;; On entire string (flat properties)
-(tp-put "Hello World" 'face 'bold 'help-echo "test")
+(tp-set "Hello World" 'face 'bold 'help-echo "test")
 ;; => #("Hello World" 0 11 (face bold help-echo "test"))
+```
+
+### Single-Property Setters
+
+```elisp
+;; Set only face property
+(tp-set-face 1 10 'bold)
+(tp-set-face "Hello" 'italic)  ; entire string
+
+;; Set only display property
+(tp-set-display 1 10 '(space :width 10))
 ```
 
 ### Getting Properties
@@ -77,6 +105,10 @@ Or with `use-package`:
 ```elisp
 ;; Get specific property at position
 (tp-get 5 'face)  ; => bold
+
+;; Get nested sub-property
+(tp-get 5 'face :foreground)  ; => "red"
+(tp-get 5 'face :box :color)  ; => "blue" (deeply nested)
 
 ;; Get specific property from range
 (tp-get 1 10 'face)  ; => bold
@@ -88,31 +120,44 @@ Or with `use-package`:
 (tp-at 5)  ; => (face bold help-echo "Hello!")
 ```
 
-### Fine-grained Property Manipulation
+### Removing Properties
 
 ```elisp
-;; Get sub-property from face
-(tp-get-sub 1 'face :foreground)  ; => "red"
+;; Remove entire property
+(tp-remove 1 10 'face)
 
-;; Set sub-property on face
-(tp-put-sub 1 6 'face :foreground "blue")
+;; Remove sub-property
+(tp-remove 1 10 '(face :underline))
 
-;; Remove sub-property from face
-(tp-remove-sub 1 6 'face :foreground)
+;; Remove nested sub-properties (keep others)
+(tp-remove 1 10 '(face :underline (:style :position)))
+;; Removes :style and :position from :underline, keeps :color if present
 ```
 
 ### Pattern Matching
 
 ```elisp
 ;; Apply properties to all occurrences of "TODO" in buffer
-(tp-match "TODO" 'face 'warning)
+(tp-match "TODO" '(face warning))
 
 ;; Apply to string
-(tp-match "world" "Hello world world" 'face 'bold)
+(tp-match "world" "Hello world world" '(face bold))
 ;; => #("Hello world world" 6 11 (face bold) 12 17 (face bold))
 
+;; Match with (PATTERN STRING) format
+(tp-match '("world" "Hello world") '(face bold))
+;; => #("Hello world" 6 11 (face bold))
+
 ;; Using regexp
-(tp-regexp "\\b[0-9]+\\b" 'face 'font-lock-number-face)
+(tp-regexp "\\b[0-9]+\\b" '(face font-lock-number-face))
+
+;; Reset variants (replace ALL properties on matches)
+(tp-match-reset "TODO" '(face warning))
+(tp-regexp-reset "[0-9]+" '(face bold))
+
+;; Add variants (deep merge properties on matches)
+(tp-match-add "TODO" '(face (:underline t)))
+(tp-regexp-add "[0-9]+" '(face (:weight bold)))
 ```
 
 ---
@@ -121,52 +166,136 @@ Or with `use-package`:
 
 ### Core Property Functions
 
-#### `tp-put` - Set Text Properties
+#### `tp-set` - Set Text Properties
 
-Set text properties on a string or buffer region.
+Set text properties on a string or buffer region. Replaces only the specified properties, preserving others.
 
 ```elisp
 ;; Current buffer (properties as a list)
-(tp-put START END '(PROPERTY VALUE ...))
+(tp-set START END '(PROPERTY VALUE ...))
 
 ;; Specific buffer or string
-(tp-put START END '(PROPERTY VALUE ...) OBJECT)
+(tp-set START END '(PROPERTY VALUE ...) OBJECT)
 
 ;; Entire string (flat properties)
-(tp-put STRING PROPERTY VALUE ...)
+(tp-set STRING PROPERTY VALUE ...)
 ```
 
 **Examples:**
 
 ```elisp
 ;; Set face on buffer region
-(tp-put 1 10 '(face bold))  ; => (1 . 10)
+(tp-set 1 10 '(face bold))  ; => (1 . 10)
 
 ;; Set multiple properties
-(tp-put 1 10 '(face bold help-echo "Click me"))
+(tp-set 1 10 '(face bold help-echo "Click me"))
 
 ;; Set on specific buffer
-(tp-put 1 10 '(face italic) my-buffer)
+(tp-set 1 10 '(face italic) my-buffer)
 
 ;; Set properties on a string (0-indexed)
-(setq my-string (tp-put 0 5 '(face italic) "Hello World"))
+(setq my-string (tp-set 0 5 '(face italic) "Hello World"))
 ;; => #("Hello World" 0 5 (face italic))
 
 ;; Set properties on entire string
-(tp-put "Hello" 'face 'bold 'mouse-face 'highlight)
+(tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
+```
+
+---
+
+#### `tp-reset` - Replace All Properties
+
+Completely replace ALL text properties with the specified ones.
+
+```elisp
+(tp-reset START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-reset STRING PROPERTY VALUE ...)
+```
+
+**Examples:**
+
+```elisp
+;; Replace all properties in region
+(tp-reset 1 10 '(face bold))  ; Any existing properties are removed
+
+;; On string
+(tp-reset "Hello" 'face 'italic)
+```
+
+---
+
+#### `tp-add` - Add/Merge Properties
+
+Add or update properties with deep merge support for nested plists.
+
+```elisp
+(tp-add START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-add STRING PROPERTY VALUE ...)
+```
+
+**Examples:**
+
+```elisp
+;; Add properties (preserves existing, merges nested)
+(tp-add 1 10 '(help-echo "tooltip"))
+
+;; Deep merge face properties
+(tp-set 1 10 '(face (:foreground "red")))
+(tp-add 1 10 '(face (:background "blue")))
+;; Result: face is (:foreground "red" :background "blue")
+```
+
+---
+
+#### `tp-set-face` - Set Face Property
+
+Set only the face property, preserving other properties.
+
+```elisp
+(tp-set-face START END FACE &optional OBJECT)
+(tp-set-face STRING FACE)
+```
+
+**Examples:**
+
+```elisp
+(tp-set-face 1 10 'bold)
+(tp-set-face 1 10 '(:foreground "red" :weight bold))
+(tp-set-face "Hello" 'italic)
+```
+
+---
+
+#### `tp-set-display` - Set Display Property
+
+Set only the display property, preserving other properties.
+
+```elisp
+(tp-set-display START END DISPLAY &optional OBJECT)
+(tp-set-display STRING DISPLAY)
+```
+
+**Examples:**
+
+```elisp
+(tp-set-display 1 10 '(space :width 10))
+(tp-set-display "  " '(space :width 20))
 ```
 
 ---
 
 #### `tp-get` - Get Property Value
 
-Get property value(s) from position or range.
+Get property value(s) from position or range, with support for nested sub-properties.
 
 ```elisp
 ;; Single position
 (tp-get POSITION PROPERTY)
 (tp-get POSITION PROPERTY OBJECT)
+
+;; Nested sub-property access
+(tp-get POSITION PROPERTY SUB-KEY ...)
 
 ;; Range - specific property
 (tp-get START END PROPERTY)
@@ -182,6 +311,11 @@ Get property value(s) from position or range.
 ```elisp
 ;; Get from current buffer
 (tp-get 5 'face)           ; => bold
+
+;; Get nested sub-property
+(tp-get 5 'face :foreground)      ; => "red"
+(tp-get 5 'face :box :color)      ; => "blue"
+(tp-get 5 'display :width)        ; => 10
 
 ;; Get from string (0-indexed)
 (tp-get 0 'face my-string) ; => italic
@@ -244,16 +378,32 @@ Get all text properties at POINT as a plist.
 
 #### `tp-remove` - Remove Property
 
-```elisp
-(tp-remove START END PROPERTY &optional OBJECT)
-```
+Remove a property or nested sub-property from a region.
 
-Remove a specific property from a region.
+```elisp
+;; Remove entire property
+(tp-remove START END PROPERTY &optional OBJECT)
+
+;; Remove sub-property
+(tp-remove START END '(PROPERTY SUB-KEY) &optional OBJECT)
+
+;; Remove nested sub-properties
+(tp-remove START END '(PROPERTY SUB-KEY (NESTED-KEYS...)) &optional OBJECT)
+```
 
 **Examples:**
 
 ```elisp
-(tp-remove 1 10 'face)  ; Remove face property
+;; Remove entire property
+(tp-remove 1 10 'face)
+
+;; Remove sub-property from face
+(tp-remove 1 10 '(face :underline))
+
+;; Remove specific nested keys, keep others
+(tp-remove 1 10 '(face :underline (:style :position)))
+;; Removes :style and :position from :underline
+;; If :color exists in :underline, it's preserved
 ```
 
 ---
@@ -291,34 +441,121 @@ Clear all text properties from a region.
 
 ---
 
-### Propertize Functions
+### Pattern Matching Functions
 
-#### `tp-propertize` - Create Propertized String
+#### `tp-match` - Match String
 
 ```elisp
-;; Create propertized string
-(tp-propertize STRING PROPERTY VALUE ...)
-(tp-propertize STRING '(PROPERTY VALUE ...))
+;; Buffer
+(tp-match PATTERN '(PROPERTY VALUE ...))
 
-;; Apply to region of object
-(tp-propertize OBJECT START END PROPERTY VALUE ...)
+;; String or Buffer object
+(tp-match PATTERN OBJECT '(PROPERTY VALUE ...))
+
+;; Pattern as (PATTERN STRING) format
+(tp-match '(PATTERN STRING) '(PROPERTY VALUE ...))
+```
+
+Set properties on all occurrences of a string pattern.
+
+**Examples:**
+
+```elisp
+;; In buffer - returns list of (START . END) pairs
+(tp-match "TODO" '(face warning))
+;; => ((10 . 14) (50 . 54) ...)
+
+;; On string - returns modified string
+(tp-match "o" "Hello World" '(face bold))
+;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
+
+;; Using (PATTERN STRING) format
+(tp-match '("world" "Hello world") '(face bold))
+;; => #("Hello world" 6 11 (face bold))
+```
+
+---
+
+#### `tp-match-reset` - Match and Reset
+
+Reset (completely replace) all properties on matches.
+
+```elisp
+(tp-match-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
 ```
 
 **Examples:**
 
 ```elisp
-;; Simple usage - returns propertized string
-(tp-propertize "Hello" 'face 'bold)
-;; => #("Hello" 0 5 (face bold))
-
-;; With property list
-(tp-propertize "World" '(face italic help-echo "greeting"))
-
-;; Apply to substring
-(tp-propertize "Hello World" 6 11 'face 'underline)
+(tp-match-reset "TODO" '(face warning))
+;; Replaces ALL properties on matched text
 ```
 
 ---
+
+#### `tp-match-add` - Match and Add
+
+Add/merge properties on matches with deep merge support.
+
+```elisp
+(tp-match-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+```
+
+**Examples:**
+
+```elisp
+(tp-match-add "TODO" '(face (:underline t)))
+;; Merges with existing properties
+```
+
+---
+
+#### `tp-regexp` - Match Regexp
+
+```elisp
+;; Buffer
+(tp-regexp PATTERN '(PROPERTY VALUE ...))
+
+;; String or Buffer object
+(tp-regexp PATTERN OBJECT '(PROPERTY VALUE ...))
+```
+
+Set properties on all matches of a regular expression.
+
+**Examples:**
+
+```elisp
+;; Highlight all numbers in buffer
+(tp-regexp "[0-9]+" '(face font-lock-number-face))
+
+;; On string
+(tp-regexp "[A-Z]+" "Hello WORLD" '(face bold))
+;; => #("Hello WORLD" 6 11 (face bold))
+```
+
+---
+
+#### `tp-regexp-reset` - Regexp and Reset
+
+Reset (completely replace) all properties on regexp matches.
+
+```elisp
+(tp-regexp-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+```
+
+---
+
+#### `tp-regexp-add` - Regexp and Add
+
+Add/merge properties on regexp matches with deep merge support.
+
+```elisp
+(tp-regexp-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+```
+
+---
+
+### Propertize Functions
 
 #### `tp-layer-propertize` - Apply Layer to Object
 
@@ -353,59 +590,6 @@ Apply a predefined layer's properties to an object.
 ```
 
 Apply all layers from a layer group to an object.
-
----
-
-### Pattern Matching Functions
-
-#### `tp-match` - Match String
-
-```elisp
-;; Buffer
-(tp-match PATTERN PROPERTY VALUE ...)
-
-;; String or Buffer object
-(tp-match PATTERN OBJECT PROPERTY VALUE ...)
-```
-
-Set properties on all occurrences of a string pattern.
-
-**Examples:**
-
-```elisp
-;; In buffer - returns list of (START . END) pairs
-(tp-match "TODO" 'face 'warning)
-;; => ((10 . 14) (50 . 54) ...)
-
-;; On string - returns modified string
-(tp-match "o" "Hello World" 'face 'bold)
-;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
-```
-
----
-
-#### `tp-regexp` - Match Regexp
-
-```elisp
-;; Buffer
-(tp-regexp PATTERN PROPERTY VALUE ...)
-
-;; String or Buffer object
-(tp-regexp PATTERN OBJECT PROPERTY VALUE ...)
-```
-
-Set properties on all matches of a regular expression.
-
-**Examples:**
-
-```elisp
-;; Highlight all numbers in buffer
-(tp-regexp "[0-9]+" 'face 'font-lock-number-face)
-
-;; On string
-(tp-regexp "[A-Z]+" "Hello WORLD" 'face 'bold)
-;; => #("Hello WORLD" 6 11 (face bold))
-```
 
 ---
 
@@ -845,12 +1029,18 @@ For convenience, tp.el provides these aliases:
 
 | Alias | Original Function |
 |-------|-------------------|
-| `tp-set` | `tp-put` |
+| `tp-put` | `tp-set` |
 | `tp-layer-properties` | `tp-layer-props` |
 | `tp-layer-group-define` | `tp-group-define` |
 | `tp-layer-group-properties` | `tp-group-props` |
 | `tp-layer-group-propertize` | `tp-group-propertize` |
 | `tp-layer-group-undefine` | `tp-group-undefine` |
+
+### Deprecated Functions
+
+| Function | Replacement | Notes |
+|----------|-------------|-------|
+| `tp-propertize` | `tp-set` | Use `tp-set` for new code |
 
 ---
 
