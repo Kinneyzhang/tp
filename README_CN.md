@@ -243,6 +243,11 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 (tp-set 1 10 '(face (:foreground "red")))
 (tp-add 1 10 '(face (:background "blue")))
 ;; 结果: face 是 (:foreground "red" :background "blue")
+
+;; Face 前置 - 符号 face 会被添加到 face 列表的开头
+(tp-set "Hello" 'face 'bold)
+(tp-add "Hello" 'face 'shadow)
+;; 结果: face 是 (shadow bold)
 ```
 
 ---
@@ -300,9 +305,18 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 (tp-get START END PROPERTY)
 (tp-get START END PROPERTY OBJECT)
 
+;; 范围 - 属性路径作为列表
+(tp-get START END '(PROPERTY) OBJECT)
+(tp-get START END '(PROPERTY SUB-KEY ...) OBJECT)
+
 ;; 范围 - 所有属性
 (tp-get START END)
 (tp-get START END OBJECT)
+
+;; 整个字符串
+(tp-get STRING)
+(tp-get STRING PROPERTY)
+(tp-get STRING PROPERTY SUB-KEY ...)
 ```
 
 **示例：**
@@ -322,8 +336,16 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 ;; 从范围获取
 (tp-get 1 10 'face)        ; => bold
 
+;; 使用列表形式的属性路径
+(tp-get 5 20 '(face :underline :style) my-string)
+
 ;; 获取范围内的所有属性
 (tp-get 1 10)              ; => (face bold help-echo "test")
+
+;; 从整个字符串获取
+(tp-get "Hello World")              ; => 所有属性
+(tp-get "Hello World" 'face)        ; => face 值
+(tp-get "Hello World" 'face :foreground)  ; => 前景色
 ```
 
 ---
@@ -377,17 +399,22 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 #### `tp-remove` - 移除属性
 
-从区域中移除属性或嵌套子属性。
+从区域或整个字符串中移除属性或嵌套子属性。
 
 ```elisp
-;; 移除整个属性
+;; 移除整个属性（缓冲区）
 (tp-remove START END PROPERTY &optional OBJECT)
 
-;; 移除子属性
+;; 移除子属性（缓冲区）
 (tp-remove START END '(PROPERTY SUB-KEY) &optional OBJECT)
 
-;; 移除嵌套子属性
+;; 移除嵌套子属性（缓冲区）
 (tp-remove START END '(PROPERTY SUB-KEY (NESTED-KEYS...)) &optional OBJECT)
+
+;; 从整个字符串移除
+(tp-remove STRING PROP1 PROP2 ...)
+(tp-remove STRING PROPERTY SUB-KEY)
+(tp-remove STRING PROPERTY SUB-KEY '(NESTED-KEYS...))
 ```
 
 **示例：**
@@ -403,6 +430,11 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 (tp-remove 1 10 '(face :underline (:style :position)))
 ;; 从 :underline 移除 :style 和 :position
 ;; 如果 :underline 中存在 :color，则保留
+
+;; 从整个字符串移除
+(tp-remove "Hello World" 'face 'help-echo)  ; 移除多个属性
+(tp-remove "Hello World" 'face :underline)  ; 移除子属性
+(tp-remove "Hello World" 'face :underline '(:style :position))  ; 移除嵌套
 ```
 
 ---

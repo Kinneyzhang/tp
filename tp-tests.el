@@ -1048,5 +1048,128 @@
     (should (eq (get-text-property 4 'face str) 'bold))
     (should (equal (get-text-property 4 'help-echo str) "original"))))
 
+;;; ============================================================
+;;; New API Tests - Issue 1: tp-add face prepending
+;;; ============================================================
+
+(ert-deftest tp-test-add-face-prepend-symbol ()
+  "Test tp-add prepends face symbol to existing face."
+  (let ((str (copy-sequence "Hello")))
+    (tp-set 0 5 '(face bold) str)
+    (tp-add 0 5 '(face shadow) str)
+    (let ((face (get-text-property 0 'face str)))
+      ;; New face should be prepended, creating a list
+      (should (equal face '(shadow bold))))))
+
+(ert-deftest tp-test-add-face-prepend-to-list ()
+  "Test tp-add prepends face to existing face list."
+  (let ((str (copy-sequence "Hello")))
+    (tp-set 0 5 '(face (bold italic)) str)
+    (tp-add 0 5 '(face shadow) str)
+    (let ((face (get-text-property 0 'face str)))
+      ;; New face should be prepended
+      (should (equal face '(shadow bold italic))))))
+
+(ert-deftest tp-test-add-face-plist-merge ()
+  "Test tp-add merges face plist with existing face."
+  (let ((str (copy-sequence "Hello")))
+    (tp-set 0 5 '(face (:foreground "red")) str)
+    (tp-add 0 5 '(face (:background "blue")) str)
+    (let ((face (get-text-property 0 'face str)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (equal (plist-get face :background) "blue")))))
+
+(ert-deftest tp-test-add-face-symbol-no-dup ()
+  "Test tp-add doesn't duplicate faces."
+  (let ((str (copy-sequence "Hello")))
+    (tp-set 0 5 '(face bold) str)
+    (tp-add 0 5 '(face bold) str)
+    (let ((face (get-text-property 0 'face str)))
+      ;; Should not duplicate
+      (should (eq face 'bold)))))
+
+;;; ============================================================
+;;; New API Tests - Issue 2: tp-remove for strings
+;;; ============================================================
+
+(ert-deftest tp-test-remove-entire-string-single-prop ()
+  "Test tp-remove removes single property from entire string."
+  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
+    (tp-remove str 'face)
+    (should (null (get-text-property 0 'face str)))
+    (should (equal (get-text-property 0 'help-echo str) "test"))))
+
+(ert-deftest tp-test-remove-entire-string-multiple-props ()
+  "Test tp-remove removes multiple properties from entire string."
+  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test" 'mouse-face 'highlight)))
+    (tp-remove str 'face 'help-echo)
+    (should (null (get-text-property 0 'face str)))
+    (should (null (get-text-property 0 'help-echo str)))
+    (should (eq (get-text-property 0 'mouse-face str) 'highlight))))
+
+(ert-deftest tp-test-remove-entire-string-sub-prop ()
+  "Test tp-remove removes sub-property from entire string."
+  (let ((str (copy-sequence "Hello")))
+    (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+    (tp-remove str 'face :underline)
+    (let ((face (get-text-property 0 'face str)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (null (plist-get face :underline))))))
+
+(ert-deftest tp-test-remove-entire-string-nested-sub-prop ()
+  "Test tp-remove removes nested sub-properties from entire string."
+  (let ((str (copy-sequence "Hello")))
+    (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave :color "blue")) str)
+    (tp-remove str 'face :underline '(:style))
+    (let* ((face (get-text-property 0 'face str))
+           (underline (plist-get face :underline)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (equal (plist-get underline :color) "blue"))
+      (should (null (plist-get underline :style))))))
+
+;;; ============================================================
+;;; New API Tests - Issue 3 & 4: tp-get for strings and new API
+;;; ============================================================
+
+(ert-deftest tp-test-get-entire-string-all-props ()
+  "Test tp-get returns all properties from entire string."
+  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
+    (let ((props (tp-get str)))
+      (should (eq (plist-get props 'face) 'bold))
+      (should (equal (plist-get props 'help-echo) "test")))))
+
+(ert-deftest tp-test-get-entire-string-single-prop ()
+  "Test tp-get returns single property from entire string."
+  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
+    (should (eq (tp-get str 'face) 'bold))
+    (should (equal (tp-get str 'help-echo) "test"))))
+
+(ert-deftest tp-test-get-entire-string-nested-prop ()
+  "Test tp-get returns nested property from entire string."
+  (let ((str (copy-sequence "Hello")))
+    (put-text-property 0 5 'face '(:foreground "red" :box (:color "blue" :line-width 2)) str)
+    (should (equal (tp-get str 'face :foreground) "red"))
+    (should (equal (tp-get str 'face :box :color) "blue"))
+    (should (equal (tp-get str 'face :box :line-width) 2))))
+
+(ert-deftest tp-test-get-range-with-list-prop-path ()
+  "Test tp-get with property path as list."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (put-text-property 1 6 'face '(:foreground "red" :underline (:style wave)) nil)
+    ;; Get with list path
+    (should (equal (tp-get 1 6 '(face)) '(:foreground "red" :underline (:style wave))))
+    (should (equal (tp-get 1 6 '(face :foreground)) "red"))
+    (should (eq (tp-get 1 6 '(face :underline :style)) 'wave))))
+
+(ert-deftest tp-test-get-range-with-list-prop-path-on-string ()
+  "Test tp-get with property path as list on string."
+  (let ((str (copy-sequence "Hello World")))
+    (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave)) str)
+    ;; Get with list path and object
+    (should (equal (tp-get 0 5 '(face) str) '(:foreground "red" :underline (:style wave))))
+    (should (equal (tp-get 0 5 '(face :foreground) str) "red"))
+    (should (eq (tp-get 0 5 '(face :underline :style) str) 'wave))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

@@ -244,6 +244,11 @@ Add or update properties with deep merge support for nested plists.
 (tp-set 1 10 '(face (:foreground "red")))
 (tp-add 1 10 '(face (:background "blue")))
 ;; Result: face is (:foreground "red" :background "blue")
+
+;; Face prepending - symbol faces are prepended to face list
+(tp-set "Hello" 'face 'bold)
+(tp-add "Hello" 'face 'shadow)
+;; Result: face is (shadow bold)
 ```
 
 ---
@@ -301,9 +306,18 @@ Get property value(s) from position or range, with support for nested sub-proper
 (tp-get START END PROPERTY)
 (tp-get START END PROPERTY OBJECT)
 
+;; Range with property path as list
+(tp-get START END '(PROPERTY) OBJECT)
+(tp-get START END '(PROPERTY SUB-KEY ...) OBJECT)
+
 ;; Range - all properties
 (tp-get START END)
 (tp-get START END OBJECT)
+
+;; Entire string
+(tp-get STRING)
+(tp-get STRING PROPERTY)
+(tp-get STRING PROPERTY SUB-KEY ...)
 ```
 
 **Examples:**
@@ -323,8 +337,16 @@ Get property value(s) from position or range, with support for nested sub-proper
 ;; Get from range
 (tp-get 1 10 'face)        ; => bold
 
+;; Get with property path as list
+(tp-get 5 20 '(face :underline :style) my-string)
+
 ;; Get all properties from range
 (tp-get 1 10)              ; => (face bold help-echo "test")
+
+;; Get from entire string
+(tp-get "Hello World")              ; => all properties
+(tp-get "Hello World" 'face)        ; => face value
+(tp-get "Hello World" 'face :foreground)  ; => foreground color
 ```
 
 ---
@@ -378,17 +400,22 @@ Get all text properties at POINT as a plist.
 
 #### `tp-remove` - Remove Property
 
-Remove a property or nested sub-property from a region.
+Remove a property or nested sub-property from a region or entire string.
 
 ```elisp
-;; Remove entire property
+;; Remove entire property (buffer)
 (tp-remove START END PROPERTY &optional OBJECT)
 
-;; Remove sub-property
+;; Remove sub-property (buffer)
 (tp-remove START END '(PROPERTY SUB-KEY) &optional OBJECT)
 
-;; Remove nested sub-properties
+;; Remove nested sub-properties (buffer)
 (tp-remove START END '(PROPERTY SUB-KEY (NESTED-KEYS...)) &optional OBJECT)
+
+;; Remove from entire string
+(tp-remove STRING PROP1 PROP2 ...)
+(tp-remove STRING PROPERTY SUB-KEY)
+(tp-remove STRING PROPERTY SUB-KEY '(NESTED-KEYS...))
 ```
 
 **Examples:**
@@ -404,6 +431,11 @@ Remove a property or nested sub-property from a region.
 (tp-remove 1 10 '(face :underline (:style :position)))
 ;; Removes :style and :position from :underline
 ;; If :color exists in :underline, it's preserved
+
+;; Remove from entire string
+(tp-remove "Hello World" 'face 'help-echo)  ; Remove multiple properties
+(tp-remove "Hello World" 'face :underline)  ; Remove sub-property
+(tp-remove "Hello World" 'face :underline '(:style :position))  ; Remove nested
 ```
 
 ---

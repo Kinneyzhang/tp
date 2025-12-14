@@ -289,6 +289,50 @@ NEW values override BASE values."
                                     (t val))))))
     result))
 
+(defun tp--prepend-face (new-face existing-face)
+  "Prepend NEW-FACE to EXISTING-FACE for the face property.
+Returns a face value where NEW-FACE takes precedence.
+If NEW-FACE is a plist (like (:foreground \"red\")), deeply merge it.
+If NEW-FACE is a symbol or list of faces, prepend it to create a face list."
+  (cond
+   ;; No existing face - just use new face
+   ((null existing-face) new-face)
+   ;; New face is a plist - deep merge with existing
+   ((and (listp new-face) (keywordp (car-safe new-face)))
+    (cond
+     ((and (listp existing-face) (keywordp (car-safe existing-face)))
+      (tp--deep-merge-plist existing-face new-face))
+     ;; Existing is a symbol or list of faces - wrap new plist and prepend
+     ((symbolp existing-face)
+      (list new-face existing-face))
+     ((listp existing-face)
+      (cons new-face existing-face))
+     (t new-face)))
+   ;; New face is a symbol - prepend to existing
+   ((symbolp new-face)
+    (cond
+     ((symbolp existing-face)
+      (if (eq new-face existing-face)
+          new-face
+        (list new-face existing-face)))
+     ((listp existing-face)
+      (if (member new-face existing-face)
+          existing-face
+        (cons new-face existing-face)))
+     (t new-face)))
+   ;; New face is a list of faces - prepend to existing
+   ((listp new-face)
+    (cond
+     ((symbolp existing-face)
+      (if (member existing-face new-face)
+          new-face
+        (append new-face (list existing-face))))
+     ((listp existing-face)
+      (append new-face
+              (cl-remove-if (lambda (f) (member f new-face)) existing-face)))
+     (t new-face)))
+   (t new-face)))
+
 (defun tp-add (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Add or update text properties, preserving existing properties.
 
@@ -310,6 +354,11 @@ Unlike `tp-set', this deeply merges nested properties.
 For example, \\='(face (:underline (:style wave))) will merge with
 existing face properties rather than replacing them entirely.
 
+For the `face' property specifically, symbol faces are prepended to
+the existing face list rather than replacing.  For example:
+  (tp-add str \\='face \\='shadow) with existing face \\='bold
+  results in face value \\='(shadow bold).
+
 Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
@@ -323,6 +372,9 @@ Return the modified object (string) or region (START . END) for buffer."
                    do (let* ((current-val (plist-get current-props key))
                              (new-val
                               (cond
+                               ;; Handle face property specially - prepend faces
+                               ((eq key 'face)
+                                (tp--prepend-face val current-val))
                                ;; Both are plists - deep merge
                                ((and (listp val) (keywordp (car-safe val))
                                      (listp current-val) (keywordp (car-safe current-val)))
@@ -368,7 +420,7 @@ Supports plists, alists, and special display property formats."
              (t nil))))
       (tp--get-nested next-value rest))))
 
-(defun tp-get (pos-or-start &optional property-or-end &rest args)
+(defun tp-get (pos-or-start-or-string &optional property-or-end &rest args)
   "Get text property value(s) with support for nested sub-properties.
 
 This function supports multiple calling conventions:
@@ -383,25 +435,56 @@ This function supports multiple calling conventions:
    (tp-get 5 \\='face :box :color)
    (tp-get 5 \\='display \\='space :width)
 
-3. Range, single property:
+3. Range with property path as list:
+   (tp-get START END \\='(PROPERTY) OBJECT)
+   (tp-get START END \\='(PROPERTY SUB-KEY ...) OBJECT)
+   (tp-get 5 20 \\='(face) str-or-buffer-or-nil)
+   (tp-get 5 20 \\='(face :underline) str-or-buffer-or-nil)
+   (tp-get 5 20 \\='(face :underline :style) str-or-buffer-or-nil)
+
+4. Range, single property:
    (tp-get START END PROPERTY)
    (tp-get START END PROPERTY OBJECT)
 
-4. Range, nested sub-property:
+5. Range, nested sub-property:
    (tp-get START END PROPERTY SUB-KEY ...)
 
-5. Range, all properties (returns plist):
+6. Range, all properties (returns plist):
    (tp-get START END)
    (tp-get START END OBJECT)
+
+7. Entire string, all properties:
+   (tp-get STRING)
+
+8. Entire string, single property:
+   (tp-get STRING PROPERTY)
+
+9. Entire string, nested sub-property:
+   (tp-get STRING PROPERTY SUB-KEY ...)
+   (tp-get str \\='face)
+   (tp-get str \\='face :underline)
+   (tp-get str \\='face :underline :style)
 
 For buffers, positions are 1-indexed.
 For strings, positions are 0-indexed.
 OBJECT defaults to current buffer."
   (cond
-   ;; (tp-get POS PROP ...) or (tp-get POS PROP OBJECT) - single position
-   ((and (numberp pos-or-start)
+   ;; (tp-get STRING ...) - entire string
+   ((stringp pos-or-start-or-string)
+    (let ((str pos-or-start-or-string))
+      (if (null property-or-end)
+          ;; (tp-get str) - return all properties
+          (text-properties-at 0 str)
+        ;; (tp-get str 'face ...) - get specific property with optional sub-path
+        (let* ((prop-value (get-text-property 0 property-or-end str))
+               (sub-path args))
+          (if sub-path
+              (tp--get-nested prop-value sub-path)
+            prop-value)))))
+   ;; (tp-get POS PROP ...) or (tp-get POS PROP OBJECT) - single position with symbol property
+   ((and (numberp pos-or-start-or-string)
          (symbolp property-or-end))
-    (let* ((prop-value (get-text-property pos-or-start property-or-end nil))
+    (let* ((prop-value (get-text-property pos-or-start-or-string property-or-end nil))
            ;; Determine if last arg is object or sub-property path
            (sub-path args)
            (object nil))
@@ -411,14 +494,14 @@ OBJECT defaults to current buffer."
                    (or (bufferp last) (stringp last))))
         (setq object (car (last args)))
         (setq sub-path (butlast args))
-        (setq prop-value (get-text-property pos-or-start property-or-end object)))
+        (setq prop-value (get-text-property pos-or-start-or-string property-or-end object)))
       (if sub-path
           (tp--get-nested prop-value sub-path)
         prop-value)))
    ;; (tp-get START END ...) - range form
-   ((and (numberp pos-or-start)
+   ((and (numberp pos-or-start-or-string)
          (numberp property-or-end))
-    (let* ((start pos-or-start)
+    (let* ((start pos-or-start-or-string)
            (end property-or-end)
            (rest-args args)
            (property nil)
@@ -426,21 +509,28 @@ OBJECT defaults to current buffer."
            (object nil))
       ;; Parse remaining args
       (when rest-args
-        (if (symbolp (car rest-args))
-            (progn
-              (setq property (car rest-args))
-              (setq rest-args (cdr rest-args))
-              ;; Remaining args could be sub-path and/or object
-              (when rest-args
-                (if (or (bufferp (car (last rest-args)))
-                        (stringp (car (last rest-args))))
-                    (progn
-                      (setq object (car (last rest-args)))
-                      (setq sub-path (butlast rest-args)))
-                  (setq sub-path rest-args))))
-          ;; First arg is object (buffer/string)
-          (when (or (bufferp (car rest-args)) (stringp (car rest-args)))
-            (setq object (car rest-args)))))
+        (cond
+         ;; Property path as list: (tp-get 5 20 '(face :underline) obj)
+         ((listp (car rest-args))
+          (let ((prop-path (car rest-args)))
+            (setq property (car prop-path))
+            (setq sub-path (cdr prop-path))
+            (setq object (cadr rest-args))))
+         ;; Property as symbol
+         ((symbolp (car rest-args))
+          (setq property (car rest-args))
+          (setq rest-args (cdr rest-args))
+          ;; Remaining args could be sub-path and/or object
+          (when rest-args
+            (if (or (bufferp (car (last rest-args)))
+                    (stringp (car (last rest-args))))
+                (progn
+                  (setq object (car (last rest-args)))
+                  (setq sub-path (butlast rest-args)))
+              (setq sub-path rest-args))))
+         ;; First arg is object (buffer/string)
+         ((or (bufferp (car rest-args)) (stringp (car rest-args)))
+          (setq object (car rest-args)))))
       (if property
           ;; Get specific property from range - return first non-nil value
           (let ((pos start)
@@ -547,22 +637,9 @@ Returns the modified plist, or nil if empty after removal."
       (cl-remf result key))
     (if (null result) nil result)))
 
-(defun tp-remove (start end property &optional object)
-  "Remove PROPERTY or sub-properties from text between START and END.
-
-PROPERTY can be:
-- A symbol: Remove entire property
-  (tp-remove 1 10 \\='face)
-
-- A list (PROP SUB-KEY): Remove sub-property from PROP
-  (tp-remove 1 10 \\='(face :underline))
-
-- A list (PROP SUB-KEY (NESTED-KEYS...)): Remove nested sub-properties
-  (tp-remove 1 10 \\='(face :underline (:style :position)))
-  This removes :style and :position from :underline, keeping other keys like :color.
-  If no keys remain in :underline after removal, :underline itself is removed.
-
-OBJECT defaults to current buffer."
+(defun tp--remove-property (start end property object)
+  "Internal function to remove PROPERTY from START to END in OBJECT.
+PROPERTY can be a symbol or a list for nested removal."
   (cond
    ;; Simple property removal
    ((symbolp property)
@@ -600,6 +677,68 @@ OBJECT defaults to current buffer."
                       (put-text-property pos next-pos prop-name new-value object)
                     (remove-text-properties pos next-pos (list prop-name nil) object))))
               (setq pos next-pos)))))))))
+
+(defun tp-remove (start-or-string end-or-prop &optional prop-or-sub &rest rest)
+  "Remove properties from text.
+
+This function supports multiple calling conventions:
+
+1. Buffer region with property:
+   (tp-remove START END PROPERTY)
+   (tp-remove START END PROPERTY OBJECT)
+
+2. Buffer region with nested property:
+   (tp-remove START END \\='(PROPERTY SUB-KEY))
+   (tp-remove START END \\='(PROPERTY SUB-KEY (NESTED-KEYS...)))
+
+3. Entire string with properties to remove:
+   (tp-remove STRING PROP1 PROP2 ...)
+   (tp-remove \"Hello\" \\='face \\='help-echo)
+
+4. Entire string with sub-property removal:
+   (tp-remove STRING PROPERTY SUB-KEY)
+   (tp-remove \"Hello\" \\='face :underline)
+
+5. Entire string with nested sub-property removal:
+   (tp-remove STRING PROPERTY SUB-KEY \\='(NESTED-KEYS...))
+   (tp-remove \"Hello\" \\='face :underline \\='(:style :position))
+
+Returns the modified string for string input, or nil for buffer operations."
+  (cond
+   ;; First arg is a string - apply to entire string
+   ((stringp start-or-string)
+    (let ((str start-or-string)
+          (start 0)
+          (end (length start-or-string)))
+      (cond
+       ;; (tp-remove str 'face :underline '(:style :position)) - nested sub-property removal
+       ((and (symbolp end-or-prop)
+             (keywordp prop-or-sub)
+             rest
+             (listp (car rest)))
+        (tp--remove-property start end (list end-or-prop prop-or-sub (car rest)) str))
+       ;; (tp-remove str 'face :underline) - sub-property removal
+       ((and (symbolp end-or-prop) (keywordp prop-or-sub))
+        (tp-remove-sub start end end-or-prop prop-or-sub str))
+       ;; (tp-remove str 'face 'help-echo ...) - multiple properties
+       ((symbolp end-or-prop)
+        (let ((props (cons end-or-prop (cons prop-or-sub rest))))
+          (dolist (prop props)
+            (when (symbolp prop)
+              (remove-text-properties start end (list prop nil) str)))))
+       ;; (tp-remove str '(face :underline)) - nested property spec
+       ((listp end-or-prop)
+        (tp--remove-property start end end-or-prop str)))
+      str))
+   ;; First arg is a number - buffer region
+   ((numberp start-or-string)
+    (let* ((start start-or-string)
+           (end end-or-prop)
+           (property prop-or-sub)
+           (object (car rest)))
+      (tp--remove-property start end property object)
+      nil))
+   (t (error "Invalid arguments to tp-remove"))))
 
 (defun tp-remove-list (start end properties &optional object)
   "Remove list of PROPERTIES from text between START and END in OBJECT.
