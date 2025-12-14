@@ -785,58 +785,57 @@ The **layer system** is tp.el's innovative feature that allows stacking multiple
 
 ```
 ┌─────────────────────────────┐
-│   TOP LAYER (visible)       │  ← What you see
+│   TOP LAYER (visible)       │  ← idx=0, What you see
 ├─────────────────────────────┤
-│   Middle Layer (hidden)     │  ← Preserved
+│   Middle Layer (hidden)     │  ← idx=1, Preserved
 ├─────────────────────────────┤
-│   Bottom Layer (hidden)     │  ← Preserved
+│   Bottom Layer (hidden)     │  ← idx=-1, Preserved
 └─────────────────────────────┘
 ```
 
-### Layer Definition Functions
+### Layer Definition
 
-#### `tp-layer-define` - Define a Layer
+#### `tp-define-layer` - Define Layer(s)
+
+Define a single layer or a group of multiple layers.
+
+**Single Layer:**
 
 ```elisp
-(tp-layer-define NAME PROPERTIES)
+(tp-define-layer layer-name
+  (face (:background "cyan") line-prefix ">>"))
 ```
 
-Define a named layer with properties.
+**Multiple Layers (Layer Group):**
+
+```elisp
+(tp-define-layer my-group
+  layer-1                                    ; Reference existing layer
+  (face (:background "red") line-prefix ">>")    ; Anonymous layer
+  (face (:background "green" :weight bold)))     ; Another anonymous layer
+```
+
+The first layer in the definition is the top layer (visible by default).
 
 **Examples:**
 
 ```elisp
-(tp-layer-define highlight
-  '(face (:background "yellow" :foreground "black")))
+;; Define individual layers
+(tp-define-layer highlight
+  (face (:background "yellow" :foreground "black")))
 
-(tp-layer-define error
-  '(face (:background "red" :foreground "white")
-    help-echo "Error!"))
+(tp-define-layer error
+  (face (:background "red" :foreground "white")
+   help-echo "Error!"))
 
-(tp-layer-define info
-  '(face (:background "blue" :foreground "white")))
-```
+(tp-define-layer info
+  (face (:background "blue" :foreground "white")))
 
----
-
-#### `tp-group-define` - Define Layer Group
-
-```elisp
-(tp-group-define NAME
-  LAYER1 PROPERTIES1
-  LAYER2 PROPERTIES2
-  ...)
-```
-
-Define a group of related layers.
-
-**Examples:**
-
-```elisp
-(tp-group-define status-colors
-  status-ok      '(face (:foreground "green"))
-  status-warning '(face (:foreground "orange"))
-  status-error   '(face (:foreground "red")))
+;; Define a layer group
+(tp-define-layer status-colors
+  highlight
+  error
+  info)
 ```
 
 ---
@@ -873,53 +872,146 @@ Clear all layer and group definitions.
 
 ---
 
-### Layer Manipulation Functions
+### Layer Placement
 
-#### `tp-layer-push` - Add Layer
+#### `tp-put-layer` - Set Layer at Index
 
 ```elisp
-(tp-layer-push START END NAME &optional OBJECT)
+;; Buffer/string region
+(tp-put-layer START END LAYER IDX OBJECT)
+
+;; Entire string
+(tp-put-layer STRING LAYER IDX)
 ```
 
-Push a layer to the top of the stack.
+Set layer(s) at a specific index position in the layer stack.
+
+- `IDX = 0`: Top (visible layer)
+- `IDX = -1`: Bottom
+- Other values insert at that position
 
 **Examples:**
 
 ```elisp
-(tp-layer-define base '(face default))
-(tp-layer-define highlight '(face (:background "yellow")))
+(tp-define-layer base (face default))
+(tp-define-layer highlight (face (:background "yellow")))
+
+;; Put base layer at top
+(tp-put-layer 1 10 'base 0)
+
+;; Put highlight at index 1 (below top)
+(tp-put-layer 1 10 'highlight 1)
+
+;; Put layer at bottom
+(tp-put-layer 1 10 'info -1)
+```
+
+---
+
+#### `tp-push-layer` - Push Layer to Top
+
+```elisp
+;; Buffer/string region
+(tp-push-layer START END LAYER OBJECT)
+
+;; Entire string
+(tp-push-layer STRING LAYER)
+```
+
+Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
+
+**Examples:**
+
+```elisp
+(tp-define-layer base (face default))
+(tp-define-layer highlight (face (:background "yellow")))
 
 ;; Push base layer first
-(tp-layer-push 1 10 'base)
+(tp-push-layer 1 10 'base)
 
 ;; Push highlight on top (now visible)
-(tp-layer-push 1 10 'highlight)
+(tp-push-layer 1 10 'highlight)
 ```
 
 ---
 
-#### `tp-layer-delete` - Remove Layer
+### Layer Deletion
+
+#### `tp-delete-layer` - Delete Layer by Name/Index
 
 ```elisp
-(tp-layer-delete START END NAME &optional OBJECT)
+;; Buffer/string region
+(tp-delete-layer START END LAYER-NAME/IDX OBJECT)
+
+;; Entire string
+(tp-delete-layer STRING LAYER-NAME/IDX)
 ```
 
-Delete a layer from anywhere in the stack.
+Delete a layer from anywhere in the stack by name or index.
 
 **Examples:**
 
 ```elisp
-;; Remove the highlight layer
-(tp-layer-delete 1 10 'highlight)
-;; base layer is now visible
+;; Remove by name
+(tp-delete-layer 1 10 'highlight)
+
+;; Remove top layer (idx=0)
+(tp-delete-layer 1 10 0)
+
+;; Remove bottom layer
+(tp-delete-layer 1 10 -1)
 ```
 
 ---
 
-#### `tp-layer-rotate` - Cycle Layers
+#### `tp-pop-layer` - Pop Top Layer
 
 ```elisp
-(tp-layer-rotate START END &optional OBJECT)
+;; Buffer/string region
+(tp-pop-layer START END OBJECT)
+
+;; Entire string
+(tp-pop-layer STRING)
+```
+
+Remove the top layer (equivalent to `tp-delete-layer ... 0`).
+
+---
+
+### Layer Movement
+
+#### `tp-raise-layer` - Move Layer Up/Down
+
+```elisp
+;; Buffer/string region
+(tp-raise-layer START END IDX/LAYER-NAME N OBJECT)
+
+;; Entire string
+(tp-raise-layer STRING IDX/LAYER-NAME N)
+```
+
+Raise a layer by N positions. Positive N moves toward top, negative moves toward bottom.
+
+**Examples:**
+
+```elisp
+;; Move layer1 up by 2 positions
+(tp-raise-layer 1 10 'layer1 2)
+
+;; Move layer at idx 2 down by 1 position
+(tp-raise-layer 1 10 2 -1)
+```
+
+---
+
+#### `tp-rotate-layer` - Cycle Layers
+
+```elisp
+;; Buffer/string region
+(tp-rotate-layer START END OBJECT)
+
+;; Entire string
+(tp-rotate-layer STRING)
 ```
 
 Rotate layers - top goes to bottom, next becomes visible.
@@ -928,47 +1020,101 @@ Rotate layers - top goes to bottom, next becomes visible.
 
 ```elisp
 ;; Stack: highlight (top) -> base (bottom)
-(tp-layer-rotate 1 10)
+(tp-rotate-layer 1 10)
 ;; Stack: base (top) -> highlight (bottom)
 ```
 
 ---
 
-#### `tp-layer-pin` - Bring Layer to Top
+#### `tp-pin-layer` - Pin Layer to Top
 
 ```elisp
-(tp-layer-pin START END NAME &optional OBJECT)
+;; Buffer/string region
+(tp-pin-layer START END IDX/LAYER-NAME OBJECT)
+
+;; Entire string
+(tp-pin-layer STRING IDX/LAYER-NAME)
 ```
 
-Move a specific layer to the top.
+Move a specific layer to the top (make it visible).
 
 **Examples:**
 
 ```elisp
 ;; Make 'base the top layer
-(tp-layer-pin 1 10 'base)
+(tp-pin-layer 1 10 'base)
 ```
 
 ---
 
-#### `tp-layer-hide` / `tp-layer-show`
+#### `tp-switch-layer` - Switch Two Layers
 
 ```elisp
-(tp-layer-hide START END NAME &optional OBJECT)
-(tp-layer-show START END NAME &optional OBJECT)
+;; Buffer/string region
+(tp-switch-layer START END IDX1/NAME1 IDX2/NAME2 OBJECT)
+
+;; Entire string
+(tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
 ```
 
-Hide layer (move to bottom) or show layer (move to top).
+Swap positions of two layers.
+
+**Examples:**
+
+```elisp
+;; Switch layer1 and layer2
+(tp-switch-layer 1 10 'layer1 'layer2)
+```
 
 ---
 
-#### `tp-layer-merge`
+### Layer Merging
+
+#### `tp-merge-layers` - Merge Multiple Layers
 
 ```elisp
-(tp-layer-merge START END LAYER1 LAYER2 NEW-NAME &optional OBJECT)
+;; Buffer/string region
+(tp-merge-layers START END NEW-LAYER-NAME '(IDX1 LAYER-NAME1 IDX2 ...) OBJECT)
+
+;; Entire string
+(tp-merge-layers STRING NEW-LAYER-NAME '(IDX1 LAYER-NAME1 IDX2 ...))
 ```
 
-Merge two layers into one new layer.
+Merge specified layers into a new layer. Earlier layers in the list take precedence.
+
+**Examples:**
+
+```elisp
+;; Merge layer1 and layer2 into merged-layer
+(tp-merge-layers 1 10 'merged-layer '(layer1 layer2))
+
+;; Merge by index
+(tp-merge-layers 1 10 'merged '(0 1 2))
+```
+
+---
+
+#### `tp-flatten-layers` - Flatten All Layers
+
+```elisp
+;; Buffer/string region
+(tp-flatten-layers START END NAME OBJECT)
+
+;; Entire string
+(tp-flatten-layers STRING NAME)
+```
+
+Flatten all layers into a single layer with the given name.
+
+**Examples:**
+
+```elisp
+;; Flatten all layers into 'flat-layer
+(tp-flatten-layers 1 10 'flat-layer)
+
+;; Flatten with nil name (unnamed layer)
+(tp-flatten-layers 1 10 nil)
+```
 
 ---
 
@@ -1026,54 +1172,55 @@ Get name of the top (visible) layer.
 
 ```elisp
 ;; Define layers for different highlighting purposes
-(tp-layer-define code-base
-  '(face font-lock-keyword-face))
+(tp-define-layer code-base
+  (face font-lock-keyword-face))
 
-(tp-layer-define code-error
-  '(face (:underline (:color "red" :style wave))
-    help-echo "Syntax error"))
+(tp-define-layer code-error
+  (face (:underline (:color "red" :style wave))
+   help-echo "Syntax error"))
 
-(tp-layer-define code-debug
-  '(face (:background "dark blue")))
+(tp-define-layer code-debug
+  (face (:background "dark blue")))
 
 ;; Apply base highlighting
-(tp-layer-push 1 100 'code-base)
+(tp-push-layer 1 100 'code-base)
 
 ;; Add error highlight on problematic code
-(tp-layer-push 50 60 'code-error)
+(tp-push-layer 50 60 'code-error)
 
 ;; Toggle between error and normal view
 (defun toggle-error-view ()
   (interactive)
-  (tp-layer-rotate 50 60))
+  (tp-rotate-layer 50 60))
 ```
 
 ### Status Indicator
 
 ```elisp
-(tp-group-define task-status
-  status-todo     '(face (:foreground "gray"))
-  status-progress '(face (:foreground "yellow"))
-  status-done     '(face (:foreground "green")))
+;; Define status layers as a group
+(tp-define-layer status-todo (face (:foreground "gray")))
+(tp-define-layer status-progress (face (:foreground "yellow")))
+(tp-define-layer status-done (face (:foreground "green")))
+(tp-define-layer task-status status-todo status-progress status-done)
 
 ;; Cycle through statuses
 (defun cycle-task-status ()
   (interactive)
-  (tp-layer-rotate (line-beginning-position) (line-end-position)))
+  (tp-rotate-layer (line-beginning-position) (line-end-position)))
 ```
 
 ### Temporary Highlights
 
 ```elisp
-(tp-layer-define temp-highlight
-  '(face (:background "yellow")))
+(tp-define-layer temp-highlight
+  (face (:background "yellow")))
 
 (defun flash-region (start end)
   "Flash a region temporarily."
-  (tp-layer-push start end 'temp-highlight)
+  (tp-push-layer start end 'temp-highlight)
   (run-with-timer 0.5 nil
                   (lambda ()
-                    (tp-layer-delete start end 'temp-highlight))))
+                    (tp-delete-layer start end 'temp-highlight))))
 ```
 
 ---
@@ -1086,9 +1233,7 @@ For convenience, tp.el provides these aliases:
 |-------|-------------------|
 | `tp-put` | `tp-set` |
 | `tp-layer-properties` | `tp-layer-props` |
-| `tp-layer-group-define` | `tp-group-define` |
 | `tp-layer-group-properties` | `tp-group-props` |
-| `tp-layer-group-propertize` | `tp-group-propertize` |
 | `tp-layer-group-undefine` | `tp-group-undefine` |
 
 ### Deprecated Functions

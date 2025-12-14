@@ -784,58 +784,57 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 ```
 ┌─────────────────────────────┐
-│   顶层（可见）              │  ← 你看到的
+│   顶层（可见）              │  ← idx=0，你看到的
 ├─────────────────────────────┤
-│   中间层（隐藏）            │  ← 被保留
+│   中间层（隐藏）            │  ← idx=1，被保留
 ├─────────────────────────────┤
-│   底层（隐藏）              │  ← 被保留
+│   底层（隐藏）              │  ← idx=-1，被保留
 └─────────────────────────────┘
 ```
 
-### 图层定义函数
+### 图层定义
 
-#### `tp-layer-define` - 定义图层
+#### `tp-define-layer` - 定义图层
+
+定义单个图层或多个图层组。
+
+**单个图层：**
 
 ```elisp
-(tp-layer-define NAME PROPERTIES)
+(tp-define-layer layer-name
+  (face (:background "cyan") line-prefix ">>"))
 ```
 
-定义一个带属性的命名图层。
+**多个图层（图层组）：**
+
+```elisp
+(tp-define-layer my-group
+  layer-1                                    ; 引用已存在的图层
+  (face (:background "red") line-prefix ">>")    ; 匿名图层
+  (face (:background "green" :weight bold)))     ; 另一个匿名图层
+```
+
+定义中的第一个图层是顶层（默认可见）。
 
 **示例：**
 
 ```elisp
-(tp-layer-define highlight
-  '(face (:background "yellow" :foreground "black")))
+;; 定义单个图层
+(tp-define-layer highlight
+  (face (:background "yellow" :foreground "black")))
 
-(tp-layer-define error
-  '(face (:background "red" :foreground "white")
-    help-echo "错误!"))
+(tp-define-layer error
+  (face (:background "red" :foreground "white")
+   help-echo "错误!"))
 
-(tp-layer-define info
-  '(face (:background "blue" :foreground "white")))
-```
+(tp-define-layer info
+  (face (:background "blue" :foreground "white")))
 
----
-
-#### `tp-group-define` - 定义图层组
-
-```elisp
-(tp-group-define NAME
-  LAYER1 PROPERTIES1
-  LAYER2 PROPERTIES2
-  ...)
-```
-
-定义一组相关的图层。
-
-**示例：**
-
-```elisp
-(tp-group-define status-colors
-  status-ok      '(face (:foreground "green"))
-  status-warning '(face (:foreground "orange"))
-  status-error   '(face (:foreground "red")))
+;; 定义图层组
+(tp-define-layer status-colors
+  highlight
+  error
+  info)
 ```
 
 ---
@@ -872,53 +871,146 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 ---
 
-### 图层操作函数
+### 图层放置
 
-#### `tp-layer-push` - 添加图层
+#### `tp-put-layer` - 在指定位置设置图层
 
 ```elisp
-(tp-layer-push START END NAME &optional OBJECT)
+;; 缓冲区/字符串区域
+(tp-put-layer START END LAYER IDX OBJECT)
+
+;; 整个字符串
+(tp-put-layer STRING LAYER IDX)
 ```
 
-将图层推到堆栈顶部。
+在图层堆栈的指定索引位置设置图层。
+
+- `IDX = 0`：顶部（可见图层）
+- `IDX = -1`：底部
+- 其他值在该位置插入
 
 **示例：**
 
 ```elisp
-(tp-layer-define base '(face default))
-(tp-layer-define highlight '(face (:background "yellow")))
+(tp-define-layer base (face default))
+(tp-define-layer highlight (face (:background "yellow")))
+
+;; 将 base 图层放在顶部
+(tp-put-layer 1 10 'base 0)
+
+;; 将 highlight 放在索引 1（顶部下面）
+(tp-put-layer 1 10 'highlight 1)
+
+;; 将图层放在底部
+(tp-put-layer 1 10 'info -1)
+```
+
+---
+
+#### `tp-push-layer` - 推送图层到顶部
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-push-layer START END LAYER OBJECT)
+
+;; 整个字符串
+(tp-push-layer STRING LAYER)
+```
+
+将图层推到堆栈顶部（相当于 `tp-put-layer ... 0`）。
+
+**示例：**
+
+```elisp
+(tp-define-layer base (face default))
+(tp-define-layer highlight (face (:background "yellow")))
 
 ;; 首先推入 base 图层
-(tp-layer-push 1 10 'base)
+(tp-push-layer 1 10 'base)
 
 ;; 将 highlight 推到顶部（现在可见）
-(tp-layer-push 1 10 'highlight)
+(tp-push-layer 1 10 'highlight)
 ```
 
 ---
 
-#### `tp-layer-delete` - 删除图层
+### 图层删除
+
+#### `tp-delete-layer` - 按名称/索引删除图层
 
 ```elisp
-(tp-layer-delete START END NAME &optional OBJECT)
+;; 缓冲区/字符串区域
+(tp-delete-layer START END LAYER-NAME/IDX OBJECT)
+
+;; 整个字符串
+(tp-delete-layer STRING LAYER-NAME/IDX)
 ```
 
-从堆栈任何位置删除图层。
+通过名称或索引从堆栈任意位置删除图层。
 
 **示例：**
 
 ```elisp
-;; 删除 highlight 图层
-(tp-layer-delete 1 10 'highlight)
-;; base 图层现在可见
+;; 按名称删除
+(tp-delete-layer 1 10 'highlight)
+
+;; 删除顶层（idx=0）
+(tp-delete-layer 1 10 0)
+
+;; 删除底层
+(tp-delete-layer 1 10 -1)
 ```
 
 ---
 
-#### `tp-layer-rotate` - 轮换图层
+#### `tp-pop-layer` - 弹出顶层
 
 ```elisp
-(tp-layer-rotate START END &optional OBJECT)
+;; 缓冲区/字符串区域
+(tp-pop-layer START END OBJECT)
+
+;; 整个字符串
+(tp-pop-layer STRING)
+```
+
+删除顶层（相当于 `tp-delete-layer ... 0`）。
+
+---
+
+### 图层移动
+
+#### `tp-raise-layer` - 上移/下移图层
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-raise-layer START END IDX/LAYER-NAME N OBJECT)
+
+;; 整个字符串
+(tp-raise-layer STRING IDX/LAYER-NAME N)
+```
+
+将图层上移 N 个位置。正数 N 向顶部移动，负数向底部移动。
+
+**示例：**
+
+```elisp
+;; 将 layer1 上移 2 个位置
+(tp-raise-layer 1 10 'layer1 2)
+
+;; 将索引 2 的图层下移 1 个位置
+(tp-raise-layer 1 10 2 -1)
+```
+
+---
+
+#### `tp-rotate-layer` - 轮换图层
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-rotate-layer START END OBJECT)
+
+;; 整个字符串
+(tp-rotate-layer STRING)
 ```
 
 轮换图层 - 顶层移到底部，下一层变为可见。
@@ -927,47 +1019,101 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 ```elisp
 ;; 堆栈: highlight (顶) -> base (底)
-(tp-layer-rotate 1 10)
+(tp-rotate-layer 1 10)
 ;; 堆栈: base (顶) -> highlight (底)
 ```
 
 ---
 
-#### `tp-layer-pin` - 将图层置顶
+#### `tp-pin-layer` - 将图层置顶
 
 ```elisp
-(tp-layer-pin START END NAME &optional OBJECT)
+;; 缓冲区/字符串区域
+(tp-pin-layer START END IDX/LAYER-NAME OBJECT)
+
+;; 整个字符串
+(tp-pin-layer STRING IDX/LAYER-NAME)
 ```
 
-将特定图层移到顶部。
+将特定图层移到顶部（使其可见）。
 
 **示例：**
 
 ```elisp
 ;; 将 'base 设为顶层
-(tp-layer-pin 1 10 'base)
+(tp-pin-layer 1 10 'base)
 ```
 
 ---
 
-#### `tp-layer-hide` / `tp-layer-show`
+#### `tp-switch-layer` - 交换两个图层
 
 ```elisp
-(tp-layer-hide START END NAME &optional OBJECT)
-(tp-layer-show START END NAME &optional OBJECT)
+;; 缓冲区/字符串区域
+(tp-switch-layer START END IDX1/NAME1 IDX2/NAME2 OBJECT)
+
+;; 整个字符串
+(tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
 ```
 
-隐藏图层（移到底部）或显示图层（移到顶部）。
+交换两个图层的位置。
+
+**示例：**
+
+```elisp
+;; 交换 layer1 和 layer2
+(tp-switch-layer 1 10 'layer1 'layer2)
+```
 
 ---
 
-#### `tp-layer-merge`
+### 图层合并
+
+#### `tp-merge-layers` - 合并多个图层
 
 ```elisp
-(tp-layer-merge START END LAYER1 LAYER2 NEW-NAME &optional OBJECT)
+;; 缓冲区/字符串区域
+(tp-merge-layers START END NEW-LAYER-NAME '(IDX1 LAYER-NAME1 IDX2 ...) OBJECT)
+
+;; 整个字符串
+(tp-merge-layers STRING NEW-LAYER-NAME '(IDX1 LAYER-NAME1 IDX2 ...))
 ```
 
-将两个图层合并为一个新图层。
+将指定的图层合并为一个新图层。列表中靠前的图层优先级更高。
+
+**示例：**
+
+```elisp
+;; 将 layer1 和 layer2 合并为 merged-layer
+(tp-merge-layers 1 10 'merged-layer '(layer1 layer2))
+
+;; 按索引合并
+(tp-merge-layers 1 10 'merged '(0 1 2))
+```
+
+---
+
+#### `tp-flatten-layers` - 扁平化所有图层
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-flatten-layers START END NAME OBJECT)
+
+;; 整个字符串
+(tp-flatten-layers STRING NAME)
+```
+
+将所有图层扁平化为一个具有给定名称的单一图层。
+
+**示例：**
+
+```elisp
+;; 将所有图层扁平化为 'flat-layer
+(tp-flatten-layers 1 10 'flat-layer)
+
+;; 使用 nil 名称扁平化（无名图层）
+(tp-flatten-layers 1 10 nil)
+```
 
 ---
 
@@ -1025,54 +1171,55 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 
 ```elisp
 ;; 为不同高亮目的定义图层
-(tp-layer-define code-base
-  '(face font-lock-keyword-face))
+(tp-define-layer code-base
+  (face font-lock-keyword-face))
 
-(tp-layer-define code-error
-  '(face (:underline (:color "red" :style wave))
-    help-echo "语法错误"))
+(tp-define-layer code-error
+  (face (:underline (:color "red" :style wave))
+   help-echo "语法错误"))
 
-(tp-layer-define code-debug
-  '(face (:background "dark blue")))
+(tp-define-layer code-debug
+  (face (:background "dark blue")))
 
 ;; 应用基础高亮
-(tp-layer-push 1 100 'code-base)
+(tp-push-layer 1 100 'code-base)
 
 ;; 在有问题的代码上添加错误高亮
-(tp-layer-push 50 60 'code-error)
+(tp-push-layer 50 60 'code-error)
 
 ;; 在错误和正常视图之间切换
 (defun toggle-error-view ()
   (interactive)
-  (tp-layer-rotate 50 60))
+  (tp-rotate-layer 50 60))
 ```
 
 ### 状态指示器
 
 ```elisp
-(tp-group-define task-status
-  status-todo     '(face (:foreground "gray"))
-  status-progress '(face (:foreground "yellow"))
-  status-done     '(face (:foreground "green")))
+;; 将状态图层定义为一个组
+(tp-define-layer status-todo (face (:foreground "gray")))
+(tp-define-layer status-progress (face (:foreground "yellow")))
+(tp-define-layer status-done (face (:foreground "green")))
+(tp-define-layer task-status status-todo status-progress status-done)
 
 ;; 循环切换状态
 (defun cycle-task-status ()
   (interactive)
-  (tp-layer-rotate (line-beginning-position) (line-end-position)))
+  (tp-rotate-layer (line-beginning-position) (line-end-position)))
 ```
 
 ### 临时高亮
 
 ```elisp
-(tp-layer-define temp-highlight
-  '(face (:background "yellow")))
+(tp-define-layer temp-highlight
+  (face (:background "yellow")))
 
 (defun flash-region (start end)
   "临时闪烁一个区域。"
-  (tp-layer-push start end 'temp-highlight)
+  (tp-push-layer start end 'temp-highlight)
   (run-with-timer 0.5 nil
                   (lambda ()
-                    (tp-layer-delete start end 'temp-highlight))))
+                    (tp-delete-layer start end 'temp-highlight))))
 ```
 
 ---
@@ -1085,9 +1232,7 @@ tp.el 提供三个主要的属性设置函数，每个有不同的语义：
 |------|--------|
 | `tp-put` | `tp-set` |
 | `tp-layer-properties` | `tp-layer-props` |
-| `tp-layer-group-define` | `tp-group-define` |
 | `tp-layer-group-properties` | `tp-group-props` |
-| `tp-layer-group-propertize` | `tp-group-propertize` |
 | `tp-layer-group-undefine` | `tp-group-undefine` |
 
 ### 已弃用函数
