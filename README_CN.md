@@ -991,7 +991,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 对所有 PROPERTY 匹配的文本应用 FUNCTION。
 
-- **FUNCTION** 接收匹配到的文本作为唯一参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+- **FUNCTION** 接收匹配到的文本作为第一个参数，可选地接收当前匹配的 0 基索引作为第二个参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
 - 返回处理的匹配数量。
 
 **示例：**
@@ -1014,7 +1014,19 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (buffer-string))
 ;; => "HELLO world TEST"
 
-;; 自定义转换
+;; 使用索引的自定义转换
+(let ((my-string (copy-sequence "aaa bbb ccc")))
+  (tp-set 0 3 '(marker t) my-string)
+  (tp-set 4 7 '(marker t) my-string)
+  (tp-set 8 11 '(marker t) my-string)
+  (tp-search-map
+   (lambda (text idx)
+     (format "%d:%s" idx text))
+   my-string 'marker)
+  my-string)
+;; => "0:aaa1:bbb2:ccc"
+
+;; 不使用索引的自定义转换
 (let ((my-string (copy-sequence "hello world")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-search-map

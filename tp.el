@@ -1284,7 +1284,8 @@ This function supports two calling conventions:
 2. Entire string:
    (tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
 
-FUNCTION receives a copy of the matched text as its only argument.
+FUNCTION receives the matched text as its first argument, and optionally
+the 0-based index of the current match as its second argument.
 FUNCTION can either:
 - Return a new/modified string to replace the matched text
 - Modify the text properties of the argument and return it
@@ -1304,11 +1305,15 @@ Example:
   ;; Upcase all matched text
   (tp-search-map #\\='upcase my-string \\='marker)
   ;; Add properties to matched text
-  (tp-search-map (lambda (txt) (tp-add txt \\='face \\='bold)) str \\='marker)"
+  (tp-search-map (lambda (txt) (tp-add txt \\='face \\='bold)) str \\='marker)
+  ;; Use index to add numbering
+  (tp-search-map (lambda (txt idx) (format \"%d: %s\" idx txt)) str \\='marker)"
   (let ((obj (cond
               ((stringp start-or-string) start-or-string)
               ((numberp start-or-string) (or object (current-buffer)))
-              (t nil))))
+              (t nil)))
+        (idx 0)
+        (arity (func-arity function)))
     (tp--search-do
      (lambda (match obj)
        (let* ((start (car match))
@@ -1316,7 +1321,10 @@ Example:
               (text (if (stringp obj)
                         (substring obj start end)
                       (buffer-substring start end)))
-              (new-text (funcall function text)))
+              (new-text (if (>= (cdr arity) 2)
+                            (funcall function text idx)
+                          (funcall function text))))
+         (setq idx (1+ idx))
          (when (stringp new-text)
            (if (stringp obj)
                ;; For strings: copy text content and properties separately

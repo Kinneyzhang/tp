@@ -854,6 +854,52 @@
       (should (equal (plist-get (plist-get props-0 'face) :background) "orange"))
       (should (equal (plist-get (plist-get props-12 'face) :background) "orange")))))
 
+(ert-deftest tp-test-search-map-with-idx ()
+  "Test tp-search-map passes index to function when it accepts two arguments."
+  (let ((str (copy-sequence "aaa bbb ccc"))
+        (indices nil))
+    (tp-set 0 3 '(marker t) str)
+    (tp-set 4 7 '(marker t) str)
+    (tp-set 8 11 '(marker t) str)
+    ;; Use a function that accepts idx and records the indices
+    (tp-search-map (lambda (txt idx)
+                     (push idx indices)
+                     (format "%d:%s" idx txt))
+                   str 'marker)
+    ;; Check indices were passed in order (reversed due to push)
+    (should (equal (reverse indices) '(0 1 2)))
+    ;; Check text was transformed with index
+    (should (equal (substring str 0 5) "0:aaa"))
+    (should (equal (substring str 4 9) "1:bbb"))
+    (should (equal (substring str 8 13) "2:ccc"))))
+
+(ert-deftest tp-test-search-map-with-idx-in-buffer ()
+  "Test tp-search-map passes index to function in buffer range."
+  (tp-test-with-temp-buffer
+    (insert "aaa bbb ccc")
+    (tp-set 1 4 '(marker t))
+    (tp-set 5 8 '(marker t))
+    (tp-set 9 12 '(marker t))
+    (let ((indices nil))
+      (tp-search-map (lambda (txt idx)
+                       (push idx indices)
+                       (format "[%d]" idx))
+                     1 12 'marker)
+      ;; Check indices were passed in order
+      (should (equal (reverse indices) '(0 1 2)))
+      ;; Check text was replaced with index markers
+      (should (string-match-p "\\[0\\]" (buffer-string)))
+      (should (string-match-p "\\[1\\]" (buffer-string)))
+      (should (string-match-p "\\[2\\]" (buffer-string))))))
+
+(ert-deftest tp-test-search-map-backward-compat ()
+  "Test tp-search-map still works with single-argument functions."
+  (let ((str (copy-sequence "hello world")))
+    (tp-set 0 5 '(marker t) str)
+    ;; Use #'upcase which only takes one argument
+    (tp-search-map #'upcase str 'marker)
+    (should (equal (substring str 0 5) "HELLO"))))
+
 ;;; ============================================================
 ;;; Utility Function Tests
 ;;; ============================================================

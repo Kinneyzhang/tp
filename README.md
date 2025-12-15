@@ -994,7 +994,8 @@ Returns a list of (START END VALUE) for all matching regions.
 
 Apply FUNCTION to matched text for all matches of PROPERTY.
 
-- **FUNCTION** receives the matched text as its only argument.  The return value
+- **FUNCTION** receives the matched text as its first argument, and optionally
+  the 0-based index of the current match as its second argument.  The return value
   of FUNCTION replaces the matched text in the string or buffer.
 - Returns the number of matches processed.
 
@@ -1018,7 +1019,19 @@ Apply FUNCTION to matched text for all matches of PROPERTY.
   (buffer-string))
 ;; => "HELLO world TEST"
 
-;; Custom transformation
+;; Custom transformation with index
+(let ((my-string (copy-sequence "aaa bbb ccc")))
+  (tp-set 0 3 '(marker t) my-string)
+  (tp-set 4 7 '(marker t) my-string)
+  (tp-set 8 11 '(marker t) my-string)
+  (tp-search-map
+   (lambda (text idx)
+     (format "%d:%s" idx text))
+   my-string 'marker)
+  my-string)
+;; => "0:aaa1:bbb2:ccc"
+
+;; Custom transformation without index
 (let ((my-string (copy-sequence "hello world")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-search-map
