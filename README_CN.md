@@ -271,16 +271,28 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 在缓冲区区域设置 face
-(tp-set 1 10 '(face bold))  ; => (1 . 10)
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold)))
+;; => (1 . 10)
 
 ;; 设置多个属性
-(tp-set 1 10 '(face bold help-echo "Click me"))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold help-echo "Click me")))
+;; => (1 . 10)
 
 ;; 在特定缓冲区设置
-(tp-set 1 10 '(face italic) my-buffer)
+(let ((my-buffer (generate-new-buffer "*test*")))
+  (with-current-buffer my-buffer
+    (insert "Hello World"))
+  (tp-set 1 10 '(face italic) my-buffer)
+  (kill-buffer my-buffer))
+;; => (1 . 10)
 
 ;; 在字符串上设置属性（0 索引）
-(setq my-string (tp-set 0 5 '(face italic) "Hello World"))
+(let ((my-string (tp-set 0 5 '(face italic) "Hello World")))
+  my-string)
 ;; => #("Hello World" 0 5 (face italic))
 
 ;; 在整个字符串上设置属性
@@ -303,10 +315,16 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 替换区域中的所有属性
-(tp-reset 1 10 '(face bold))  ; 任何现有属性都会被移除
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(help-echo "old"))  ; 设置已有属性
+  (tp-reset 1 10 '(face bold))      ; 任何现有属性都会被移除
+  (tp-at 1))
+;; => (face bold)  ; help-echo 被移除了
 
 ;; 在字符串上
 (tp-reset "Hello" 'face 'italic)
+;; => #("Hello" 0 5 (face italic))
 ```
 
 ---
@@ -324,17 +342,26 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 添加属性（保留现有，合并嵌套）
-(tp-add 1 10 '(help-echo "tooltip"))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-add 1 10 '(help-echo "tooltip"))
+  (tp-at 1))
+;; => (face bold help-echo "tooltip")
 
 ;; 深度合并 face 属性
-(tp-set 1 10 '(face (:foreground "red")))
-(tp-add 1 10 '(face (:background "blue")))
-;; 结果: face 是 (:foreground "red" :background "blue")
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face (:foreground "red")))
+  (tp-add 1 10 '(face (:background "blue")))
+  (tp-at 1 'face))
+;; => (:foreground "red" :background "blue")
 
 ;; Face 前置 - 符号 face 会被添加到 face 列表的开头
-(tp-set "Hello" 'face 'bold)
-(tp-add "Hello" 'face 'shadow)
-;; 结果: face 是 (shadow bold)
+(let ((str (tp-set "Hello" 'face 'bold)))
+  (tp-add str 'face 'shadow)
+  (tp-at 0 'face str))
+;; => (shadow bold)
 ```
 
 ---
@@ -378,41 +405,53 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 从范围获取 - 返回 (START END VALUE) 区间列表
-(tp-get 1 10 'face)        ; => ((1 6 bold))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-get 1 10 'face))
+;; => ((1 6 bold))
 
 ;; 获取多个区间
-(setq str (copy-sequence "Hello World Hello"))
-(tp-set 0 5 '(face bold) str)
-(tp-set 12 17 '(face italic) str)
-(tp-get 0 17 'face str)    ; => ((0 5 bold) (12 17 italic))
+(let ((str (copy-sequence "Hello World Hello")))
+  (tp-set 0 5 '(face bold) str)
+  (tp-set 12 17 '(face italic) str)
+  (tp-get 0 17 'face str))
+;; => ((0 5 bold) (12 17 italic))
 
 ;; 使用列表形式的属性路径
-(setq my-string (copy-sequence "Hello World Hello World"))
-(put-text-property 5 20 'face '(:underline (:style wave)) my-string)
-(tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
+(let ((my-string (copy-sequence "Hello World Hello World")))
+  (put-text-property 5 20 'face '(:underline (:style wave)) my-string)
+  (tp-get 5 20 '(face :underline :style) my-string))
+;; => ((5 20 wave))
 
 ;; 从整个字符串获取深层嵌套属性
-(setq str (copy-sequence "Hello World"))
-(put-text-property 0 5 'face '(:underline (:color "green")) str)
-(put-text-property 6 11 'face '(:underline (:color "yellow")) str)
-(tp-get str 'face :underline :color)  ; => ((0 5 "green") (6 11 "yellow"))
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 5 'face '(:underline (:color "green")) str)
+  (put-text-property 6 11 'face '(:underline (:color "yellow")) str)
+  (tp-get str 'face :underline :color))
+;; => ((0 5 "green") (6 11 "yellow"))
 
 ;; 从嵌套属性中获取多个键
-(setq str (copy-sequence "Hello World"))
-(put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
-(put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
-(tp-get str 'face :underline '(:color :style))
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
+  (put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
+  (tp-get str 'face :underline '(:color :style)))
 ;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
 ;; 获取范围内的所有属性
-(tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold help-echo "test"))
+  (tp-get 1 10))
+;; => ((1 6 (face bold help-echo "test")))
 
 ;; 从整个字符串获取 - 返回区间列表
-(setq str (copy-sequence "Hello World Hello"))
-(tp-set 0 5 '(face bold) str)
-(tp-set 12 17 '(face italic) str)
-(tp-get str)               ; => ((0 5 (face bold)) (12 17 (face italic)))
-(tp-get str 'face)         ; => ((0 5 bold) (12 17 italic))
+(let ((str (copy-sequence "Hello World Hello")))
+  (tp-set 0 5 '(face bold) str)
+  (tp-set 12 17 '(face italic) str)
+  (list (tp-get str)              ; => ((0 5 (face bold)) (12 17 (face italic)))
+        (tp-get str 'face)))      ; => ((0 5 bold) (12 17 italic))
+;; => (((0 5 (face bold)) (12 17 (face italic))) ((0 5 bold) (12 17 italic)))
 ```
 
 ---
@@ -441,25 +480,42 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 获取当前缓冲区位置 5 的所有属性
-(tp-at 5)  ; => (face bold help-echo "test")
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold help-echo "test"))
+  (tp-at 5))
+;; => (face bold help-echo "test")
 
 ;; 获取字符串位置 0 的所有属性
-(setq my-string (tp-set "Hello" 'face 'italic 'help-echo "greeting"))
-(tp-at 0 my-string)  ; => (face italic help-echo "greeting")
+(let ((my-string (tp-set "Hello" 'face 'italic 'help-echo "greeting")))
+  (tp-at 0 my-string))
+;; => (face italic help-echo "greeting")
 
 ;; 获取位置的特定属性
-(tp-at 5 'face)  ; => bold
-(tp-at 0 'face my-string)  ; => italic
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-at 5 'face))
+;; => bold
+
+;; 获取字符串位置的特定属性
+(let ((my-string (tp-set "Hello" 'face 'italic)))
+  (tp-at 0 'face my-string))
+;; => italic
 
 ;; 获取位置的嵌套子属性
-(tp-at 5 '(face :foreground))  ; => "red"
-(tp-at 5 '(face :box :color))  ; => "blue"
-(tp-at 5 '(display :width))    ; => 10
+(with-temp-buffer
+  (insert "Hello World")
+  (put-text-property 1 10 'face '(:foreground "red" :box (:color "blue")))
+  (list (tp-at 5 '(face :foreground))
+        (tp-at 5 '(face :box :color))))
+;; => ("red" "blue")
 
 ;; 从字符串获取嵌套子属性
-(setq str (copy-sequence "Hello"))
-(put-text-property 0 5 'face '(:foreground "red" :underline t) str)
-(tp-at 0 '(face :foreground) str)  ; => "red"
+(let ((str (copy-sequence "Hello")))
+  (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+  (tp-at 0 '(face :foreground) str))
+;; => "red"
 ```
 
 ---
@@ -488,20 +544,48 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 移除整个属性
-(tp-remove 1 10 'face)
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold help-echo "test"))
+  (tp-remove 1 10 'face)
+  (tp-at 1))
+;; => (help-echo "test")
 
 ;; 从 face 移除子属性
-(tp-remove 1 10 '(face :underline))
+(with-temp-buffer
+  (insert "Hello World")
+  (put-text-property 1 10 'face '(:foreground "red" :underline t))
+  (tp-remove 1 10 '(face :underline))
+  (tp-at 1 'face))
+;; => (:foreground "red")
 
 ;; 移除特定嵌套键，保留其他
-(tp-remove 1 10 '(face :underline (:style :position)))
-;; 从 :underline 移除 :style 和 :position
-;; 如果 :underline 中存在 :color，则保留
+(with-temp-buffer
+  (insert "Hello World")
+  (put-text-property 1 10 'face '(:underline (:style wave :position t :color "blue")))
+  (tp-remove 1 10 '(face :underline (:style :position)))
+  (tp-at 1 '(face :underline)))
+;; => (:color "blue")  ; :style 和 :position 被移除, :color 保留
 
-;; 从整个字符串移除
-(tp-remove "Hello World" 'face 'help-echo)  ; 移除多个属性
-(tp-remove "Hello World" 'face :underline)  ; 移除子属性
-(tp-remove "Hello World" 'face :underline '(:style :position))  ; 移除嵌套
+;; 从整个字符串移除 - 移除多个属性
+(let ((str (tp-set "Hello World" 'face 'bold 'help-echo "tip")))
+  (tp-remove str 'face 'help-echo)
+  (tp-at 0 str))
+;; => nil
+
+;; 从字符串移除子属性
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 11 'face '(:foreground "red" :underline t) str)
+  (tp-remove str 'face :underline)
+  (tp-at 0 'face str))
+;; => (:foreground "red")
+
+;; 从字符串移除嵌套键
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 11 'face '(:underline (:style wave :color "blue")) str)
+  (tp-remove str 'face :underline '(:style))
+  (tp-at 0 '(face :underline) str))
+;; => (:color "blue")
 ```
 
 ---
@@ -517,8 +601,21 @@ tp.el 所有函数按类别组织的完整概览：
 **示例：**
 
 ```elisp
-(tp-clear 1 10)     ; 清除区域
-(tp-clear)          ; 清除整个缓冲区
+;; 清除区域
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-clear 1 10)
+  (tp-at 1))
+;; => nil
+
+;; 清除整个缓冲区
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 12 '(face bold))
+  (tp-clear)
+  (tp-at 5))
+;; => nil
 ```
 
 ---
@@ -540,16 +637,20 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 ;; 在缓冲区中 - 返回 (START . END) 对的列表
-(tp-match-set "TODO" '(face warning))
-;; => ((10 . 14) (50 . 54) ...)
+(with-temp-buffer
+  (insert "TODO: fix this. TODO: also this.")
+  (tp-match-set "TODO" '(face warning)))
+;; => ((1 . 5) (17 . 21))
 
 ;; 在字符串上 - 返回修改后的字符串
 (tp-match-set "o" '(face bold) "Hello World")
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
 ;; 多个模式 - 同时匹配 "world" 和 "Hello"
-(tp-match-set '("world" "Hello") '(face bold))
-;; 匹配所有 "world" 出现的位置和所有 "Hello" 出现的位置
+(with-temp-buffer
+  (insert "Hello world, Hello again")
+  (tp-match-set '("world" "Hello") '(face bold)))
+;; => ((1 . 6) (7 . 12) (14 . 19))  ; 匹配 "Hello", "world", "Hello"
 
 ;; 在字符串上使用多个模式
 (tp-match-set '("Hello" "world") '(face bold) "Hello world")
@@ -572,12 +673,19 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 **示例：**
 
 ```elisp
-(tp-match-reset "TODO" '(face warning))
 ;; 替换匹配文本上的所有属性
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-set 1 5 '(help-echo "original"))  ; 设置已有属性
+  (tp-match-reset "TODO" '(face warning))
+  (tp-at 1))
+;; => (face warning)  ; help-echo 被移除
 
 ;; 多个模式
-(tp-match-reset '("TODO" "FIXME") '(face warning))
-;; 替换所有 "TODO" 和 "FIXME" 出现位置的属性
+(with-temp-buffer
+  (insert "TODO: fix. FIXME: also fix.")
+  (tp-match-reset '("TODO" "FIXME") '(face warning)))
+;; => ((1 . 5) (12 . 17))
 ```
 
 ---
@@ -596,12 +704,19 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 **示例：**
 
 ```elisp
-(tp-match-add "TODO" '(face (:underline t)))
 ;; 与现有属性合并
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-set 1 5 '(help-echo "important"))
+  (tp-match-add "TODO" '(face (:underline t)))
+  (tp-at 1))
+;; => (face (:underline t) help-echo "important")
 
 ;; 多个模式
-(tp-match-add '("TODO" "FIXME") '(face (:underline t)))
-;; 合并属性到所有 "TODO" 和 "FIXME" 出现的位置
+(with-temp-buffer
+  (insert "TODO: fix. FIXME: also fix.")
+  (tp-match-add '("TODO" "FIXME") '(face (:underline t))))
+;; => ((1 . 5) (12 . 17))
 ```
 
 ---
@@ -621,7 +736,11 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 ;; 高亮缓冲区中的所有数字
-(tp-regexp-set "[0-9]+" '(face font-lock-number-face))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-set "[0-9]+" '(face font-lock-number-face))
+  (list (tp-at 5 'face) (tp-at 13 'face)))
+;; => (font-lock-number-face font-lock-number-face)
 
 ;; 在字符串上
 (tp-regexp-set "[A-Z]+" '(face bold) "Hello WORLD")
@@ -629,7 +748,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ;; 多个正则 - 同时匹配数字和大写字母
 (tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
-;; 匹配 "123" 和 "XYZ"
+;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
 ```
 
 ---
@@ -645,6 +764,25 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 (tp-regexp-reset PATTERN PLIST &optional OBJECT)
 ```
 
+**示例：**
+
+```elisp
+;; 重置正则匹配处的所有属性
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-set 5 8 '(help-echo "original"))
+  (tp-regexp-reset "[0-9]+" '(face bold))
+  (tp-at 5))
+;; => (face bold)  ; help-echo 被移除
+
+;; 在字符串上
+(let ((str (copy-sequence "abc 123 def")))
+  (tp-set 4 7 '(help-echo "original") str)
+  (tp-regexp-reset "[0-9]+" '(face italic) str)
+  (tp-at 4 str))
+;; => (face italic)
+```
+
 ---
 
 #### `tp-regexp-add` - 正则匹配并添加
@@ -656,6 +794,25 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 (tp-regexp-add PATTERN PLIST &optional OBJECT)
+```
+
+**示例：**
+
+```elisp
+;; 添加属性到正则匹配处（保留现有）
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-set 5 8 '(help-echo "number"))
+  (tp-regexp-add "[0-9]+" '(face bold))
+  (tp-at 5))
+;; => (face bold help-echo "number")
+
+;; 在字符串上
+(let ((str (copy-sequence "abc 123 def")))
+  (tp-set 4 7 '(help-echo "number") str)
+  (tp-regexp-add "[0-9]+" '(face italic) str)
+  (tp-at 4 str))
+;; => (face italic help-echo "number")
 ```
 
 ---
@@ -693,19 +850,30 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 查找下一个具有 'marker 属性的文本
-(tp-forward 'marker)
+(with-temp-buffer
+  (insert "Hello World Test")
+  (tp-set 7 12 '(marker t))
+  (goto-char 1)
+  (let ((match (tp-forward 'marker)))
+    (when match
+      (prop-match-beginning match))))
+;; => 7
 
 ;; 查找下一个 'type 等于 'heading 的文本
-(tp-forward 'type 'heading)
-
-;; 向前搜索 3 次
-(tp-forward 'marker nil nil 3)
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(type heading))
+  (goto-char 1)
+  (let ((match (tp-forward 'type 'heading)))
+    (when match
+      (prop-match-value match))))
+;; => heading
 
 ;; 在字符串中搜索
-(setq my-string (copy-sequence "Hello World Hello"))
-(tp-set 0 5 '(marker t) my-string)
-(tp-set 12 17 '(marker t) my-string)
-(tp-forward 'marker nil my-string 2)
+(let ((my-string (copy-sequence "Hello World Hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-forward 'marker nil my-string 2))
 ;; => ((0 5 t) (12 17 t))
 ```
 
@@ -730,28 +898,42 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 将缓冲区中匹配的文本转为大写（从当前位置开始）
-(tp-forward-do #'upcase 'marker nil nil nil 3)
+(with-temp-buffer
+  (insert "hello world test")
+  (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
+  (goto-char 1)
+  (tp-forward-do #'upcase 'marker nil nil nil 2)
+  (buffer-string))
+;; => "HELLO world TEST"
 
 ;; 将字符串中匹配的文本转为大写（从位置 0 开始）
-(setq my-string (copy-sequence "hello world hello"))
-(tp-set 0 5 '(marker t) my-string)
-(tp-set 12 17 '(marker t) my-string)
-(tp-forward-do #'upcase 'marker nil my-string nil 2)
-;; my-string 现在是 "HELLO world HELLO"
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-forward-do #'upcase 'marker nil my-string nil 2)
+  my-string)
+;; => "HELLO world HELLO"
 
 ;; 从特定位置开始搜索
-(setq my-string (copy-sequence "hello world hello"))
-(tp-set 0 5 '(marker t) my-string)
-(tp-set 12 17 '(marker t) my-string)
-(tp-forward-do #'upcase 'marker nil my-string 6 2)
-;; 只处理位置 6 之后的匹配
-;; my-string 现在是 "hello world HELLO"
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-forward-do #'upcase 'marker nil my-string 6 2)
+  my-string)
+;; => "hello world HELLO"  ; 只处理位置 6 之后的匹配
 
 ;; 自定义转换
-(tp-forward-do
- (lambda (text)
-   (concat "[" text "]"))
- 'marker nil nil nil 3)
+(with-temp-buffer
+  (insert "hello world test")
+  (tp-set 1 6 '(marker t))
+  (goto-char 1)
+  (tp-forward-do
+   (lambda (text)
+     (concat "[" text "]"))
+   'marker nil nil nil 1)
+  (buffer-string))
+;; => "[hello] world test"
 ```
 
 ---
@@ -774,15 +956,27 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 在缓冲区范围内查找所有 'marker 属性
-(tp-search 1 100 'marker)
-;; => ((5 10 t) (20 25 t) ...)
+(with-temp-buffer
+  (insert "Hello World Test Again")
+  (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
+  (tp-search 1 22 'marker))
+;; => ((1 6 t) (13 17 t))
 
 ;; 在字符串中查找所有值为 'heading 的 'type 属性
-(tp-search my-string 'type 'heading)
-;; => ((0 10 heading) (50 60 heading) ...)
+(let ((my-string (copy-sequence "Title Here Body Text")))
+  (tp-set 0 10 '(type heading) my-string)
+  (tp-search my-string 'type 'heading))
+;; => ((0 10 heading))
 
 ;; 按值过滤
-(tp-search 1 100 'type 'heading)
+(with-temp-buffer
+  (insert "Heading1 Body Heading2")
+  (tp-set 1 9 '(type heading))
+  (tp-set 10 14 '(type body))
+  (tp-set 15 23 '(type heading))
+  (tp-search 1 23 'type 'heading))
+;; => ((1 9 heading) (15 23 heading))
 ```
 
 ---
@@ -806,16 +1000,31 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 将字符串中所有 marker 文本转为大写
-(tp-search-map #'upcase my-string 'marker)
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-search-map #'upcase my-string 'marker)
+  my-string)
+;; => "HELLO world HELLO"
 
 ;; 将缓冲区范围内所有 marker 文本转为大写
-(tp-search-map #'upcase 1 100 'marker)
+(with-temp-buffer
+  (insert "hello world test")
+  (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
+  (tp-search-map #'upcase 1 17 'marker)
+  (buffer-string))
+;; => "HELLO world TEST"
 
 ;; 自定义转换
-(tp-search-map
- (lambda (text)
-   (concat "[" text "]"))
- my-string 'marker)
+(let ((my-string (copy-sequence "hello world")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-search-map
+   (lambda (text)
+     (concat "[" text "]"))
+   my-string 'marker)
+  my-string)
+;; => "[hello] world"
 ```
 
 ---
@@ -862,21 +1071,34 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 定义单个属性层
-(tp-define-layer highlight
-  (face (:background "yellow" :foreground "black")))
+(progn
+  (setq tp-layer-alist nil)  ; 重置以确保干净的示例
+  (tp-define-layer highlight
+    (face (:background "yellow" :foreground "black")))
+  (tp-layer-props 'highlight))
+;; => (face (:background "yellow" :foreground "black") tp-name highlight)
 
-(tp-define-layer error
-  (face (:background "red" :foreground "white")
-   help-echo "错误!"))
+(progn
+  (tp-define-layer error
+    (face (:background "red" :foreground "white")
+     help-echo "错误!"))
+  (tp-layer-props 'error))
+;; => (face (:background "red" :foreground "white") help-echo "错误!" tp-name error)
 
-(tp-define-layer info
-  (face (:background "blue" :foreground "white")))
+(progn
+  (tp-define-layer info
+    (face (:background "blue" :foreground "white")))
+  (tp-layer-props 'info))
+;; => (face (:background "blue" :foreground "white") tp-name info)
 
 ;; 定义属性层组
-(tp-define-layer status-colors
-  highlight
-  error
-  info)
+(progn
+  (tp-define-layer status-colors
+    highlight
+    error
+    info)
+  (length (tp-group-props 'status-colors)))
+;; => 3
 ```
 
 ---
@@ -890,6 +1112,27 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 获取属性层或属性层组中所有属性层的属性。
 
+**示例：**
+
+```elisp
+;; 获取属性层属性
+(progn
+  (setq tp-layer-alist nil)
+  (tp-define-layer my-layer (face bold help-echo "tip"))
+  (tp-layer-props 'my-layer))
+;; => (face bold help-echo "tip" tp-name my-layer)
+
+;; 获取属性层组属性
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-define-layer my-group layer1 layer2)
+  (length (tp-group-props 'my-group)))
+;; => 2
+```
+
 ---
 
 #### `tp-layer-undefine` / `tp-group-undefine`
@@ -901,6 +1144,28 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 移除属性层或属性层组定义。
 
+**示例：**
+
+```elisp
+;; 取消定义属性层
+(progn
+  (setq tp-layer-alist nil)
+  (tp-define-layer temp-layer (face bold))
+  (tp-layer-undefine 'temp-layer)
+  (tp-layer-props 'temp-layer))
+;; => nil
+
+;; 取消定义属性层组
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer l1 (face bold))
+  (tp-define-layer my-group l1)
+  (tp-group-undefine 'my-group)
+  (assoc 'my-group tp-layer-groups))
+;; => nil
+```
+
 ---
 
 #### `tp-layer-reset`
@@ -910,6 +1175,16 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```
 
 清除所有属性层和属性层组定义。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-define-layer test-layer (face bold))
+  (tp-layer-reset)
+  (list tp-layer-alist tp-layer-groups))
+;; => (nil nil)
+```
 
 ---
 
@@ -934,17 +1209,40 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 **示例：**
 
 ```elisp
-(tp-define-layer base (face default))
-(tp-define-layer highlight (face (:background "yellow")))
-
 ;; 将 base 属性层放在顶部
-(tp-put-layer 1 10 'base 0)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 'base 0)
+    (tp-at 1 'tp-name)))
+;; => base
 
 ;; 将 highlight 放在索引 1（顶部下面）
-(tp-put-layer 1 10 'highlight 1)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 'base 0)
+    (tp-put-layer 1 10 'highlight 1)
+    (tp-layer-count 1 10)))
+;; => 2
 
 ;; 将属性层放在底部
-(tp-put-layer 1 10 'info -1)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer info (face (:foreground "blue")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 'base 0)
+    (tp-put-layer 1 10 'info -1)
+    (tp-layer-top 1 10)))
+;; => base  ; info 在底部，base 可见
 ```
 
 ---
@@ -964,14 +1262,28 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 **示例：**
 
 ```elisp
-(tp-define-layer base (face default))
-(tp-define-layer highlight (face (:background "yellow")))
-
 ;; 首先推入 base 属性层
-(tp-push-layer 1 10 'base)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-at 1 'tp-name)))
+;; => base
 
 ;; 将 highlight 推到顶部（现在可见）
-(tp-push-layer 1 10 'highlight)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-at 1 'tp-name)))
+;; => highlight
 ```
 
 ---
@@ -994,13 +1306,43 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 按名称删除
-(tp-delete-layer 1 10 'highlight)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer base (face default))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-delete-layer 1 10 'highlight)
+    (tp-at 1 'tp-name)))
+;; => base
 
 ;; 删除顶层（idx=0）
-(tp-delete-layer 1 10 0)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-delete-layer 1 10 0)
+    (tp-at 1 'tp-name)))
+;; => layer1
 
 ;; 删除底层
-(tp-delete-layer 1 10 -1)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-delete-layer 1 10 -1)
+    (tp-layer-count 1 10)))
+;; => 1
 ```
 
 ---
@@ -1016,6 +1358,22 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```
 
 删除顶层（相当于 `tp-delete-layer ... 0`）。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-pop-layer 1 10)
+    (tp-at 1 'tp-name)))
+;; => layer1
+```
 
 ---
 
@@ -1036,11 +1394,35 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 **示例：**
 
 ```elisp
-;; 将 layer1 上移 2 个位置
-(tp-raise-layer 1 10 'layer1 2)
+;; 将 layer1 上移 2 个位置（到顶部）
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-define-layer layer3 (face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; 堆栈: layer3 (顶), layer2, layer1 (底)
+    (tp-raise-layer 1 10 'layer1 2)
+    (tp-layer-top 1 10)))
+;; => layer1
 
-;; 将索引 2 的属性层下移 1 个位置
-(tp-raise-layer 1 10 2 -1)
+;; 将索引 0 的属性层下移 1 个位置
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; 堆栈: layer2 (idx 0), layer1 (idx 1)
+    (tp-raise-layer 1 10 0 -1)
+    (tp-layer-top 1 10)))
+;; => layer1
 ```
 
 ---
@@ -1061,8 +1443,19 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 堆栈: highlight (顶) -> base (底)
-(tp-rotate-layer 1 10)
-;; 堆栈: base (顶) -> highlight (底)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    ;; 堆栈: highlight (顶) -> base (底)
+    (tp-rotate-layer 1 10)
+    ;; 堆栈: base (顶) -> highlight (底)
+    (tp-layer-top 1 10)))
+;; => base
 ```
 
 ---
@@ -1083,7 +1476,18 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 将 'base 设为顶层
-(tp-pin-layer 1 10 'base)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    ;; highlight 在顶部
+    (tp-pin-layer 1 10 'base)
+    (tp-layer-top 1 10)))
+;; => base
 ```
 
 ---
@@ -1104,7 +1508,19 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 交换 layer1 和 layer2
-(tp-switch-layer 1 10 'layer1 'layer2)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; layer2 在顶部
+    (tp-switch-layer 1 10 'layer1 'layer2)
+    ;; 现在 layer1 在顶部
+    (tp-layer-top 1 10)))
+;; => layer1
 ```
 
 ---
@@ -1127,10 +1543,30 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 将 layer1 和 layer2 合并为 merged-layer
-(tp-merge-layers 1 10 'merged-layer '(layer1 layer2))
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-merge-layers 1 10 'merged-layer '(layer1 layer2))
+    (tp-at 1 'tp-name)))
+;; => merged-layer
 
 ;; 按索引合并
-(tp-merge-layers 1 10 'merged '(0 1 2))
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-merge-layers 1 10 'merged '(0 1))
+    (tp-layer-count 1 10)))
+;; => 1
 ```
 
 ---
@@ -1151,10 +1587,28 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 ;; 将所有属性层扁平化为 'flat-layer
-(tp-flatten-layers 1 10 'flat-layer)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-flatten-layers 1 10 'flat-layer)
+    (tp-at 1 'tp-name)))
+;; => flat-layer
 
 ;; 使用 nil 名称扁平化（无名属性层）
-(tp-flatten-layers 1 10 nil)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-flatten-layers 1 10 nil)
+    (tp-at 1 'tp-name)))
+;; => nil
 ```
 
 ---
@@ -1172,7 +1626,16 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 **示例：**
 
 ```elisp
-(tp-layer-list 1 10)  ; => (highlight base)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer base (face default))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-layer-list 1 10)))
+;; => (highlight base)
 ```
 
 ---
@@ -1185,6 +1648,21 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 计算区域中的属性层数量。
 
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-layer-count 1 10)))
+;; => 2
+```
+
 ---
 
 #### `tp-layer-exists-p`
@@ -1194,6 +1672,20 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```
 
 检查区域中是否存在某属性层。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (list (tp-layer-exists-p 1 10 'layer1)
+          (tp-layer-exists-p 1 10 'layer2))))
+;; => (t nil)
+```
 
 ---
 
@@ -1205,6 +1697,21 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 获取顶层（可见）属性层的名称。
 
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-layer-top 1 10)))
+;; => layer2
+```
+
 ---
 
 ## 实用示例
@@ -1212,40 +1719,52 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ### 多属性层语法高亮
 
 ```elisp
-;; 为不同高亮目的定义属性层
-(tp-define-layer code-base
-  (face font-lock-keyword-face))
+;; 可以在缓冲区中运行的完整示例
+(progn
+  (tp-layer-reset)
+  ;; 为不同高亮目的定义属性层
+  (tp-define-layer code-base
+    (face font-lock-keyword-face))
+  (tp-define-layer code-error
+    (face (:underline (:color "red" :style wave))
+     help-echo "语法错误"))
+  (tp-define-layer code-debug
+    (face (:background "dark blue")))
+  (with-temp-buffer
+    (insert (make-string 100 ?x))  ; 创建 100 字符缓冲区
+    ;; 应用基础高亮
+    (tp-push-layer 1 100 'code-base)
+    ;; 在有问题的代码上添加错误高亮
+    (tp-push-layer 50 60 'code-error)
+    ;; 检查位置 55 的顶层
+    (tp-layer-top 50 60)))
+;; => code-error
 
-(tp-define-layer code-error
-  (face (:underline (:color "red" :style wave))
-   help-echo "语法错误"))
-
-(tp-define-layer code-debug
-  (face (:background "dark blue")))
-
-;; 应用基础高亮
-(tp-push-layer 1 100 'code-base)
-
-;; 在有问题的代码上添加错误高亮
-(tp-push-layer 50 60 'code-error)
-
-;; 在错误和正常视图之间切换
-(defun toggle-error-view ()
-  (interactive)
-  (tp-rotate-layer 50 60))
+;; 切换函数（用于实际缓冲区）
+(defun toggle-error-view (start end)
+  "在错误和正常视图之间切换。"
+  (interactive "r")
+  (tp-rotate-layer start end))
 ```
 
 ### 状态指示器
 
 ```elisp
-;; 将状态属性层定义为一个组
-(tp-define-layer status-todo (face (:foreground "gray")))
-(tp-define-layer status-progress (face (:foreground "yellow")))
-(tp-define-layer status-done (face (:foreground "green")))
-(tp-define-layer task-status status-todo status-progress status-done)
+;; 包含属性层组的完整示例
+(progn
+  (tp-layer-reset)
+  ;; 将状态属性层定义为一个组
+  (tp-define-layer status-todo (face (:foreground "gray")))
+  (tp-define-layer status-progress (face (:foreground "yellow")))
+  (tp-define-layer status-done (face (:foreground "green")))
+  (tp-define-layer task-status status-todo status-progress status-done)
+  ;; 检查组是否已定义
+  (length (tp-group-props 'task-status)))
+;; => 3
 
-;; 循环切换状态
+;; 循环切换状态（用于实际缓冲区）
 (defun cycle-task-status ()
+  "循环切换当前行的任务状态属性层。"
   (interactive)
   (tp-rotate-layer (line-beginning-position) (line-end-position)))
 ```
@@ -1253,15 +1772,22 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ### 临时高亮
 
 ```elisp
-(tp-define-layer temp-highlight
-  (face (:background "yellow")))
+;; 定义临时高亮属性层
+(progn
+  (tp-layer-reset)
+  (tp-define-layer temp-highlight
+    (face (:background "yellow")))
+  (tp-layer-props 'temp-highlight))
+;; => (face (:background "yellow") tp-name temp-highlight)
 
+;; 闪烁函数（用于实际缓冲区）
 (defun flash-region (start end)
   "临时闪烁一个区域。"
   (tp-push-layer start end 'temp-highlight)
   (run-with-timer 0.5 nil
-                  (lambda ()
-                    (tp-delete-layer start end 'temp-highlight))))
+                  (lambda (s e)
+                    (tp-delete-layer s e 'temp-highlight))
+                  start end))
 ```
 
 ---
