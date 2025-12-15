@@ -1,7 +1,7 @@
 # tp.el - Text Properties Library for Emacs
 
 <p align="center">
-  <strong>A powerful text properties manipulation library with an innovative layer system</strong>
+  <strong>A powerful text properties manipulation library with an innovative property layer system</strong>
 </p>
 
 <p align="center">
@@ -9,28 +9,148 @@
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#api-reference">API Reference</a> •
-  <a href="#the-layer-system">Layer System</a> •
+  <a href="#the-property-layer-system">Property Layer System</a> •
   <a href="README_CN.md">中文文档</a>
 </p>
 
 ---
 
-**tp.el** provides a convenient and unified API for manipulating Emacs text properties. Inspired by [ov.el](https://github.com/emacsorphanage/ov) for overlays, tp.el offers:
+## Overview
 
-- **Unified API**: All property-setting functions work on both **strings** and **buffers**
-- **Layer System**: Stack multiple property sets on the same text region
-- **Pattern Matching**: Apply properties to text matching strings or regexps
+**tp.el** is a library that comprehensively enhances Emacs text property manipulation. It is not just a simple wrapper around native text property APIs (like `put-text-property`, `get-text-property`), but provides many **functional extensions that native functions do not have**.
+
+Inspired by [ov.el](https://github.com/emacsorphanage/ov) for overlays, tp.el innovates in the following areas:
+
+### Core Innovations
+
+1. **Unified API Parameter Conventions**: All functions support multiple flexible calling patterns, working seamlessly with both strings and buffers
+2. **Fine-grained Sub-property Operations**: Support path-style access, modification, and deep merging of nested properties
+3. **Innovative Property Layer System**: Stack and manage multiple sets of properties on the same text region with layered control
+4. **Pattern Matching Batch Operations**: Batch apply properties via string or regular expression matching
+5. **Enhanced Search & Navigation**: Rich property search and traversal functionality
 
 ## Features
 
-- ✅ **Unified Object Support**: Functions like `tp-set`, `tp-match`, `tp-regexp` work on both strings and buffers
-- ✅ **Clear Semantics**: `tp-reset` (replace all), `tp-set` (replace specified), `tp-add` (deep merge)
-- ✅ **Nested Property Access**: Get/set/remove nested sub-properties with path syntax
-- ✅ **Innovative Layer System**: Stack, rotate, and manage multiple layers of properties
-- ✅ **Layer Groups**: Define reusable sets of related layers
-- ✅ **Search & Navigation**: Find and navigate through propertized text
-- ✅ **Pattern Matching**: Apply properties to string/regexp matches with reset/add variants
-- ✅ **Clean API**: Consistent naming and calling conventions
+### Layer 1: Unified API Parameter Conventions
+
+Native Emacs APIs have different functions and parameter orders for strings and buffers. tp.el unifies all of this:
+
+- ✅ **Four Calling Conventions**: All core functions (`tp-set`, `tp-get`, `tp-match`, etc.) support four flexible calling patterns:
+  ```elisp
+  ;; 1. Current buffer
+  (tp-set START END '(face bold))
+  ;; 2. Specific buffer or string
+  (tp-set START END '(face bold) OBJECT)
+  ;; 3. Entire string (flat properties)
+  (tp-set STRING 'face 'bold 'help-echo "tip")
+  ;; 4. Support (PATTERN STRING) format
+  (tp-match '("world" "Hello world") '(face bold))
+  ```
+- ✅ **Unified Object Support**: The same function works with both strings and buffers, no need to remember different APIs
+
+### Layer 2: Three Property Operation Semantics
+
+Native APIs only have simple set and get. tp.el provides three clear operation semantics:
+
+- ✅ **`tp-reset`**: Complete replacement - clears all existing properties, sets new ones
+- ✅ **`tp-set`**: Partial replacement - only replaces specified properties, preserves others
+- ✅ **`tp-add`**: Deep merge - intelligently merges nested properties instead of simple overwrite
+
+```elisp
+;; Deep merge example
+(tp-set 1 10 '(face (:foreground "red")))
+(tp-add 1 10 '(face (:background "blue")))
+;; Result: face is (:foreground "red" :background "blue")
+;; Native API would completely overwrite, but tp-add merges intelligently
+```
+
+### Layer 3: Fine-grained Sub-property Operations
+
+**This is functionality that native APIs completely lack**. tp.el supports fine-grained reading, modification, and deletion of nested properties:
+
+- ✅ **Path-style Access**: Access deeply nested property values through path syntax
+  ```elisp
+  ;; Get nested properties
+  (tp-get str 'face :underline :style)  ; => wave
+  (tp-at 5 '(face :box :color))         ; => "blue"
+  
+  ;; Get multiple nested keys
+  (tp-get str 'face :underline '(:color :style))
+  ;; => ((:color "green" :style wave))
+  ```
+- ✅ **Sub-property Deletion**: Precisely remove specific keys from nested properties
+  ```elisp
+  ;; Only delete :style from :underline, preserve :color
+  (tp-remove 1 10 '(face :underline (:style)))
+  ```
+- ✅ **Deep Merge**: `tp-add` recursively merges nested plist structures
+- ✅ **Smart Face Merging**: Symbol faces are automatically prepended to face lists, plist faces are deep merged
+
+### Layer 4: Innovative Property Layer System
+
+**This is tp.el's most innovative feature**, completely unsupported by native Emacs. The property layer system allows stacking multiple sets of properties on the same text region:
+
+- ✅ **Property Layer Stack Concept**: Multiple property layers stack like a stack, only the top layer is visible, lower layers are preserved
+- ✅ **Property Layer Definition & Reuse**: Define reusable property layers and layer groups via `tp-define-layer`
+- ✅ **Rich Property Layer Operations**:
+  - Placement: `tp-put-layer` (specific position), `tp-push-layer` (top)
+  - Deletion: `tp-delete-layer` (by name/index), `tp-pop-layer` (top layer)
+  - Movement: `tp-raise-layer` (up/down), `tp-rotate-layer` (rotate), `tp-pin-layer` (pin to top), `tp-switch-layer` (swap)
+  - Merging: `tp-merge-layers` (merge specified layers), `tp-flatten-layers` (flatten all layers)
+- ✅ **Property Layer Queries**: `tp-layer-list`, `tp-layer-count`, `tp-layer-exists-p`, `tp-layer-top`
+
+```elisp
+;; Property layer usage example
+(tp-define-layer highlight (face (:background "yellow")))
+(tp-define-layer error (face (:foreground "red")))
+
+;; Stack multiple property layers
+(tp-push-layer 1 10 'highlight)
+(tp-push-layer 1 10 'error)  ; error is now visible
+
+;; Rotate display
+(tp-rotate-layer 1 10)  ; highlight is now visible
+```
+
+### Layer 5: Pattern Matching & Batch Operations
+
+Native APIs require manual searching and looping. tp.el provides convenient pattern matching functionality:
+
+- ✅ **String Matching**: `tp-match`, `tp-match-reset`, `tp-match-add`
+- ✅ **Regexp Matching**: `tp-regexp`, `tp-regexp-reset`, `tp-regexp-add`
+- ✅ **Three Semantic Variants**: Each match type supports set/reset/add operation semantics
+
+```elisp
+;; Highlight all TODOs
+(tp-match "TODO" '(face warning))
+
+;; Regexp match all numbers
+(tp-regexp "[0-9]+" '(face font-lock-number-face))
+
+;; Add properties with deep merge
+(tp-match-add "TODO" '(face (:underline t)))
+```
+
+### Layer 6: Enhanced Search & Navigation
+
+- ✅ **Range Search**: `tp-search` returns a list of all matching intervals
+- ✅ **N-times Search**: `tp-forward`/`tp-backward` support searching forward/backward N times
+- ✅ **Search and Execute**: `tp-forward-do`/`tp-backward-do` search and execute function on matched text
+- ✅ **Batch Transform**: `tp-search-map` applies transformation function to all matches
+
+```elisp
+;; Search all markers
+(tp-search my-string 'marker)  ; => ((0 5 t) (12 17 t))
+
+;; Upcase all marker text
+(tp-search-map #'upcase my-string 'marker)
+```
+
+### Layer 7: Query & Diagnostics
+
+- ✅ **Interval Query**: `tp-intervals` gets all property intervals
+- ✅ **Empty Check**: `tp-empty-p` checks if there are any properties
+- ✅ **Property Merge**: `tp-plist` gets merged property list of the region
 
 ## Requirements
 
@@ -102,7 +222,7 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-empty-p`](#tp-empty-p---check-for-properties) | Check if object has no properties |
 | [`tp-plist`](#tp-plist---get-merged-properties) | Get merged plist of all properties |
 
-#### Layer Definition Functions
+#### Property Layer Definition Functions
 | Function | Description |
 |----------|-------------|
 | [`tp-define-layer`](#tp-define-layer---define-layers) | Define a layer or layer group |
@@ -112,19 +232,19 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | Remove group definition |
 | [`tp-layer-reset`](#tp-layer-reset) | Clear all layer/group definitions |
 
-#### Layer Placement Functions
+#### Property Layer Placement Functions
 | Function | Description |
 |----------|-------------|
 | [`tp-put-layer`](#tp-put-layer---set-layer-at-index) | Set layer at specific index position |
 | [`tp-push-layer`](#tp-push-layer---push-layer-to-top) | Push layer to top of stack |
 
-#### Layer Deletion Functions
+#### Property Layer Deletion Functions
 | Function | Description |
 |----------|-------------|
 | [`tp-delete-layer`](#tp-delete-layer---delete-layer-by-nameindex) | Delete layer by name or index |
 | [`tp-pop-layer`](#tp-pop-layer---pop-top-layer) | Remove top layer |
 
-#### Layer Movement Functions
+#### Property Layer Movement Functions
 | Function | Description |
 |----------|-------------|
 | [`tp-raise-layer`](#tp-raise-layer---move-layer-updown) | Move layer up/down by N positions |
@@ -132,13 +252,13 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-pin-layer`](#tp-pin-layer---pin-layer-to-top) | Pin a layer to top (make visible) |
 | [`tp-switch-layer`](#tp-switch-layer---switch-two-layers) | Swap positions of two layers |
 
-#### Layer Merging Functions
+#### Property Layer Merging Functions
 | Function | Description |
 |----------|-------------|
 | [`tp-merge-layers`](#tp-merge-layers---merge-multiple-layers) | Merge specified layers into a new layer |
 | [`tp-flatten-layers`](#tp-flatten-layers---flatten-all-layers) | Flatten all layers into a single layer |
 
-#### Layer Query Functions
+#### Property Layer Query Functions
 | Function | Description |
 |----------|-------------|
 | [`tp-layer-list`](#tp-layer-list---list-all-layers) | List all layer names in region |
@@ -801,11 +921,11 @@ Get a merged plist of all properties in a region or entire string.
 
 ---
 
-## The Layer System
+## The Property Layer System
 
-The **layer system** is tp.el's innovative feature that allows stacking multiple sets of properties on the same text region. Only the **top layer** is visible, but lower layers are preserved and can be revealed through rotation or pinning.
+The **property layer system** is tp.el's innovative feature that allows stacking multiple sets of properties on the same text region. Only the **top layer** is visible, but lower layers are preserved and can be revealed through rotation or pinning.
 
-### Layer Concept
+### Property Layer Concept
 
 ```
 ┌─────────────────────────────┐
@@ -817,7 +937,7 @@ The **layer system** is tp.el's innovative feature that allows stacking multiple
 └─────────────────────────────┘
 ```
 
-### Layer Definition
+### Property Layer Definition
 
 #### `tp-define-layer` - Define Layer(s)
 
@@ -896,7 +1016,7 @@ Clear all layer and group definitions.
 
 ---
 
-### Layer Placement
+### Property Layer Placement
 
 #### `tp-put-layer` - Set Layer at Index
 
@@ -959,7 +1079,7 @@ Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
 
 ---
 
-### Layer Deletion
+### Property Layer Deletion
 
 #### `tp-delete-layer` - Delete Layer by Name/Index
 
@@ -1002,7 +1122,7 @@ Remove the top layer (equivalent to `tp-delete-layer ... 0`).
 
 ---
 
-### Layer Movement
+### Property Layer Movement
 
 #### `tp-raise-layer` - Move Layer Up/Down
 
@@ -1092,7 +1212,7 @@ Swap positions of two layers.
 
 ---
 
-### Layer Merging
+### Property Layer Merging
 
 #### `tp-merge-layers` - Merge Multiple Layers
 
@@ -1142,7 +1262,7 @@ Flatten all layers into a single layer with the given name.
 
 ---
 
-### Layer Query Functions
+### Property Layer Query Functions
 
 #### `tp-layer-list` - List All Layers
 
