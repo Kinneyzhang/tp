@@ -30,11 +30,11 @@
 
 ## 功能特性
 
-### 第一层：统一的 API 参数规范
+### 统一的 API 参数规范
 
 原生 Emacs API 针对字符串和缓冲区有不同的函数和参数顺序，tp.el 统一了这一切：
 
-- ✅ **四种调用约定**：所有核心函数（`tp-set`、`tp-get`、`tp-match` 等）支持四种灵活的调用方式：
+- ✅ **三种调用约定**：所有核心函数（`tp-set`、`tp-get`、`tp-remove` 等）支持三种灵活的调用方式：
   ```elisp
   ;; 1. 当前缓冲区
   (tp-set START END '(face bold))
@@ -42,12 +42,10 @@
   (tp-set START END '(face bold) OBJECT)
   ;; 3. 整个字符串（平铺属性）
   (tp-set STRING 'face 'bold 'help-echo "tip")
-  ;; 4. 支持 (PATTERN STRING) 格式
-  (tp-match '("world" "Hello world") '(face bold))
   ```
 - ✅ **统一对象支持**：同一个函数同时支持字符串和缓冲区，无需记忆不同的 API
 
-### 第二层：三种属性操作语义
+### 三种属性操作语义
 
 原生 API 只有简单的设置和获取，tp.el 提供了三种清晰的操作语义：
 
@@ -63,7 +61,7 @@
 ;; 原生 API 会完全覆盖，而 tp-add 会智能合并
 ```
 
-### 第三层：子属性的精细操作
+### 子属性的精细操作
 
 **这是原生 API 完全不具备的功能**。tp.el 支持对嵌套属性进行精细的读取、修改和删除：
 
@@ -85,7 +83,7 @@
 - ✅ **深度合并**：`tp-add` 递归合并嵌套的 plist 结构
 - ✅ **Face 智能合并**：符号 face 自动前置到 face 列表，plist face 深度合并
 
-### 第四层：创新的属性层系统
+### 创新的属性层系统
 
 **这是 tp.el 最具创新性的功能**，原生 Emacs 完全不支持。属性层系统允许在同一文本区域上堆叠多组属性：
 
@@ -111,7 +109,7 @@
 (tp-rotate-layer 1 10)  ; highlight 现在可见
 ```
 
-### 第五层：模式匹配与批量操作
+### 模式匹配与批量操作
 
 原生 API 需要手动搜索和循环，tp.el 提供了便捷的模式匹配功能：
 
@@ -130,7 +128,7 @@
 (tp-match-add "TODO" '(face (:underline t)))
 ```
 
-### 第六层：增强的搜索与导航
+### 增强的搜索与导航
 
 - ✅ **范围搜索**：`tp-search` 返回所有匹配区间的列表
 - ✅ **N次搜索**：`tp-forward`/`tp-backward` 支持向前/向后搜索N次
@@ -144,12 +142,6 @@
 ;; 将所有标记文本转为大写
 (tp-search-map #'upcase my-string 'marker)
 ```
-
-### 第七层：查询与诊断
-
-- ✅ **区间查询**：`tp-intervals` 获取所有属性区间
-- ✅ **空检查**：`tp-empty-p` 检查是否有属性
-- ✅ **属性合并**：`tp-plist` 获取区域内所有属性的合并列表
 
 ## 系统要求
 
@@ -851,79 +843,12 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-### 查询函数
-
-#### `tp-intervals` - 获取属性区间
-
-```elisp
-(tp-intervals START END &optional OBJECT)
-```
-
-获取区域中所有文本属性区间。
-
----
-
-#### `tp-empty-p` - 检查属性
-
-```elisp
-(tp-empty-p &optional OBJECT)
-```
-
-如果 OBJECT 没有文本属性则返回 t。
-
-- **OBJECT** 可以是字符串或缓冲区；nil 默认为当前缓冲区。
-
-**示例：**
-
-```elisp
-;; 检查当前缓冲区
-(tp-empty-p)
-(tp-empty-p nil)
-
-;; 检查特定字符串
-(tp-empty-p "plain string")  ; => t
-(tp-empty-p (propertize "styled" 'face 'bold))  ; => nil
-
-;; 检查特定缓冲区
-(tp-empty-p my-buffer)
-```
-
----
-
-#### `tp-plist` - 获取合并的属性
-
-```elisp
-;; 缓冲区/字符串区域
-(tp-plist START END &optional OBJECT)
-
-;; 整个字符串
-(tp-plist STRING)
-```
-
-获取区域或整个字符串中所有属性的合并属性列表。
-
-**示例：**
-
-```elisp
-;; 从缓冲区区域获取属性
-(tp-plist 1 10)
-
-;; 从字符串区域获取属性
-(tp-plist 0 5 my-string)
-
-;; 从整个字符串获取属性
-(tp-plist my-string)
-```
-
----
-
 ## 属性层系统
 
-**属性层系统**是 tp.el 的创新功能，允许在同一文本区域上堆叠多组属性。只有**顶层**可见，但下层会被保留，可以通过轮换或置顶来显示。
+属性层系统是 tp.el 的创新功能，允许在同一文本区域堆叠多组属性。只有顶层属性可见，但下层属性会被保留，并可通过轮转或固定操作使其显现。
 
 ### 属性层概念
 
-```
 ┌─────────────────────────────┐
 │   顶层（可见）              │  ← idx=0，你看到的
 ├─────────────────────────────┤
@@ -931,7 +856,6 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ├─────────────────────────────┤
 │   底层（隐藏）              │  ← idx=-1，被保留
 └─────────────────────────────┘
-```
 
 ### 属性层定义
 

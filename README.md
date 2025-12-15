@@ -31,11 +31,11 @@ Inspired by [ov.el](https://github.com/emacsorphanage/ov) for overlays, tp.el in
 
 ## Features
 
-### Layer 1: Unified API Parameter Conventions
+### Unified API Parameter Conventions
 
 Native Emacs APIs have different functions and parameter orders for strings and buffers. tp.el unifies all of this:
 
-- ✅ **Four Calling Conventions**: All core functions (`tp-set`, `tp-get`, `tp-match`, etc.) support four flexible calling patterns:
+- ✅ **Three Calling Conventions**: All core functions (`tp-set`, `tp-get`, `tp-remove`, etc.) support three flexible calling patterns:
   ```elisp
   ;; 1. Current buffer
   (tp-set START END '(face bold))
@@ -43,12 +43,10 @@ Native Emacs APIs have different functions and parameter orders for strings and 
   (tp-set START END '(face bold) OBJECT)
   ;; 3. Entire string (flat properties)
   (tp-set STRING 'face 'bold 'help-echo "tip")
-  ;; 4. Support (PATTERN STRING) format
-  (tp-match '("world" "Hello world") '(face bold))
   ```
 - ✅ **Unified Object Support**: The same function works with both strings and buffers, no need to remember different APIs
 
-### Layer 2: Three Property Operation Semantics
+### Three Property Operation Semantics
 
 Native APIs only have simple set and get. tp.el provides three clear operation semantics:
 
@@ -64,7 +62,7 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 ;; Native API would completely overwrite, but tp-add merges intelligently
 ```
 
-### Layer 3: Fine-grained Sub-property Operations
+### Fine-grained Sub-property Operations
 
 **This is functionality that native APIs completely lack**. tp.el supports fine-grained reading, modification, and deletion of nested properties:
 
@@ -86,7 +84,7 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 - ✅ **Deep Merge**: `tp-add` recursively merges nested plist structures
 - ✅ **Smart Face Merging**: Symbol faces are automatically prepended to face lists, plist faces are deep merged
 
-### Layer 4: Innovative Property Layer System
+### Innovative Property Layer System
 
 **This is tp.el's most innovative feature**, completely unsupported by native Emacs. The property layer system allows stacking multiple sets of properties on the same text region:
 
@@ -112,7 +110,7 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 (tp-rotate-layer 1 10)  ; highlight is now visible
 ```
 
-### Layer 5: Pattern Matching & Batch Operations
+### Pattern Matching & Batch Operations
 
 Native APIs require manual searching and looping. tp.el provides convenient pattern matching functionality:
 
@@ -131,7 +129,7 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 (tp-match-add "TODO" '(face (:underline t)))
 ```
 
-### Layer 6: Enhanced Search & Navigation
+### Enhanced Search & Navigation
 
 - ✅ **Range Search**: `tp-search` returns a list of all matching intervals
 - ✅ **N-times Search**: `tp-forward`/`tp-backward` support searching forward/backward N times
@@ -145,12 +143,6 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 ;; Upcase all marker text
 (tp-search-map #'upcase my-string 'marker)
 ```
-
-### Layer 7: Query & Diagnostics
-
-- ✅ **Interval Query**: `tp-intervals` gets all property intervals
-- ✅ **Empty Check**: `tp-empty-p` checks if there are any properties
-- ✅ **Property Merge**: `tp-plist` gets merged property list of the region
 
 ## Requirements
 
@@ -214,13 +206,6 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N backward matches (with optional start point) |
 | [`tp-search`](#tp-search---search-all-matches) | Search all matching properties in range or string |
 | [`tp-search-map`](#tp-search-map---apply-function-to-matched-text) | Apply function to matched text for all matches |
-
-#### Query Functions
-| Function | Description |
-|----------|-------------|
-| [`tp-intervals`](#tp-intervals---get-property-intervals) | Get property intervals in a region |
-| [`tp-empty-p`](#tp-empty-p---check-for-properties) | Check if object has no properties |
-| [`tp-plist`](#tp-plist---get-merged-properties) | Get merged plist of all properties |
 
 #### Property Layer Definition Functions
 | Function | Description |
@@ -851,72 +836,6 @@ Apply FUNCTION to matched text for all matches of PROPERTY.
  (lambda (text)
    (concat "[" text "]"))
  my-string 'marker)
-```
-
----
-
-### Query Functions
-
-#### `tp-intervals` - Get Property Intervals
-
-```elisp
-(tp-intervals START END &optional OBJECT)
-```
-
-Get all text property intervals in a region.
-
----
-
-#### `tp-empty-p` - Check for Properties
-
-```elisp
-(tp-empty-p &optional OBJECT)
-```
-
-Return t if OBJECT has no text properties.
-
-- **OBJECT** can be a string or buffer; nil defaults to current buffer.
-
-**Examples:**
-
-```elisp
-;; Check current buffer
-(tp-empty-p)
-(tp-empty-p nil)
-
-;; Check specific string
-(tp-empty-p "plain string")  ; => t
-(tp-empty-p (propertize "styled" 'face 'bold))  ; => nil
-
-;; Check specific buffer
-(tp-empty-p my-buffer)
-```
-
----
-
-#### `tp-plist` - Get Merged Properties
-
-```elisp
-;; Buffer/string region
-(tp-plist START END &optional OBJECT)
-
-;; Entire string
-(tp-plist STRING)
-```
-
-Get a merged plist of all properties in a region or entire string.
-
-**Examples:**
-
-```elisp
-;; Get properties from buffer region
-(tp-plist 1 10)
-
-;; Get properties from string region
-(tp-plist 0 5 my-string)
-
-;; Get properties from entire string
-(tp-plist my-string)
 ```
 
 ---
