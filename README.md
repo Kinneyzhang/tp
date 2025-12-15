@@ -421,21 +421,21 @@ For single position queries, use `tp-at` instead.
 
 ;; Get with property path as list
 (let ((my-string (copy-sequence "Hello World Hello World")))
-  (put-text-property 5 20 'face '(:underline (:style wave)) my-string)
+  (tp-set 5 20 '(face (:underline (:style wave))) my-string)
   (tp-get 5 20 '(face :underline :style) my-string))
 ;; => ((5 20 wave))
 
 ;; Get deeply nested property from entire string
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 5 'face '(:underline (:color "green")) str)
-  (put-text-property 6 11 'face '(:underline (:color "yellow")) str)
+  (tp-set 0 5 '(face (:underline (:color "green"))) str)
+  (tp-set 6 11 '(face (:underline (:color "yellow"))) str)
   (tp-get str 'face :underline :color))
 ;; => ((0 5 "green") (6 11 "yellow"))
 
 ;; Get multiple keys from nested property
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
-  (put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
+  (tp-set 0 5 '(face (:underline (:color "green" :style wave))) str)
+  (tp-set 6 11 '(face (:underline (:color "yellow" :style line))) str)
   (tp-get str 'face :underline '(:color :style)))
 ;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
@@ -507,14 +507,14 @@ For single-position property queries (previously done with `tp-get`), use `tp-at
 ;; Get nested sub-property at position
 (with-temp-buffer
   (insert "Hello World")
-  (put-text-property 1 10 'face '(:foreground "red" :box (:color "blue")))
+  (tp-set 1 10 '(face (:foreground "red" :box (:color "blue"))))
   (list (tp-at 5 '(face :foreground))
         (tp-at 5 '(face :box :color))))
 ;; => ("red" "blue")
 
 ;; Get nested sub-property from string
 (let ((str (copy-sequence "Hello")))
-  (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+  (tp-set 0 5 '(face (:foreground "red" :underline t)) str)
   (tp-at 0 '(face :foreground) str))
 ;; => "red"
 ```
@@ -555,7 +555,7 @@ Remove a property or nested sub-property from a region or entire string.
 ;; Remove sub-property from face
 (with-temp-buffer
   (insert "Hello World")
-  (put-text-property 1 10 'face '(:foreground "red" :underline t))
+  (tp-set 1 10 '(face (:foreground "red" :underline t)))
   (tp-remove 1 10 '(face :underline))
   (tp-at 1 'face))
 ;; => (:foreground "red")
@@ -563,7 +563,7 @@ Remove a property or nested sub-property from a region or entire string.
 ;; Remove specific nested keys, keep others
 (with-temp-buffer
   (insert "Hello World")
-  (put-text-property 1 10 'face '(:underline (:style wave :position t :color "blue")))
+  (tp-set 1 10 '(face (:underline (:style wave :position t :color "blue"))))
   (tp-remove 1 10 '(face :underline (:style :position)))
   (tp-at 1 '(face :underline)))
 ;; => (:color "blue")  ; :style and :position removed, :color preserved
@@ -576,14 +576,14 @@ Remove a property or nested sub-property from a region or entire string.
 
 ;; Remove sub-property from string
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 11 'face '(:foreground "red" :underline t) str)
+  (tp-set 0 11 '(face (:foreground "red" :underline t)) str)
   (tp-remove str 'face :underline)
   (tp-at 0 'face str))
 ;; => (:foreground "red")
 
 ;; Remove nested keys from string
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 11 'face '(:underline (:style wave :color "blue")) str)
+  (tp-set 0 11 '(face (:underline (:style wave :color "blue"))) str)
   (tp-remove str 'face :underline '(:style))
   (tp-at 0 '(face :underline) str))
 ;; => (:color "blue")

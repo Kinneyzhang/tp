@@ -420,21 +420,21 @@ tp.el 所有函数按类别组织的完整概览：
 
 ;; 使用列表形式的属性路径
 (let ((my-string (copy-sequence "Hello World Hello World")))
-  (put-text-property 5 20 'face '(:underline (:style wave)) my-string)
+  (tp-set 5 20 '(face (:underline (:style wave))) my-string)
   (tp-get 5 20 '(face :underline :style) my-string))
 ;; => ((5 20 wave))
 
 ;; 从整个字符串获取深层嵌套属性
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 5 'face '(:underline (:color "green")) str)
-  (put-text-property 6 11 'face '(:underline (:color "yellow")) str)
+  (tp-set 0 5 '(face (:underline (:color "green"))) str)
+  (tp-set 6 11 '(face (:underline (:color "yellow"))) str)
   (tp-get str 'face :underline :color))
 ;; => ((0 5 "green") (6 11 "yellow"))
 
 ;; 从嵌套属性中获取多个键
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
-  (put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
+  (tp-set 0 5 '(face (:underline (:color "green" :style wave))) str)
+  (tp-set 6 11 '(face (:underline (:color "yellow" :style line))) str)
   (tp-get str 'face :underline '(:color :style)))
 ;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
@@ -506,14 +506,14 @@ tp.el 所有函数按类别组织的完整概览：
 ;; 获取位置的嵌套子属性
 (with-temp-buffer
   (insert "Hello World")
-  (put-text-property 1 10 'face '(:foreground "red" :box (:color "blue")))
+  (tp-set 1 10 '(face (:foreground "red" :box (:color "blue"))))
   (list (tp-at 5 '(face :foreground))
         (tp-at 5 '(face :box :color))))
 ;; => ("red" "blue")
 
 ;; 从字符串获取嵌套子属性
 (let ((str (copy-sequence "Hello")))
-  (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+  (tp-set 0 5 '(face (:foreground "red" :underline t)) str)
   (tp-at 0 '(face :foreground) str))
 ;; => "red"
 ```
@@ -554,7 +554,7 @@ tp.el 所有函数按类别组织的完整概览：
 ;; 从 face 移除子属性
 (with-temp-buffer
   (insert "Hello World")
-  (put-text-property 1 10 'face '(:foreground "red" :underline t))
+  (tp-set 1 10 '(face (:foreground "red" :underline t)))
   (tp-remove 1 10 '(face :underline))
   (tp-at 1 'face))
 ;; => (:foreground "red")
@@ -562,7 +562,7 @@ tp.el 所有函数按类别组织的完整概览：
 ;; 移除特定嵌套键，保留其他
 (with-temp-buffer
   (insert "Hello World")
-  (put-text-property 1 10 'face '(:underline (:style wave :position t :color "blue")))
+  (tp-set 1 10 '(face (:underline (:style wave :position t :color "blue"))))
   (tp-remove 1 10 '(face :underline (:style :position)))
   (tp-at 1 '(face :underline)))
 ;; => (:color "blue")  ; :style 和 :position 被移除, :color 保留
@@ -575,14 +575,14 @@ tp.el 所有函数按类别组织的完整概览：
 
 ;; 从字符串移除子属性
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 11 'face '(:foreground "red" :underline t) str)
+  (tp-set 0 11 '(face (:foreground "red" :underline t)) str)
   (tp-remove str 'face :underline)
   (tp-at 0 'face str))
 ;; => (:foreground "red")
 
 ;; 从字符串移除嵌套键
 (let ((str (copy-sequence "Hello World")))
-  (put-text-property 0 11 'face '(:underline (:style wave :color "blue")) str)
+  (tp-set 0 11 '(face (:underline (:style wave :color "blue"))) str)
   (tp-remove str 'face :underline '(:style))
   (tp-at 0 '(face :underline) str))
 ;; => (:color "blue")
