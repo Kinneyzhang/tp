@@ -764,45 +764,6 @@ Returns list of (START END VALUE) intervals."
     (should (null (tp-get 6 11 'face str)))))
 
 ;;; ============================================================
-;;; Fine-grained Property Manipulation Tests
-;;; ============================================================
-
-(ert-deftest tp-test-get-sub-property ()
-  "Test tp--get-sub retrieves sub-property from face."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (put-text-property 1 6 'face '(:foreground "red" :weight bold))
-    (should (equal (tp--get-sub 1 'face :foreground) "red"))
-    (should (eq (tp--get-sub 1 'face :weight) 'bold))
-    (should (null (tp--get-sub 1 'face :background)))))
-
-(ert-deftest tp-test-put-sub-property ()
-  "Test tp--put-sub sets sub-property on face."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (tp--put-sub 1 6 'face :foreground "blue")
-    (should (equal (tp--get-sub 1 'face :foreground) "blue"))
-    ;; Add another sub-property
-    (tp--put-sub 1 6 'face :weight 'bold)
-    (should (eq (tp--get-sub 1 'face :weight) 'bold))
-    (should (equal (tp--get-sub 1 'face :foreground) "blue"))))
-
-(ert-deftest tp-test-remove-sub-property ()
-  "Test tp--remove-sub removes sub-property from face."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (put-text-property 1 6 'face '(:foreground "red" :weight bold))
-    (tp--remove-sub 1 6 'face :foreground)
-    (should (null (tp--get-sub 1 'face :foreground)))
-    (should (eq (tp--get-sub 1 'face :weight) 'bold))))
-
-(ert-deftest tp-test-sub-property-on-string ()
-  "Test fine-grained property manipulation on strings."
-  (let ((str (copy-sequence "Hello")))
-    (tp--put-sub 0 5 'face :foreground "green" str)
-    (should (equal (tp--get-sub 0 'face :foreground str) "green"))))
-
-;;; ============================================================
 ;;; New API Tests (tp-reset, tp-set, tp-set-face, tp-set-display, tp-add)
 ;;; ============================================================
 

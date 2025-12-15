@@ -675,57 +675,6 @@ OBJECT defaults to current buffer."
 
 ;;; Private functions for fine-grained property manipulation
 
-(defun tp--get-sub (position property sub-property &optional object)
-  "Get SUB-PROPERTY from PROPERTY at POSITION in OBJECT.
-For example, get :foreground from a face property.
-OBJECT defaults to current buffer.
-This is a private function - use `tp-get' with nested path for public API."
-  (let ((prop-value (get-text-property position property object)))
-    (cond
-     ;; Property is a plist (e.g., (:foreground \"red\" :weight bold))
-     ((and (listp prop-value) (keywordp (car prop-value)))
-      (plist-get prop-value sub-property))
-     ;; Property is an alist
-     ((and (listp prop-value) (consp (car prop-value)))
-      (cdr (assoc sub-property prop-value)))
-     ;; Property is a list of face specs
-     ((listp prop-value)
-      (cl-loop for spec in prop-value
-               when (and (listp spec) (keywordp (car spec)))
-               thereis (plist-get spec sub-property)))
-     (t nil))))
-
-(defun tp--put-sub (start end property sub-property value &optional object)
-  "Set SUB-PROPERTY of PROPERTY to VALUE from START to END in OBJECT.
-Merges the sub-property into the existing property value.
-For example, set :foreground of a face property.
-OBJECT defaults to current buffer.
-Internal function - use `tp-add' with nested plist for public API."
-  (let* ((pos start))
-    (while (< pos end)
-      (let* ((current-value (get-text-property pos property object))
-             (next-pos (or (next-single-property-change pos property object end) end))
-             (new-value
-              (cond
-               ;; No existing value - create new plist
-               ((null current-value)
-                (list sub-property value))
-               ;; Existing plist
-               ((and (listp current-value) (keywordp (car current-value)))
-                (plist-put (copy-sequence current-value) sub-property value))
-               ;; Existing symbol (e.g., 'bold) - convert to list and add
-               ((symbolp current-value)
-                (list current-value sub-property value))
-               ;; Other list - wrap and add
-               ((listp current-value)
-                (append current-value (list sub-property value)))
-               (t (list sub-property value)))))
-        (put-text-property pos next-pos property new-value object)
-        (setq pos next-pos))))
-  (if (stringp object)
-      object
-    (cons start end)))
-
 (defun tp--remove-sub (start end property sub-property &optional object)
   "Remove SUB-PROPERTY from PROPERTY between START and END in OBJECT.
 For example, remove :foreground from a face property.
