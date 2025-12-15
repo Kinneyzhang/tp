@@ -67,8 +67,8 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-add`](#tp-add---添加合并属性) | 添加/合并属性，支持深度合并 |
 | [`tp-set-face`](#tp-set-face---设置-face-属性) | 仅设置 face 属性 |
 | [`tp-set-display`](#tp-set-display---设置-display-属性) | 仅设置 display 属性 |
-| [`tp-get`](#tp-get---获取属性值) | 从位置或范围获取属性值 |
-| [`tp-at`](#tp-at---获取所有属性) | 获取某位置的所有属性 |
+| [`tp-get`](#tp-get---获取属性值) | 从范围或字符串获取属性值 |
+| [`tp-at`](#tp-at---获取位置属性) | 获取单个位置的属性值 |
 | [`tp-remove`](#tp-remove---移除属性) | 移除属性或子属性 |
 | [`tp-clear`](#tp-clear---清除所有属性) | 清除区域中的所有文本属性 |
 
@@ -89,8 +89,8 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-search-backward`](#tp-search-forward--tp-search-backward) | text-property-search-backward 的原始包装 |
 | [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本（支持缓冲区和字符串） |
 | [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本（支持缓冲区和字符串） |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向前匹配的文本应用函数 |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向后匹配的文本应用函数 |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向前匹配的文本应用函数（支持起始位置） |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向后匹配的文本应用函数（支持起始位置） |
 | [`tp-search`](#tp-search---搜索所有匹配) | 在范围或字符串中搜索所有匹配的属性 |
 | [`tp-search-map`](#tp-search-map---对匹配文本应用函数) | 对所有匹配的文本应用函数 |
 
@@ -275,18 +275,13 @@ tp.el 所有函数按类别组织的完整概览：
 
 #### `tp-get` - 获取属性值
 
-从位置或范围获取属性值，支持嵌套子属性访问。
+从范围或字符串获取属性值，支持嵌套子属性访问。
 
-对于范围和整个字符串查询，返回 `(START END VALUE)` 区间列表，让你可以查看范围内所有的属性值。
+返回 `(START END VALUE)` 区间列表，让你可以查看范围内所有的属性值。
+
+对于单个位置的查询，请使用 `tp-at`。
 
 ```elisp
-;; 单个位置
-(tp-get POSITION PROPERTY)
-(tp-get POSITION PROPERTY OBJECT)
-
-;; 嵌套子属性访问
-(tp-get POSITION PROPERTY SUB-KEY ...)
-
 ;; 范围 - 特定属性（返回区间列表）
 (tp-get START END PROPERTY)
 (tp-get START END PROPERTY OBJECT)
@@ -316,32 +311,30 @@ tp.el 所有函数按类别组织的完整概览：
 **示例：**
 
 ```elisp
-;; 从当前缓冲区获取
-(tp-get 5 'face)           ; => bold
-
-;; 获取嵌套子属性
-(tp-get 5 'face :foreground)      ; => "red"
-(tp-get 5 'face :box :color)      ; => "blue"
-(tp-get 5 'display :width)        ; => 10
-
-;; 从字符串获取（0 索引）
-(tp-get 0 'face my-string) ; => italic
-
 ;; 从范围获取 - 返回 (START END VALUE) 区间列表
 (tp-get 1 10 'face)        ; => ((1 6 bold))
 
 ;; 获取多个区间
+(setq str (copy-sequence "Hello World Hello"))
 (tp-set 0 5 '(face bold) str)
 (tp-set 12 17 '(face italic) str)
 (tp-get 0 17 'face str)    ; => ((0 5 bold) (12 17 italic))
 
 ;; 使用列表形式的属性路径
+(setq my-string (copy-sequence "Hello World Hello World"))
+(put-text-property 5 20 'face '(:underline (:style wave)) my-string)
 (tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
 
 ;; 从整个字符串获取深层嵌套属性
+(setq str (copy-sequence "Hello World"))
+(put-text-property 0 5 'face '(:underline (:color "green")) str)
+(put-text-property 6 11 'face '(:underline (:color "yellow")) str)
 (tp-get str 'face :underline :color)  ; => ((0 5 "green") (6 11 "yellow"))
 
 ;; 从嵌套属性中获取多个键
+(setq str (copy-sequence "Hello World"))
+(put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
+(put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
 (tp-get str 'face :underline '(:color :style))
 ;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
@@ -349,27 +342,58 @@ tp.el 所有函数按类别组织的完整概览：
 (tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
 
 ;; 从整个字符串获取 - 返回区间列表
+(setq str (copy-sequence "Hello World Hello"))
+(tp-set 0 5 '(face bold) str)
+(tp-set 12 17 '(face italic) str)
 (tp-get str)               ; => ((0 5 (face bold)) (12 17 (face italic)))
 (tp-get str 'face)         ; => ((0 5 bold) (12 17 italic))
-(tp-get str 'face :foreground)    ; => ((0 5 "red") (12 17 "blue"))
-(tp-get str '(face :foreground))  ; => ((0 5 "red") (12 17 "blue"))
 ```
 
 ---
 
-#### `tp-at` - 获取所有属性
+#### `tp-at` - 获取位置属性
 
 ```elisp
-(tp-at &optional POINT OBJECT)
+;; 获取位置的所有属性
+(tp-at POS)
+(tp-at POS OBJECT)
+
+;; 获取位置的特定属性
+(tp-at POS PROPERTY)
+(tp-at POS PROPERTY OBJECT)
+
+;; 获取位置的嵌套子属性
+(tp-at POS '(PROPERTY SUB-KEY ...))
+(tp-at POS '(PROPERTY SUB-KEY ...) OBJECT)
 ```
 
-获取 POINT 位置的所有文本属性，返回属性列表。
+获取 POS 位置的文本属性，可选择按 PROPERTY 过滤。
+
+对于单位置属性查询（以前使用 `tp-get`），现在使用 `tp-at`。
 
 **示例：**
 
 ```elisp
+;; 获取当前缓冲区位置 5 的所有属性
 (tp-at 5)  ; => (face bold help-echo "test")
-(tp-at 0 my-string)  ; 从字符串获取
+
+;; 获取字符串位置 0 的所有属性
+(setq my-string (tp-set "Hello" 'face 'italic 'help-echo "greeting"))
+(tp-at 0 my-string)  ; => (face italic help-echo "greeting")
+
+;; 获取位置的特定属性
+(tp-at 5 'face)  ; => bold
+(tp-at 0 'face my-string)  ; => italic
+
+;; 获取位置的嵌套子属性
+(tp-at 5 '(face :foreground))  ; => "red"
+(tp-at 5 '(face :box :color))  ; => "blue"
+(tp-at 5 '(display :width))    ; => 10
+
+;; 从字符串获取嵌套子属性
+(setq str (copy-sequence "Hello"))
+(put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+(tp-at 0 '(face :foreground) str)  ; => "red"
 ```
 
 ---
@@ -589,6 +613,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-forward 'marker nil nil 3)
 
 ;; 在字符串中搜索
+(setq my-string (copy-sequence "Hello World Hello"))
+(tp-set 0 5 '(marker t) my-string)
+(tp-set 12 17 '(marker t) my-string)
 (tp-forward 'marker nil my-string 2)
 ;; => ((0 5 t) (12 17 t))
 ```
@@ -598,8 +625,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 #### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
-(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
 ```
 
 向前/向后搜索 N 次具有 PROPERTY 的文本，并对匹配的文本应用 FUNCTION。
@@ -607,22 +634,35 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - **FUNCTION** 接收匹配到的文本作为唯一参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
 - **N** 是搜索次数，默认为 1。
 - **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
+- **POINT** 是搜索的起始位置；对于缓冲区 nil 表示当前位置，对于字符串 nil 表示 0（向前）或字符串末尾（向后）。
 - 返回成功匹配的数量。
 
 **示例：**
 
 ```elisp
-;; 将缓冲区中匹配的文本转为大写
-(tp-forward-do #'upcase 'marker nil nil 3)
+;; 将缓冲区中匹配的文本转为大写（从当前位置开始）
+(tp-forward-do #'upcase 'marker nil nil nil 3)
 
-;; 将字符串中匹配的文本转为大写
-(tp-forward-do #'upcase 'marker nil my-string 2)
+;; 将字符串中匹配的文本转为大写（从位置 0 开始）
+(setq my-string (copy-sequence "hello world hello"))
+(tp-set 0 5 '(marker t) my-string)
+(tp-set 12 17 '(marker t) my-string)
+(tp-forward-do #'upcase 'marker nil my-string nil 2)
+;; my-string 现在是 "HELLO world HELLO"
+
+;; 从特定位置开始搜索
+(setq my-string (copy-sequence "hello world hello"))
+(tp-set 0 5 '(marker t) my-string)
+(tp-set 12 17 '(marker t) my-string)
+(tp-forward-do #'upcase 'marker nil my-string 6 2)
+;; 只处理位置 6 之后的匹配
+;; my-string 现在是 "hello world HELLO"
 
 ;; 自定义转换
 (tp-forward-do
  (lambda (text)
    (concat "[" text "]"))
- 'marker nil nil 3)
+ 'marker nil nil nil 3)
 ```
 
 ---

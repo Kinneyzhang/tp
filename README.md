@@ -68,8 +68,8 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-add`](#tp-add---addmerge-properties) | Add/merge properties with deep merge support |
 | [`tp-set-face`](#tp-set-face---set-face-property) | Set only the face property |
 | [`tp-set-display`](#tp-set-display---set-display-property) | Set only the display property |
-| [`tp-get`](#tp-get---get-property-value) | Get property value(s) from position or range |
-| [`tp-at`](#tp-at---get-all-properties) | Get all properties at a position |
+| [`tp-get`](#tp-get---get-property-value) | Get property value(s) from range or string |
+| [`tp-at`](#tp-at---get-property-at-position) | Get property value(s) at a single position |
 | [`tp-remove`](#tp-remove---remove-property) | Remove a property or sub-property |
 | [`tp-clear`](#tp-clear---clear-all-properties) | Clear all text properties from a region |
 
@@ -90,8 +90,8 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-search-backward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-backward |
 | [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property (buffers and strings) |
 | [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property (buffers and strings) |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N forward matches |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N backward matches |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N forward matches (with optional start point) |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N backward matches (with optional start point) |
 | [`tp-search`](#tp-search---search-all-matches) | Search all matching properties in range or string |
 | [`tp-search-map`](#tp-search-map---apply-function-to-matched-text) | Apply function to matched text for all matches |
 
@@ -276,18 +276,13 @@ Set only the display property, preserving other properties.
 
 #### `tp-get` - Get Property Value
 
-Get property value(s) from position or range, with support for nested sub-properties.
+Get property value(s) from range or string, with support for nested sub-properties.
 
-For range and entire string queries, returns a list of `(START END VALUE)` intervals, allowing you to see all property values across the range.
+Returns a list of `(START END VALUE)` intervals, allowing you to see all property values across the range.
+
+For single position queries, use `tp-at` instead.
 
 ```elisp
-;; Single position
-(tp-get POSITION PROPERTY)
-(tp-get POSITION PROPERTY OBJECT)
-
-;; Nested sub-property access
-(tp-get POSITION PROPERTY SUB-KEY ...)
-
 ;; Range - specific property (returns list of intervals)
 (tp-get START END PROPERTY)
 (tp-get START END PROPERTY OBJECT)
@@ -317,32 +312,30 @@ For range and entire string queries, returns a list of `(START END VALUE)` inter
 **Examples:**
 
 ```elisp
-;; Get from current buffer
-(tp-get 5 'face)           ; => bold
-
-;; Get nested sub-property
-(tp-get 5 'face :foreground)      ; => "red"
-(tp-get 5 'face :box :color)      ; => "blue"
-(tp-get 5 'display :width)        ; => 10
-
-;; Get from string (0-indexed)
-(tp-get 0 'face my-string) ; => italic
-
 ;; Get from range - returns list of (START END VALUE) intervals
 (tp-get 1 10 'face)        ; => ((1 6 bold))
 
 ;; Get with multiple intervals
+(setq str (copy-sequence "Hello World Hello"))
 (tp-set 0 5 '(face bold) str)
 (tp-set 12 17 '(face italic) str)
 (tp-get 0 17 'face str)    ; => ((0 5 bold) (12 17 italic))
 
 ;; Get with property path as list
+(setq my-string (copy-sequence "Hello World Hello World"))
+(put-text-property 5 20 'face '(:underline (:style wave)) my-string)
 (tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
 
 ;; Get deeply nested property from entire string
+(setq str (copy-sequence "Hello World"))
+(put-text-property 0 5 'face '(:underline (:color "green")) str)
+(put-text-property 6 11 'face '(:underline (:color "yellow")) str)
 (tp-get str 'face :underline :color)  ; => ((0 5 "green") (6 11 "yellow"))
 
 ;; Get multiple keys from nested property
+(setq str (copy-sequence "Hello World"))
+(put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
+(put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
 (tp-get str 'face :underline '(:color :style))
 ;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
@@ -350,27 +343,58 @@ For range and entire string queries, returns a list of `(START END VALUE)` inter
 (tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
 
 ;; Get from entire string - returns list of intervals
+(setq str (copy-sequence "Hello World Hello"))
+(tp-set 0 5 '(face bold) str)
+(tp-set 12 17 '(face italic) str)
 (tp-get str)               ; => ((0 5 (face bold)) (12 17 (face italic)))
 (tp-get str 'face)         ; => ((0 5 bold) (12 17 italic))
-(tp-get str 'face :foreground)    ; => ((0 5 "red") (12 17 "blue"))
-(tp-get str '(face :foreground))  ; => ((0 5 "red") (12 17 "blue"))
 ```
 
 ---
 
-#### `tp-at` - Get All Properties
+#### `tp-at` - Get Property at Position
 
 ```elisp
-(tp-at &optional POINT OBJECT)
+;; Get all properties at position
+(tp-at POS)
+(tp-at POS OBJECT)
+
+;; Get specific property at position
+(tp-at POS PROPERTY)
+(tp-at POS PROPERTY OBJECT)
+
+;; Get nested sub-property at position
+(tp-at POS '(PROPERTY SUB-KEY ...))
+(tp-at POS '(PROPERTY SUB-KEY ...) OBJECT)
 ```
 
-Get all text properties at POINT as a plist.
+Get text properties at POS, optionally filtered by PROPERTY.
+
+For single-position property queries (previously done with `tp-get`), use `tp-at`.
 
 **Examples:**
 
 ```elisp
+;; Get all properties at position 5 in current buffer
 (tp-at 5)  ; => (face bold help-echo "test")
-(tp-at 0 my-string)  ; Get from string
+
+;; Get all properties at position 0 in string
+(setq my-string (tp-set "Hello" 'face 'italic 'help-echo "greeting"))
+(tp-at 0 my-string)  ; => (face italic help-echo "greeting")
+
+;; Get specific property at position
+(tp-at 5 'face)  ; => bold
+(tp-at 0 'face my-string)  ; => italic
+
+;; Get nested sub-property at position
+(tp-at 5 '(face :foreground))  ; => "red"
+(tp-at 5 '(face :box :color))  ; => "blue"
+(tp-at 5 '(display :width))    ; => 10
+
+;; Get nested sub-property from string
+(setq str (copy-sequence "Hello"))
+(put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+(tp-at 0 '(face :foreground) str)  ; => "red"
 ```
 
 ---
@@ -590,6 +614,9 @@ Search forward/backward N times for text with PROPERTY.
 (tp-forward 'marker nil nil 3)
 
 ;; Search in a string
+(setq my-string (copy-sequence "Hello World Hello"))
+(tp-set 0 5 '(marker t) my-string)
+(tp-set 12 17 '(marker t) my-string)
 (tp-forward 'marker nil my-string 2)
 ;; => ((0 5 t) (12 17 t))
 ```
@@ -599,8 +626,8 @@ Search forward/backward N times for text with PROPERTY.
 #### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
-(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
 ```
 
 Search forward/backward N times for text with PROPERTY and apply FUNCTION to matched text.
@@ -609,22 +636,36 @@ Search forward/backward N times for text with PROPERTY and apply FUNCTION to mat
   of FUNCTION replaces the matched text in the string or buffer.
 - **N** is the number of searches, defaulting to 1.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
+- **POINT** is the starting position for search; for buffers nil means current point,
+  for strings nil means 0 (forward) or end of string (backward).
 - Returns the number of successful matches.
 
 **Examples:**
 
 ```elisp
-;; Upcase matched text in buffer
-(tp-forward-do #'upcase 'marker nil nil 3)
+;; Upcase matched text in buffer (starting from current point)
+(tp-forward-do #'upcase 'marker nil nil nil 3)
 
-;; Upcase matched text in string
-(tp-forward-do #'upcase 'marker nil my-string 2)
+;; Upcase matched text in string (starting from position 0)
+(setq my-string (copy-sequence "hello world hello"))
+(tp-set 0 5 '(marker t) my-string)
+(tp-set 12 17 '(marker t) my-string)
+(tp-forward-do #'upcase 'marker nil my-string nil 2)
+;; my-string is now "HELLO world HELLO"
+
+;; Start search from specific position
+(setq my-string (copy-sequence "hello world hello"))
+(tp-set 0 5 '(marker t) my-string)
+(tp-set 12 17 '(marker t) my-string)
+(tp-forward-do #'upcase 'marker nil my-string 6 2)
+;; Only matches from position 6 onward are processed
+;; my-string is now "hello world HELLO"
 
 ;; Custom transformation
 (tp-forward-do
  (lambda (text)
    (concat "[" text "]"))
- 'marker nil nil 3)
+ 'marker nil nil nil 3)
 ```
 
 ---
