@@ -272,80 +272,6 @@ Return the modified object (string) or region (START . END) for buffer."
         object
       (cons start finish))))
 
-(defun tp--parse-single-prop-args (start-or-string end-or-val val-or-object rest)
-  "Parse arguments for single-property functions like tp-set-face.
-Returns (OBJECT START END VALUE)."
-  (let (object start finish value)
-    (cond
-     ;; First arg is a string - apply to entire string
-     ((stringp start-or-string)
-      (setq object start-or-string
-            start 0
-            finish (length start-or-string)
-            value end-or-val))
-     ;; First arg is a number - region convention
-     ((numberp start-or-string)
-      (setq start start-or-string
-            finish end-or-val
-            value val-or-object
-            object (car rest)))
-     (t (error "Invalid first argument: %S" start-or-string)))
-    (list object start finish value)))
-
-(defun tp-set-face (start-or-string &optional end-or-face face-or-object &rest rest)
-  "Set face property on string or buffer region.
-
-This function supports four calling conventions:
-
-1. Current buffer:
-   (tp-set-face START END FACE)
-
-2. Specific buffer:
-   (tp-set-face START END FACE BUFFER)
-
-3. Specific string (0-indexed positions):
-   (tp-set-face START END FACE STRING)
-
-4. Entire string:
-   (tp-set-face STRING FACE)
-
-This replaces only the face property, preserving other properties.
-Return the modified object (string) or region (START . END) for buffer."
-  (pcase-let ((`(,object ,start ,finish ,face)
-               (tp--parse-single-prop-args
-                start-or-string end-or-face face-or-object rest)))
-    (put-text-property start finish 'face face object)
-    (if (stringp object)
-        object
-      (cons start finish))))
-
-(defun tp-set-display (start-or-string &optional end-or-display display-or-object &rest rest)
-  "Set display property on string or buffer region.
-
-This function supports four calling conventions:
-
-1. Current buffer:
-   (tp-set-display START END DISPLAY)
-
-2. Specific buffer:
-   (tp-set-display START END DISPLAY BUFFER)
-
-3. Specific string (0-indexed positions):
-   (tp-set-display START END DISPLAY STRING)
-
-4. Entire string:
-   (tp-set-display STRING DISPLAY)
-
-This replaces only the display property, preserving other properties.
-Return the modified object (string) or region (START . END) for buffer."
-  (pcase-let ((`(,object ,start ,finish ,display)
-               (tp--parse-single-prop-args
-                start-or-string end-or-display display-or-object rest)))
-    (put-text-property start finish 'display display object)
-    (if (stringp object)
-        object
-      (cons start finish))))
-
 (defun tp--get-nested (value path)
   "Get nested value from VALUE following PATH.
 PATH is a list of keys/symbols to traverse nested structures.
@@ -926,22 +852,22 @@ Merges nested plists instead of replacing them."
                       (put-text-property pos next-pos key new-val obj)))
         (setq pos next-pos)))))
 
-(defun tp-match (pattern &rest args)
+(defun tp-match-set (pattern &rest args)
   "Set properties on all occurrences of PATTERN.
 
 This function supports multiple calling conventions:
 
 1. With OBJECT (string or buffer):
-   (tp-match PATTERN OBJECT PROPERTY VALUE ...)
-   (tp-match PATTERN OBJECT \\='(PROPERTY VALUE ...))
-   (tp-match PATTERN \\='(PROPERTY VALUE ...) OBJECT)
+   (tp-match-set PATTERN OBJECT PROPERTY VALUE ...)
+   (tp-match-set PATTERN OBJECT \\='(PROPERTY VALUE ...))
+   (tp-match-set PATTERN \\='(PROPERTY VALUE ...) OBJECT)
 
 2. Without OBJECT (current buffer):
-   (tp-match PATTERN PROPERTY VALUE ...)
-   (tp-match PATTERN \\='(PROPERTY VALUE ...))
+   (tp-match-set PATTERN PROPERTY VALUE ...)
+   (tp-match-set PATTERN \\='(PROPERTY VALUE ...))
 
 3. With pattern as (PATTERN STRING) to match within STRING:
-   (tp-match \\='(\"world\" \"Hello world\") \\='(face bold))
+   (tp-match-set \\='(\"world\" \"Hello world\") \\='(face bold))
 
 PATTERN is the string to search for.
 PROPERTIES is a plist of property-value pairs.
@@ -958,8 +884,8 @@ Returns:
 
 (defun tp-match-reset (pattern &rest args)
   "Reset (completely replace) properties on all occurrences of PATTERN.
-Same calling conventions as `tp-match'.
-Unlike `tp-match', this completely replaces all existing properties."
+Same calling conventions as `tp-match-set'.
+Unlike `tp-match-set', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
          (properties (cdr parsed))
@@ -973,8 +899,8 @@ Unlike `tp-match', this completely replaces all existing properties."
 
 (defun tp-match-add (pattern &rest args)
   "Add/update properties on all occurrences of PATTERN.
-Same calling conventions as `tp-match'.
-Unlike `tp-match', this deeply merges nested properties."
+Same calling conventions as `tp-match-set'.
+Unlike `tp-match-set', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
          (properties (cdr parsed))
@@ -983,19 +909,19 @@ Unlike `tp-match', this deeply merges nested properties."
           object (cdr parsed-pattern))
     (tp--match-apply pattern properties #'tp--deep-merge-apply object)))
 
-(defun tp-regexp (pattern &rest args)
+(defun tp-regexp-set (pattern &rest args)
   "Set properties on all matches of PATTERN (regexp).
 
 This function supports multiple calling conventions:
 
 1. With OBJECT (string or buffer):
-   (tp-regexp PATTERN OBJECT PROPERTY VALUE ...)
-   (tp-regexp PATTERN OBJECT \\='(PROPERTY VALUE ...))
-   (tp-regexp PATTERN \\='(PROPERTY VALUE ...) OBJECT)
+   (tp-regexp-set PATTERN OBJECT PROPERTY VALUE ...)
+   (tp-regexp-set PATTERN OBJECT \\='(PROPERTY VALUE ...))
+   (tp-regexp-set PATTERN \\='(PROPERTY VALUE ...) OBJECT)
 
 2. Without OBJECT (current buffer):
-   (tp-regexp PATTERN PROPERTY VALUE ...)
-   (tp-regexp PATTERN \\='(PROPERTY VALUE ...))
+   (tp-regexp-set PATTERN PROPERTY VALUE ...)
+   (tp-regexp-set PATTERN \\='(PROPERTY VALUE ...))
 
 PATTERN is the regexp to search for.
 PROPERTIES is a plist of property-value pairs.
@@ -1009,8 +935,8 @@ Returns:
 
 (defun tp-regexp-reset (pattern &rest args)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
-Same calling conventions as `tp-regexp'.
-Unlike `tp-regexp', this completely replaces all existing properties."
+Same calling conventions as `tp-regexp-set'.
+Unlike `tp-regexp-set', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
          (properties (cdr parsed)))
@@ -1021,8 +947,8 @@ Unlike `tp-regexp', this completely replaces all existing properties."
 
 (defun tp-regexp-add (pattern &rest args)
   "Add/update properties on all regexp matches of PATTERN.
-Same calling conventions as `tp-regexp'.
-Unlike `tp-regexp', this deeply merges nested properties."
+Same calling conventions as `tp-regexp-set'.
+Unlike `tp-regexp-set', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
          (properties (cdr parsed)))

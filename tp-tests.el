@@ -545,38 +545,38 @@
 ;;; Match and Regexp Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-match ()
-  "Test tp-match sets properties on string matches."
+(ert-deftest tp-test-match-set ()
+  "Test tp-match-set sets properties on string matches."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
-    (let ((regions (tp-match "Hello" 'face 'bold)))
+    (let ((regions (tp-match-set "Hello" 'face 'bold)))
       (should (= (length regions) 2))
       (should (eq (tp-at 1 'face) 'bold))
       (should (eq (tp-at 13 'face) 'bold)))))
 
-(ert-deftest tp-test-match-returns-regions ()
-  "Test tp-match returns correct region pairs."
+(ert-deftest tp-test-match-set-returns-regions ()
+  "Test tp-match-set returns correct region pairs."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
-    (let ((regions (tp-match "Hello")))
+    (let ((regions (tp-match-set "Hello")))
       (should (= (length regions) 2))
       (should (equal (car regions) '(1 . 6)))
       (should (equal (cadr regions) '(13 . 18))))))
 
-(ert-deftest tp-test-regexp ()
-  "Test tp-regexp sets properties on regexp matches."
+(ert-deftest tp-test-regexp-set ()
+  "Test tp-regexp-set sets properties on regexp matches."
   (tp-test-with-temp-buffer
     (insert "abc 123 def 456")
-    (let ((regions (tp-regexp "[0-9]+" 'face 'bold)))
+    (let ((regions (tp-regexp-set "[0-9]+" 'face 'bold)))
       (should (= (length regions) 2))
       (should (eq (tp-at 5 'face) 'bold))
       (should (eq (tp-at 13 'face) 'bold)))))
 
-(ert-deftest tp-test-regexp-returns-regions ()
-  "Test tp-regexp returns correct region pairs."
+(ert-deftest tp-test-regexp-set-returns-regions ()
+  "Test tp-regexp-set returns correct region pairs."
   (tp-test-with-temp-buffer
     (insert "abc 123 def 456")
-    (let ((regions (tp-regexp "[0-9]+")))
+    (let ((regions (tp-regexp-set "[0-9]+")))
       (should (= (length regions) 2)))))
 
 ;;; ============================================================
@@ -942,19 +942,19 @@
     (should (equal (get-text-property 0 'help-echo result) "test"))
     (should (eq (get-text-property 4 'face result) 'bold))))
 
-(ert-deftest tp-test-match-on-string ()
-  "Test tp-match works on string objects."
+(ert-deftest tp-test-match-set-on-string ()
+  "Test tp-match-set works on string objects."
   (let* ((str (copy-sequence "Hello World Hello"))
-         (result (tp-match "Hello" str 'face 'bold)))
+         (result (tp-match-set "Hello" str 'face 'bold)))
     (should (stringp result))
     (should (eq (get-text-property 0 'face result) 'bold))
     (should (eq (get-text-property 12 'face result) 'bold))
     (should (null (get-text-property 6 'face result)))))
 
-(ert-deftest tp-test-regexp-on-string ()
-  "Test tp-regexp works on string objects."
+(ert-deftest tp-test-regexp-set-on-string ()
+  "Test tp-regexp-set works on string objects."
   (let* ((str (copy-sequence "abc 123 def 456"))
-         (result (tp-regexp "[0-9]+" str 'face 'bold)))
+         (result (tp-regexp-set "[0-9]+" str 'face 'bold)))
     (should (stringp result))
     (should (eq (get-text-property 4 'face result) 'bold))
     (should (eq (get-text-property 12 'face result) 'bold))
@@ -1040,38 +1040,6 @@ Returns list of (START END VALUE) intervals."
     (should (eq (tp-at 1 'face) 'italic))
     (should (equal (tp-at 1 'help-echo) "test"))))
 
-(ert-deftest tp-test-set-face ()
-  "Test tp-set-face sets only face property."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (tp-set 1 6 '(face bold help-echo "test"))
-    (tp-set-face 1 6 'italic)
-    (should (eq (tp-at 1 'face) 'italic))
-    (should (equal (tp-at 1 'help-echo) "test"))))
-
-(ert-deftest tp-test-set-face-on-string ()
-  "Test tp-set-face on string."
-  (let ((str (copy-sequence "Hello")))
-    (tp-set 0 5 '(help-echo "test") str)
-    (tp-set-face 0 5 'bold str)
-    (should (eq (get-text-property 0 'face str) 'bold))
-    (should (equal (get-text-property 0 'help-echo str) "test"))))
-
-(ert-deftest tp-test-set-face-entire-string ()
-  "Test tp-set-face on entire string."
-  (let* ((str (copy-sequence "Hello"))
-         (result (tp-set-face str 'bold)))
-    (should (eq (get-text-property 0 'face result) 'bold))))
-
-(ert-deftest tp-test-set-display ()
-  "Test tp-set-display sets only display property."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (tp-set 1 6 '(face bold help-echo "test"))
-    (tp-set-display 1 6 '(space :width 10))
-    (should (equal (tp-at 1 'display) '(space :width 10)))
-    (should (eq (tp-at 1 'face) 'bold))))
-
 (ert-deftest tp-test-add ()
   "Test tp-add adds/updates properties without replacing."
   (tp-test-with-temp-buffer
@@ -1156,10 +1124,10 @@ Returns list of (START END VALUE) intervals."
 ;;; Match Pattern Format Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-match-pattern-string-format ()
-  "Test tp-match with (pattern string) format."
+(ert-deftest tp-test-match-set-pattern-string-format ()
+  "Test tp-match-set with (pattern string) format."
   (let* ((str (copy-sequence "Hello world"))
-         (result (tp-match '("world" "Hello world") '(face bold))))
+         (result (tp-match-set '("world" "Hello world") '(face bold))))
     (should (stringp result))
     (should (eq (get-text-property 6 'face result) 'bold))
     (should (null (get-text-property 0 'face result)))))
@@ -1219,19 +1187,19 @@ Returns list of (START END VALUE) intervals."
     (should (eq (get-text-property 4 'face str) 'bold))
     (should (equal (get-text-property 4 'help-echo str) "original"))))
 
-(ert-deftest tp-test-match-string-as-last-arg ()
-  "Test tp-match with string as last argument."
+(ert-deftest tp-test-match-set-string-as-last-arg ()
+  "Test tp-match-set with string as last argument."
   (let ((str (copy-sequence "Hello World Hello")))
-    (let ((result (tp-match "Hello" '(face bold) str)))
+    (let ((result (tp-match-set "Hello" '(face bold) str)))
       (should (stringp result))
       (should (eq (get-text-property 0 'face result) 'bold))
       (should (eq (get-text-property 12 'face result) 'bold))
       (should (null (get-text-property 6 'face result))))))
 
-(ert-deftest tp-test-regexp-string-as-last-arg ()
-  "Test tp-regexp with string as last argument."
+(ert-deftest tp-test-regexp-set-string-as-last-arg ()
+  "Test tp-regexp-set with string as last argument."
   (let ((str (copy-sequence "abc 123 def 456")))
-    (let ((result (tp-regexp "[0-9]+" '(face italic) str)))
+    (let ((result (tp-regexp-set "[0-9]+" '(face italic) str)))
       (should (stringp result))
       (should (eq (get-text-property 4 'face result) 'italic))
       (should (eq (get-text-property 12 'face result) 'italic))

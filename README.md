@@ -114,16 +114,16 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 
 Native APIs require manual searching and looping. tp.el provides convenient pattern matching functionality:
 
-- ✅ **String Matching**: `tp-match`, `tp-match-reset`, `tp-match-add`
-- ✅ **Regexp Matching**: `tp-regexp`, `tp-regexp-reset`, `tp-regexp-add`
+- ✅ **String Matching**: `tp-match-set`, `tp-match-reset`, `tp-match-add`
+- ✅ **Regexp Matching**: `tp-regexp-set`, `tp-regexp-reset`, `tp-regexp-add`
 - ✅ **Three Semantic Variants**: Each match type supports set/reset/add operation semantics
 
 ```elisp
 ;; Highlight all TODOs
-(tp-match "TODO" '(face warning))
+(tp-match-set "TODO" '(face warning))
 
 ;; Regexp match all numbers
-(tp-regexp "[0-9]+" '(face font-lock-number-face))
+(tp-regexp-set "[0-9]+" '(face font-lock-number-face))
 
 ;; Add properties with deep merge
 (tp-match-add "TODO" '(face (:underline t)))
@@ -178,8 +178,6 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-set`](#tp-set---set-text-properties) | Set text properties (replaces specified properties only) |
 | [`tp-reset`](#tp-reset---replace-all-properties) | Replace ALL text properties |
 | [`tp-add`](#tp-add---addmerge-properties) | Add/merge properties with deep merge support |
-| [`tp-set-face`](#tp-set-face---set-face-property) | Set only the face property |
-| [`tp-set-display`](#tp-set-display---set-display-property) | Set only the display property |
 | [`tp-get`](#tp-get---get-property-value) | Get property value(s) from range or string |
 | [`tp-at`](#tp-at---get-property-at-position) | Get property value(s) at a single position |
 | [`tp-remove`](#tp-remove---remove-property) | Remove a property or sub-property |
@@ -188,10 +186,10 @@ A complete overview of all tp.el functions organized by category:
 #### Pattern Matching Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-match`](#tp-match---match-string) | Set properties on string pattern matches |
+| [`tp-match-set`](#tp-match-set---match-string) | Set properties on string pattern matches |
 | [`tp-match-reset`](#tp-match-reset---match-and-reset) | Reset all properties on string matches |
 | [`tp-match-add`](#tp-match-add---match-and-add) | Add/merge properties on string matches |
-| [`tp-regexp`](#tp-regexp---match-regexp) | Set properties on regexp matches |
+| [`tp-regexp-set`](#tp-regexp-set---match-regexp) | Set properties on regexp matches |
 | [`tp-regexp-reset`](#tp-regexp-reset---regexp-and-reset) | Reset all properties on regexp matches |
 | [`tp-regexp-add`](#tp-regexp-add---regexp-and-add) | Add/merge properties on regexp matches |
 
@@ -338,43 +336,6 @@ Add or update properties with deep merge support for nested plists.
 (tp-set "Hello" 'face 'bold)
 (tp-add "Hello" 'face 'shadow)
 ;; Result: face is (shadow bold)
-```
-
----
-
-#### `tp-set-face` - Set Face Property
-
-Set only the face property, preserving other properties.
-
-```elisp
-(tp-set-face START END FACE &optional OBJECT)
-(tp-set-face STRING FACE)
-```
-
-**Examples:**
-
-```elisp
-(tp-set-face 1 10 'bold)
-(tp-set-face 1 10 '(:foreground "red" :weight bold))
-(tp-set-face "Hello" 'italic)
-```
-
----
-
-#### `tp-set-display` - Set Display Property
-
-Set only the display property, preserving other properties.
-
-```elisp
-(tp-set-display START END DISPLAY &optional OBJECT)
-(tp-set-display STRING DISPLAY)
-```
-
-**Examples:**
-
-```elisp
-(tp-set-display 1 10 '(space :width 10))
-(tp-set-display "  " '(space :width 20))
 ```
 
 ---
@@ -565,17 +526,17 @@ Clear all text properties from a region.
 
 ### Pattern Matching Functions
 
-#### `tp-match` - Match String
+#### `tp-match-set` - Match String
 
 ```elisp
 ;; Buffer
-(tp-match PATTERN '(PROPERTY VALUE ...))
+(tp-match-set PATTERN '(PROPERTY VALUE ...))
 
 ;; String or Buffer object
-(tp-match PATTERN OBJECT '(PROPERTY VALUE ...))
+(tp-match-set PATTERN OBJECT '(PROPERTY VALUE ...))
 
 ;; Pattern as (PATTERN STRING) format
-(tp-match '(PATTERN STRING) '(PROPERTY VALUE ...))
+(tp-match-set '(PATTERN STRING) '(PROPERTY VALUE ...))
 ```
 
 Set properties on all occurrences of a string pattern.
@@ -584,15 +545,15 @@ Set properties on all occurrences of a string pattern.
 
 ```elisp
 ;; In buffer - returns list of (START . END) pairs
-(tp-match "TODO" '(face warning))
+(tp-match-set "TODO" '(face warning))
 ;; => ((10 . 14) (50 . 54) ...)
 
 ;; On string - returns modified string
-(tp-match "o" "Hello World" '(face bold))
+(tp-match-set "o" "Hello World" '(face bold))
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
 ;; Using (PATTERN STRING) format
-(tp-match '("world" "Hello world") '(face bold))
+(tp-match-set '("world" "Hello world") '(face bold))
 ;; => #("Hello world" 6 11 (face bold))
 ```
 
@@ -632,14 +593,14 @@ Add/merge properties on matches with deep merge support.
 
 ---
 
-#### `tp-regexp` - Match Regexp
+#### `tp-regexp-set` - Match Regexp
 
 ```elisp
 ;; Buffer
-(tp-regexp PATTERN '(PROPERTY VALUE ...))
+(tp-regexp-set PATTERN '(PROPERTY VALUE ...))
 
 ;; String or Buffer object
-(tp-regexp PATTERN OBJECT '(PROPERTY VALUE ...))
+(tp-regexp-set PATTERN OBJECT '(PROPERTY VALUE ...))
 ```
 
 Set properties on all matches of a regular expression.
@@ -648,10 +609,10 @@ Set properties on all matches of a regular expression.
 
 ```elisp
 ;; Highlight all numbers in buffer
-(tp-regexp "[0-9]+" '(face font-lock-number-face))
+(tp-regexp-set "[0-9]+" '(face font-lock-number-face))
 
 ;; On string
-(tp-regexp "[A-Z]+" "Hello WORLD" '(face bold))
+(tp-regexp-set "[A-Z]+" "Hello WORLD" '(face bold))
 ;; => #("Hello WORLD" 6 11 (face bold))
 ```
 

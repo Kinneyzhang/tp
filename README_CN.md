@@ -113,16 +113,16 @@
 
 原生 API 需要手动搜索和循环，tp.el 提供了便捷的模式匹配功能：
 
-- ✅ **字符串匹配**：`tp-match`、`tp-match-reset`、`tp-match-add`
-- ✅ **正则匹配**：`tp-regexp`、`tp-regexp-reset`、`tp-regexp-add`
+- ✅ **字符串匹配**：`tp-match-set`、`tp-match-reset`、`tp-match-add`
+- ✅ **正则匹配**：`tp-regexp-set`、`tp-regexp-reset`、`tp-regexp-add`
 - ✅ **三种语义变体**：每种匹配都支持 set/reset/add 三种操作语义
 
 ```elisp
 ;; 高亮所有 TODO
-(tp-match "TODO" '(face warning))
+(tp-match-set "TODO" '(face warning))
 
 ;; 正则匹配所有数字
-(tp-regexp "[0-9]+" '(face font-lock-number-face))
+(tp-regexp-set "[0-9]+" '(face font-lock-number-face))
 
 ;; 深度合并方式添加属性
 (tp-match-add "TODO" '(face (:underline t)))
@@ -177,8 +177,6 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-set`](#tp-set---设置文本属性) | 设置文本属性（仅替换指定属性） |
 | [`tp-reset`](#tp-reset---替换所有属性) | 替换所有文本属性 |
 | [`tp-add`](#tp-add---添加合并属性) | 添加/合并属性，支持深度合并 |
-| [`tp-set-face`](#tp-set-face---设置-face-属性) | 仅设置 face 属性 |
-| [`tp-set-display`](#tp-set-display---设置-display-属性) | 仅设置 display 属性 |
 | [`tp-get`](#tp-get---获取属性值) | 从范围或字符串获取属性值 |
 | [`tp-at`](#tp-at---获取位置属性) | 获取单个位置的属性值 |
 | [`tp-remove`](#tp-remove---移除属性) | 移除属性或子属性 |
@@ -187,10 +185,10 @@ tp.el 所有函数按类别组织的完整概览：
 #### 模式匹配函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-match`](#tp-match---匹配字符串) | 在字符串匹配处设置属性 |
+| [`tp-match-set`](#tp-match-set---匹配字符串) | 在字符串匹配处设置属性 |
 | [`tp-match-reset`](#tp-match-reset---匹配并重置) | 在字符串匹配处重置所有属性 |
 | [`tp-match-add`](#tp-match-add---匹配并添加) | 在字符串匹配处添加/合并属性 |
-| [`tp-regexp`](#tp-regexp---匹配正则表达式) | 在正则匹配处设置属性 |
+| [`tp-regexp-set`](#tp-regexp-set---匹配正则表达式) | 在正则匹配处设置属性 |
 | [`tp-regexp-reset`](#tp-regexp-reset---正则匹配并重置) | 在正则匹配处重置所有属性 |
 | [`tp-regexp-add`](#tp-regexp-add---正则匹配并添加) | 在正则匹配处添加/合并属性 |
 
@@ -337,43 +335,6 @@ tp.el 所有函数按类别组织的完整概览：
 (tp-set "Hello" 'face 'bold)
 (tp-add "Hello" 'face 'shadow)
 ;; 结果: face 是 (shadow bold)
-```
-
----
-
-#### `tp-set-face` - 设置 Face 属性
-
-只设置 face 属性，保留其他属性。
-
-```elisp
-(tp-set-face START END FACE &optional OBJECT)
-(tp-set-face STRING FACE)
-```
-
-**示例：**
-
-```elisp
-(tp-set-face 1 10 'bold)
-(tp-set-face 1 10 '(:foreground "red" :weight bold))
-(tp-set-face "Hello" 'italic)
-```
-
----
-
-#### `tp-set-display` - 设置 Display 属性
-
-只设置 display 属性，保留其他属性。
-
-```elisp
-(tp-set-display START END DISPLAY &optional OBJECT)
-(tp-set-display STRING DISPLAY)
-```
-
-**示例：**
-
-```elisp
-(tp-set-display 1 10 '(space :width 10))
-(tp-set-display "  " '(space :width 20))
 ```
 
 ---
@@ -564,17 +525,17 @@ tp.el 所有函数按类别组织的完整概览：
 
 ### 模式匹配函数
 
-#### `tp-match` - 匹配字符串
+#### `tp-match-set` - 匹配字符串
 
 ```elisp
 ;; 缓冲区
-(tp-match PATTERN '(PROPERTY VALUE ...))
+(tp-match-set PATTERN '(PROPERTY VALUE ...))
 
 ;; 字符串或缓冲区对象
-(tp-match PATTERN OBJECT '(PROPERTY VALUE ...))
+(tp-match-set PATTERN OBJECT '(PROPERTY VALUE ...))
 
 ;; 使用 (PATTERN STRING) 格式
-(tp-match '(PATTERN STRING) '(PROPERTY VALUE ...))
+(tp-match-set '(PATTERN STRING) '(PROPERTY VALUE ...))
 ```
 
 在所有字符串模式匹配处设置属性。
@@ -583,15 +544,15 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 在缓冲区中 - 返回 (START . END) 对的列表
-(tp-match "TODO" '(face warning))
+(tp-match-set "TODO" '(face warning))
 ;; => ((10 . 14) (50 . 54) ...)
 
 ;; 在字符串上 - 返回修改后的字符串
-(tp-match "o" "Hello World" '(face bold))
+(tp-match-set "o" "Hello World" '(face bold))
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
 ;; 使用 (PATTERN STRING) 格式
-(tp-match '("world" "Hello world") '(face bold))
+(tp-match-set '("world" "Hello world") '(face bold))
 ;; => #("Hello world" 6 11 (face bold))
 ```
 
@@ -631,14 +592,14 @@ tp.el 所有函数按类别组织的完整概览：
 
 ---
 
-#### `tp-regexp` - 匹配正则表达式
+#### `tp-regexp-set` - 匹配正则表达式
 
 ```elisp
 ;; 缓冲区
-(tp-regexp PATTERN '(PROPERTY VALUE ...))
+(tp-regexp-set PATTERN '(PROPERTY VALUE ...))
 
 ;; 字符串或缓冲区对象
-(tp-regexp PATTERN OBJECT '(PROPERTY VALUE ...))
+(tp-regexp-set PATTERN OBJECT '(PROPERTY VALUE ...))
 ```
 
 在所有正则表达式匹配处设置属性。
@@ -647,10 +608,10 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 ;; 高亮缓冲区中的所有数字
-(tp-regexp "[0-9]+" '(face font-lock-number-face))
+(tp-regexp-set "[0-9]+" '(face font-lock-number-face))
 
 ;; 在字符串上
-(tp-regexp "[A-Z]+" "Hello WORLD" '(face bold))
+(tp-regexp-set "[A-Z]+" "Hello WORLD" '(face bold))
 ;; => #("Hello WORLD" 6 11 (face bold))
 ```
 
