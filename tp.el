@@ -1020,8 +1020,12 @@ Returns the number of successful matches."
 (defun tp-forward-do (function property &optional value object point n)
   "Search forward N times for text with PROPERTY and apply FUNCTION to each match.
 
-FUNCTION receives the matched text as its only argument.  The return value
-of FUNCTION replaces the matched text in the string or buffer.
+FUNCTION receives the matched text as its first argument.  Optionally,
+FUNCTION can accept two additional arguments: START and END, representing
+the start and end positions of the match.  If FUNCTION accepts 2 arguments,
+it receives (TEXT START).  If it accepts 3 or more arguments, it receives
+(TEXT START END).  The return value of FUNCTION replaces the matched text
+in the string or buffer.
 
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
@@ -1041,39 +1045,51 @@ Example:
   (setq my-string (copy-sequence \"hello world hello\"))
   (tp-set 0 5 \\='(marker t) my-string)
   (tp-set 12 17 \\='(marker t) my-string)
-  (tp-forward-do #\\='upcase \\='marker nil my-string nil 3)"
-  (tp--forward-do
-   (lambda (match obj)
-     (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
-            (end (if (listp match) (cadr match) (prop-match-end match)))
-            (text (if (stringp obj)
-                      (substring obj start end)
-                    (buffer-substring start end)))
-            (new-text (funcall function text)))
-       (when (stringp new-text)
-         (if (stringp obj)
-             ;; For strings: copy text content and properties separately
-             (let ((len (min (length new-text) (- end start))))
-               ;; Copy text content
-               (store-substring obj start new-text)
-               ;; Copy properties from new-text to obj
-               (let ((pos 0))
-                 (while (< pos len)
-                   (let* ((props (text-properties-at pos new-text))
-                          (next-change (or (next-property-change pos new-text) len)))
-                     (when props
-                       (set-text-properties (+ start pos)
-                                            (+ start (min next-change len))
-                                            props
-                                            obj))
-                     (setq pos next-change)))))
-           ;; For buffers, delete and insert
-           (unless (equal new-text text)
-             (save-excursion
-               (delete-region start end)
-               (goto-char start)
-               (insert new-text)))))))
-   property value object point n))
+  (tp-forward-do #\\='upcase \\='marker nil my-string nil 3)
+  ;; Use start and end positions
+  (tp-forward-do (lambda (txt start end) (format \"[%d-%d]%s\" start end txt))
+                 \\='marker nil my-string nil 3)"
+  (let ((arity (func-arity function)))
+    (tp--forward-do
+     (lambda (match obj)
+       (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
+              (end (if (listp match) (cadr match) (prop-match-end match)))
+              (text (if (stringp obj)
+                        (substring obj start end)
+                      (buffer-substring start end)))
+              (max-arity (cdr arity))
+              (can-accept-start (or (eq max-arity 'many)
+                                    (and (numberp max-arity) (>= max-arity 2))))
+              (can-accept-end (or (eq max-arity 'many)
+                                  (and (numberp max-arity) (>= max-arity 3))))
+              (new-text (cond
+                         (can-accept-end (funcall function text start end))
+                         (can-accept-start (funcall function text start))
+                         (t (funcall function text)))))
+         (when (stringp new-text)
+           (if (stringp obj)
+               ;; For strings: copy text content and properties separately
+               (let ((len (min (length new-text) (- end start))))
+                 ;; Copy text content
+                 (store-substring obj start new-text)
+                 ;; Copy properties from new-text to obj
+                 (let ((pos 0))
+                   (while (< pos len)
+                     (let* ((props (text-properties-at pos new-text))
+                            (next-change (or (next-property-change pos new-text) len)))
+                       (when props
+                         (set-text-properties (+ start pos)
+                                              (+ start (min next-change len))
+                                              props
+                                              obj))
+                       (setq pos next-change)))))
+             ;; For buffers, delete and insert
+             (unless (equal new-text text)
+               (save-excursion
+                 (delete-region start end)
+                 (goto-char start)
+                 (insert new-text)))))))
+     property value object point n)))
 
 (defun tp--backward-do (function property &optional value object point n)
   "Internal: Search backward N times for PROPERTY and apply FUNCTION to each match.
@@ -1114,8 +1130,12 @@ Returns the number of successful matches."
 (defun tp-backward-do (function property &optional value object point n)
   "Search backward N times for text with PROPERTY and apply FUNCTION to each match.
 
-FUNCTION receives the matched text as its only argument.  The return value
-of FUNCTION replaces the matched text in the string or buffer.
+FUNCTION receives the matched text as its first argument.  Optionally,
+FUNCTION can accept two additional arguments: START and END, representing
+the start and end positions of the match.  If FUNCTION accepts 2 arguments,
+it receives (TEXT START).  If it accepts 3 or more arguments, it receives
+(TEXT START END).  The return value of FUNCTION replaces the matched text
+in the string or buffer.
 
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
@@ -1135,39 +1155,51 @@ Example:
   (setq my-string (copy-sequence \"hello world hello\"))
   (tp-set 0 5 \\='(marker t) my-string)
   (tp-set 12 17 \\='(marker t) my-string)
-  (tp-backward-do #\\='upcase \\='marker nil my-string nil 3)"
-  (tp--backward-do
-   (lambda (match obj)
-     (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
-            (end (if (listp match) (cadr match) (prop-match-end match)))
-            (text (if (stringp obj)
-                      (substring obj start end)
-                    (buffer-substring start end)))
-            (new-text (funcall function text)))
-       (when (stringp new-text)
-         (if (stringp obj)
-             ;; For strings: copy text content and properties separately
-             (let ((len (min (length new-text) (- end start))))
-               ;; Copy text content
-               (store-substring obj start new-text)
-               ;; Copy properties from new-text to obj
-               (let ((pos 0))
-                 (while (< pos len)
-                   (let* ((props (text-properties-at pos new-text))
-                          (next-change (or (next-property-change pos new-text) len)))
-                     (when props
-                       (set-text-properties (+ start pos)
-                                            (+ start (min next-change len))
-                                            props
-                                            obj))
-                     (setq pos next-change)))))
-           ;; For buffers, delete and insert
-           (unless (equal new-text text)
-             (save-excursion
-               (delete-region start end)
-               (goto-char start)
-               (insert new-text)))))))
-   property value object point n))
+  (tp-backward-do #\\='upcase \\='marker nil my-string nil 3)
+  ;; Use start and end positions
+  (tp-backward-do (lambda (txt start end) (format \"[%d-%d]%s\" start end txt))
+                  \\='marker nil my-string nil 3)"
+  (let ((arity (func-arity function)))
+    (tp--backward-do
+     (lambda (match obj)
+       (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
+              (end (if (listp match) (cadr match) (prop-match-end match)))
+              (text (if (stringp obj)
+                        (substring obj start end)
+                      (buffer-substring start end)))
+              (max-arity (cdr arity))
+              (can-accept-start (or (eq max-arity 'many)
+                                    (and (numberp max-arity) (>= max-arity 2))))
+              (can-accept-end (or (eq max-arity 'many)
+                                  (and (numberp max-arity) (>= max-arity 3))))
+              (new-text (cond
+                         (can-accept-end (funcall function text start end))
+                         (can-accept-start (funcall function text start))
+                         (t (funcall function text)))))
+         (when (stringp new-text)
+           (if (stringp obj)
+               ;; For strings: copy text content and properties separately
+               (let ((len (min (length new-text) (- end start))))
+                 ;; Copy text content
+                 (store-substring obj start new-text)
+                 ;; Copy properties from new-text to obj
+                 (let ((pos 0))
+                   (while (< pos len)
+                     (let* ((props (text-properties-at pos new-text))
+                            (next-change (or (next-property-change pos new-text) len)))
+                       (when props
+                         (set-text-properties (+ start pos)
+                                              (+ start (min next-change len))
+                                              props
+                                              obj))
+                       (setq pos next-change)))))
+             ;; For buffers, delete and insert
+             (unless (equal new-text text)
+               (save-excursion
+                 (delete-region start end)
+                 (goto-char start)
+                 (insert new-text)))))))
+     property value object point n)))
 
 (defun tp-search (start-or-string &optional end-or-property property-or-value value object)
   "Search for all text with PROPERTY in a buffer/string range or entire string.
