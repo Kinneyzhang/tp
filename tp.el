@@ -1460,56 +1460,15 @@ OBJECT defaults to current buffer."
 
 ;;; Search functions
 
-(defun tp-forward (property &optional value predicate not-current)
+(defun tp-search-forward (property &optional value predicate not-current)
   "Search forward for text with PROPERTY.
 VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-forward'."
   (text-property-search-forward property value predicate not-current))
 
-(defun tp-backward (property &optional value predicate not-current)
+(defun tp-search-backward (property &optional value predicate not-current)
   "Search backward for text with PROPERTY.
 VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-backward'."
   (text-property-search-backward property value predicate not-current))
-
-(defun tp-forward-do (function property &optional value predicate not-current)
-  "Search forward for PROPERTY and apply FUNCTION to the match.
-FUNCTION receives three arguments: START, END, and VALUE."
-  (when-let* ((match (tp-forward property value predicate not-current))
-              (start (prop-match-beginning match))
-              (end (prop-match-end match))
-              (val (prop-match-value match)))
-    (funcall function start end val)))
-
-(defun tp-backward-do (function property &optional value predicate not-current)
-  "Search backward for PROPERTY and apply FUNCTION to the match.
-FUNCTION receives three arguments: START, END, and VALUE."
-  (when-let* ((match (tp-backward property value predicate not-current))
-              (start (prop-match-beginning match))
-              (end (prop-match-end match))
-              (val (prop-match-value match)))
-    (funcall function start end val)))
-
-(defun tp-regions-map (function property &optional value predicate collect)
-  "Apply FUNCTION to all regions with PROPERTY in current buffer.
-FUNCTION receives three arguments: START, END, and INDEX.
-If COLLECT is non-nil, return list of results."
-  (save-excursion
-    (goto-char (point-min))
-    (let ((idx 0) lst)
-      (while-let ((match (tp-forward property value predicate))
-                  (start (prop-match-beginning match))
-                  (end (prop-match-end match)))
-        (let ((res (funcall function start end idx)))
-          (when collect (push res lst)))
-        (cl-incf idx 1))
-      (nreverse lst))))
-
-(defun tp-strings-map (function property &optional value predicate collect)
-  "Apply FUNCTION to all strings with PROPERTY in current buffer.
-FUNCTION receives two arguments: STRING and INDEX."
-  (tp-regions-map
-   (lambda (start end idx)
-     (funcall function (buffer-substring start end) idx))
-   property value predicate collect))
 
 ;;; Match and regexp functions (similar to ov-match and ov-regexp)
 
