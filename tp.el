@@ -951,7 +951,7 @@ Uses `tp-search-forward' for buffers and `tp-search' for strings."
             (buf (or object (current-buffer))))
         (with-current-buffer buf
           (dotimes (_ count)
-            (setq result (tp-search-forward property value t))))
+            (setq result (tp-search-forward property value))))
         result)))))
 
 (defun tp-backward (property &optional value object n)
@@ -1012,7 +1012,7 @@ Returns the number of successful matches."
           (save-excursion
             (when point (goto-char point))
             (dotimes (_ count)
-              (when-let ((match (tp-search-forward property value t)))
+              (when-let ((match (tp-search-forward property value)))
                 (funcall function match buf)
                 (cl-incf matches)))))
         matches)))))
