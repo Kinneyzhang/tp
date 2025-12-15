@@ -17,9 +17,7 @@
 
 ## Overview
 
-**tp.el** is a library that comprehensively enhances Emacs text property manipulation. It is not just a simple wrapper around native text property APIs (like `put-text-property`, `get-text-property`), but provides many **functional extensions that native functions do not have**.
-
-Inspired by [ov.el](https://github.com/emacsorphanage/ov) for overlays, tp.el innovates in the following areas:
+**tp.el** is a library that comprehensively enhances Emacs text property manipulation. It is not just a simple wrapper around native text property APIs (like `put-text-property`, `get-text-property`), but provides many **functional extensions that native functions do not have**. tp.el innovates in the following areas:
 
 ### Core Innovations
 

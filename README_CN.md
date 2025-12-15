@@ -16,9 +16,7 @@
 
 ## 概述
 
-**tp.el** 是一个全面增强 Emacs 文本属性操作的库。它不仅仅是对原生文本属性 API（如 `put-text-property`、`get-text-property`）的简单封装，更提供了许多**原生函数所不具备的功能拓展**。
-
-灵感来自用于叠加层的 [ov.el](https://github.com/emacsorphanage/ov)，tp.el 在以下方面进行了创新：
+**tp.el** 是一个全面增强 Emacs 文本属性操作的库。它不仅仅是对原生文本属性 API（如 `put-text-property`、`get-text-property`）的简单封装，更提供了许多**原生函数所不具备的功能拓展**。tp.el 在以下方面进行了创新：
 
 ### 核心创新
 
