@@ -822,6 +822,9 @@ Supports the calling convention:
 Where PLIST is a property list and OBJECT is a buffer or string (nil for current buffer)."
   (let ((plist (car args))
         (object (cadr args)))
+    ;; Validate object if provided
+    (when (and object (not (or (stringp object) (bufferp object))))
+      (error "OBJECT must be a string or buffer, got: %S" object))
     (cons object plist)))
 
 (defun tp--deep-merge-apply (start end props obj)
