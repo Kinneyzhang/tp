@@ -77,7 +77,7 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 - ✅ **Sub-property Deletion**: Precisely remove specific keys from nested properties
   ```elisp
   ;; Only delete :style from :underline, preserve :color
-  (tp-remove 1 10 '(face :underline (:style)))
+  (tp-remove 1 10 '(face :underline :style))
   ```
 - ✅ **Deep Merge**: `tp-add` recursively merges nested plist structures
 - ✅ **Smart Face Merging**: Symbol faces are automatically prepended to face lists, plist faces are deep merged

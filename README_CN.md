@@ -76,7 +76,7 @@
 - ✅ **子属性删除**：精确移除嵌套属性中的特定键
   ```elisp
   ;; 只删除 :underline 中的 :style，保留 :color
-  (tp-remove 1 10 '(face :underline (:style)))
+  (tp-remove 1 10 '(face :underline :style))
   ```
 - ✅ **深度合并**：`tp-add` 递归合并嵌套的 plist 结构
 - ✅ **Face 智能合并**：符号 face 自动前置到 face 列表，plist face 深度合并
