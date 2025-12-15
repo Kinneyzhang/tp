@@ -817,47 +817,12 @@ Returns modified object or list of regions."
 (defun tp--parse-match-args (args)
   "Parse match/regexp function ARGS.
 Returns (OBJECT . PROPERTIES).
-Handles two calling conventions:
-1. (OBJECT PROPERTY VALUE ...) or (OBJECT \\='(PROPERTY VALUE ...))
-2. (\\='(PROPERTY VALUE ...) OBJECT) or (PROPERTY VALUE ... OBJECT)"
-  (let (object properties)
-    (cond
-     ;; First arg is a string - it's the object
-     ((and args (stringp (car args)))
-      (setq object (car args)
-            properties (cdr args)))
-     ;; First arg is a buffer - it's the object
-     ((and args (bufferp (car args)))
-      (setq object (car args)
-            properties (cdr args)))
-     ;; First arg is a list (properties) and last arg might be object
-     ((and args (listp (car args)))
-      (let ((last-arg (car (last args))))
-        (if (or (stringp last-arg) (bufferp last-arg))
-            ;; Last arg is object: '(props) object
-            (setq object last-arg
-                  properties (car args))
-          ;; No object, just properties
-          (setq object nil
-                properties (car args)))))
-     ;; Check if last arg is an object (for flat property args)
-     ((and args (>= (length args) 2))
-      (let ((last-arg (car (last args))))
-        (if (or (stringp last-arg) (bufferp last-arg))
-            ;; Last arg is object: prop val ... object
-            (setq object last-arg
-                  properties (butlast args))
-          ;; No object, all are properties
-          (setq object nil
-                properties args))))
-     ;; No object specified
-     (t
-      (setq object nil
-            properties args)))
-    ;; Handle properties as a list (normalize)
-    (when (and (listp (car-safe properties)) (= (length properties) 1))
-      (setq properties (car properties)))
-    (cons object properties)))
+Supports the calling convention:
+  (PLIST &optional OBJECT)
+Where PLIST is a property list and OBJECT is a buffer or string (nil for current buffer)."
+  (let ((plist (car args))
+        (object (cadr args)))
+    (cons object plist)))
 
 (defun tp--deep-merge-apply (start end props obj)
   "Apply PROPS to OBJ from START to END with deep merge.
@@ -880,24 +845,13 @@ Merges nested plists instead of replacing them."
 (defun tp-match-set (pattern &rest args)
   "Set properties on all occurrences of PATTERN.
 
-This function supports multiple calling conventions:
-
-1. With OBJECT (string or buffer):
-   (tp-match-set PATTERN OBJECT PROPERTY VALUE ...)
-   (tp-match-set PATTERN OBJECT \\='(PROPERTY VALUE ...))
-   (tp-match-set PATTERN \\='(PROPERTY VALUE ...) OBJECT)
-
-2. Without OBJECT (current buffer):
-   (tp-match-set PATTERN PROPERTY VALUE ...)
-   (tp-match-set PATTERN \\='(PROPERTY VALUE ...))
-
-3. Multiple patterns (list of patterns to match):
-   (tp-match-set \\='(\"pattern1\" \"pattern2\" ...) \\='(PROPERTY VALUE ...))
-   (tp-match-set \\='(\"pattern1\" \"pattern2\" ...) \\='(PROPERTY VALUE ...) OBJECT)
+  (tp-match-set PATTERN PLIST &optional OBJECT)
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
 Each pattern will be matched and have properties applied.
-PROPERTIES is a plist of property-value pairs.
+PLIST is a property list like \\='(face bold help-echo \"tip\").
+OBJECT is a buffer or string; nil means current buffer.
+
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
@@ -908,8 +862,13 @@ Returns:
 
 (defun tp-match-reset (pattern &rest args)
   "Reset (completely replace) properties on all occurrences of PATTERN.
-Same calling conventions as `tp-match-set'.
-PATTERN can be a string or list of strings (multiple patterns).
+
+  (tp-match-reset PATTERN PLIST &optional OBJECT)
+
+PATTERN is a string (single pattern) or list of strings (multiple patterns).
+PLIST is a property list like \\='(face bold help-echo \"tip\").
+OBJECT is a buffer or string; nil means current buffer.
+
 Unlike `tp-match-set', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
@@ -921,8 +880,13 @@ Unlike `tp-match-set', this completely replaces all existing properties."
 
 (defun tp-match-add (pattern &rest args)
   "Add/update properties on all occurrences of PATTERN.
-Same calling conventions as `tp-match-set'.
-PATTERN can be a string or list of strings (multiple patterns).
+
+  (tp-match-add PATTERN PLIST &optional OBJECT)
+
+PATTERN is a string (single pattern) or list of strings (multiple patterns).
+PLIST is a property list like \\='(face bold help-echo \"tip\").
+OBJECT is a buffer or string; nil means current buffer.
+
 Unlike `tp-match-set', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
@@ -932,24 +896,13 @@ Unlike `tp-match-set', this deeply merges nested properties."
 (defun tp-regexp-set (pattern &rest args)
   "Set properties on all matches of PATTERN (regexp).
 
-This function supports multiple calling conventions:
-
-1. With OBJECT (string or buffer):
-   (tp-regexp-set PATTERN OBJECT PROPERTY VALUE ...)
-   (tp-regexp-set PATTERN OBJECT \\='(PROPERTY VALUE ...))
-   (tp-regexp-set PATTERN \\='(PROPERTY VALUE ...) OBJECT)
-
-2. Without OBJECT (current buffer):
-   (tp-regexp-set PATTERN PROPERTY VALUE ...)
-   (tp-regexp-set PATTERN \\='(PROPERTY VALUE ...))
-
-3. Multiple patterns (list of regexps to match):
-   (tp-regexp-set \\='(\"regexp1\" \"regexp2\" ...) \\='(PROPERTY VALUE ...))
-   (tp-regexp-set \\='(\"regexp1\" \"regexp2\" ...) \\='(PROPERTY VALUE ...) OBJECT)
+  (tp-regexp-set PATTERN PLIST &optional OBJECT)
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
 Each pattern will be matched and have properties applied.
-PROPERTIES is a plist of property-value pairs.
+PLIST is a property list like \\='(face bold help-echo \"tip\").
+OBJECT is a buffer or string; nil means current buffer.
+
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
@@ -960,8 +913,13 @@ Returns:
 
 (defun tp-regexp-reset (pattern &rest args)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
-Same calling conventions as `tp-regexp-set'.
-PATTERN can be a string or list of strings (multiple regexps).
+
+  (tp-regexp-reset PATTERN PLIST &optional OBJECT)
+
+PATTERN is a string (single regexp) or list of strings (multiple regexps).
+PLIST is a property list like \\='(face bold help-echo \"tip\").
+OBJECT is a buffer or string; nil means current buffer.
+
 Unlike `tp-regexp-set', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
@@ -973,8 +931,13 @@ Unlike `tp-regexp-set', this completely replaces all existing properties."
 
 (defun tp-regexp-add (pattern &rest args)
   "Add/update properties on all regexp matches of PATTERN.
-Same calling conventions as `tp-regexp-set'.
-PATTERN can be a string or list of strings (multiple regexps).
+
+  (tp-regexp-add PATTERN PLIST &optional OBJECT)
+
+PATTERN is a string (single regexp) or list of strings (multiple regexps).
+PLIST is a property list like \\='(face bold help-echo \"tip\").
+OBJECT is a buffer or string; nil means current buffer.
+
 Unlike `tp-regexp-set', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))

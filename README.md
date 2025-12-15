@@ -529,20 +529,13 @@ Clear all text properties from a region.
 #### `tp-match-set` - Match String
 
 ```elisp
-;; Single pattern - Buffer
-(tp-match-set PATTERN '(PROPERTY VALUE ...))
-
-;; Single pattern - String or Buffer object
-(tp-match-set PATTERN OBJECT '(PROPERTY VALUE ...))
-
-;; Multiple patterns - apply to all matches of all patterns
-(tp-match-set '(PATTERN1 PATTERN2 ...) '(PROPERTY VALUE ...))
-(tp-match-set '(PATTERN1 PATTERN2 ...) '(PROPERTY VALUE ...) OBJECT)
+(tp-match-set PATTERN PLIST &optional OBJECT)
 ```
 
 Set properties on all occurrences of a string pattern.
 PATTERN can be a string (single pattern) or a list of strings (multiple patterns).
-When multiple patterns are provided, each is matched and has properties applied.
+PLIST is a property list like `'(face bold help-echo "tip")`.
+OBJECT is a buffer or string; nil means current buffer.
 
 **Examples:**
 
@@ -552,7 +545,7 @@ When multiple patterns are provided, each is matched and has properties applied.
 ;; => ((10 . 14) (50 . 54) ...)
 
 ;; On string - returns modified string
-(tp-match-set "o" "Hello World" '(face bold))
+(tp-match-set "o" '(face bold) "Hello World")
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
 ;; Multiple patterns - match both "world" and "Hello"
@@ -570,9 +563,11 @@ When multiple patterns are provided, each is matched and has properties applied.
 
 Reset (completely replace) all properties on matches.
 PATTERN can be a string or list of strings (multiple patterns).
+PLIST is a property list like `'(face bold help-echo "tip")`.
+OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-match-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-match-reset PATTERN PLIST &optional OBJECT)
 ```
 
 **Examples:**
@@ -592,9 +587,11 @@ PATTERN can be a string or list of strings (multiple patterns).
 
 Add/merge properties on matches with deep merge support.
 PATTERN can be a string or list of strings (multiple patterns).
+PLIST is a property list like `'(face bold help-echo "tip")`.
+OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-match-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-match-add PATTERN PLIST &optional OBJECT)
 ```
 
 **Examples:**
@@ -613,20 +610,13 @@ PATTERN can be a string or list of strings (multiple patterns).
 #### `tp-regexp-set` - Match Regexp
 
 ```elisp
-;; Single regexp - Buffer
-(tp-regexp-set PATTERN '(PROPERTY VALUE ...))
-
-;; Single regexp - String or Buffer object
-(tp-regexp-set PATTERN OBJECT '(PROPERTY VALUE ...))
-
-;; Multiple regexps - apply to all matches of all regexps
-(tp-regexp-set '(REGEXP1 REGEXP2 ...) '(PROPERTY VALUE ...))
-(tp-regexp-set '(REGEXP1 REGEXP2 ...) '(PROPERTY VALUE ...) OBJECT)
+(tp-regexp-set PATTERN PLIST &optional OBJECT)
 ```
 
 Set properties on all matches of a regular expression.
 PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
-When multiple patterns are provided, each is matched and has properties applied.
+PLIST is a property list like `'(face bold help-echo "tip")`.
+OBJECT is a buffer or string; nil means current buffer.
 
 **Examples:**
 
@@ -635,7 +625,7 @@ When multiple patterns are provided, each is matched and has properties applied.
 (tp-regexp-set "[0-9]+" '(face font-lock-number-face))
 
 ;; On string
-(tp-regexp-set "[A-Z]+" "Hello WORLD" '(face bold))
+(tp-regexp-set "[A-Z]+" '(face bold) "Hello WORLD")
 ;; => #("Hello WORLD" 6 11 (face bold))
 
 ;; Multiple regexps - match both numbers and uppercase letters
@@ -649,9 +639,11 @@ When multiple patterns are provided, each is matched and has properties applied.
 
 Reset (completely replace) all properties on regexp matches.
 PATTERN can be a string or list of strings (multiple regexps).
+PLIST is a property list like `'(face bold help-echo "tip")`.
+OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-regexp-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-regexp-reset PATTERN PLIST &optional OBJECT)
 ```
 
 ---
@@ -660,9 +652,11 @@ PATTERN can be a string or list of strings (multiple regexps).
 
 Add/merge properties on regexp matches with deep merge support.
 PATTERN can be a string or list of strings (multiple regexps).
+PLIST is a property list like `'(face bold help-echo "tip")`.
+OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-regexp-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-regexp-add PATTERN PLIST &optional OBJECT)
 ```
 
 ---
