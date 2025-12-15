@@ -1511,11 +1511,11 @@ or nil if not found.
 
 Uses `tp-search-forward' internally."
   (let ((count (or n 1))
-        (result nil))
-    (when object
-      (set-buffer object))
-    (dotimes (_ count)
-      (setq result (tp-search-forward property value)))
+        (result nil)
+        (buf (or object (current-buffer))))
+    (with-current-buffer buf
+      (dotimes (_ count)
+        (setq result (tp-search-forward property value))))
     result))
 
 (defun tp-backward (property &optional value object n)
@@ -1530,11 +1530,11 @@ or nil if not found.
 
 Uses `tp-search-backward' internally."
   (let ((count (or n 1))
-        (result nil))
-    (when object
-      (set-buffer object))
-    (dotimes (_ count)
-      (setq result (tp-search-backward property value)))
+        (result nil)
+        (buf (or object (current-buffer))))
+    (with-current-buffer buf
+      (dotimes (_ count)
+        (setq result (tp-search-backward property value))))
     result))
 
 (defun tp-forward-do (function property &optional value object n)
@@ -1586,8 +1586,8 @@ This function supports two calling conventions:
 2. Entire string:
    (tp-search STRING PROPERTY &optional VALUE)
 
-Returns a list of prop-match objects for all matching regions.
-Each prop-match object has beginning, end, and value information."
+Returns a list of (START END VALUE) lists for all matching regions.
+Each element contains the start position, end position, and property value."
   (cond
    ;; Entire string form: (tp-search string property &optional value)
    ((stringp start-or-string)
@@ -1598,8 +1598,10 @@ Each prop-match object has beginning, end, and value information."
            (pos 0)
            (len (length str)))
       (while (< pos len)
-        (let ((prop-val (get-text-property pos property str)))
-          (if (and prop-val
+        (let* ((props (text-properties-at pos str))
+               (has-prop (plist-member props property))
+               (prop-val (plist-get props property)))
+          (if (and has-prop
                    (or (null value)
                        (equal prop-val value)))
               ;; Find the extent of this property
@@ -1621,8 +1623,10 @@ Each prop-match object has beginning, end, and value information."
       (if (stringp obj)
           ;; String object
           (while (< pos end)
-            (let ((prop-val (get-text-property pos property obj)))
-              (if (and prop-val
+            (let* ((props (text-properties-at pos obj))
+                   (has-prop (plist-member props property))
+                   (prop-val (plist-get props property)))
+              (if (and has-prop
                        (or (null value)
                            (equal prop-val value)))
                   (let ((next-change (or (next-single-property-change pos property obj end) end)))
@@ -1632,8 +1636,10 @@ Each prop-match object has beginning, end, and value information."
         ;; Buffer object
         (with-current-buffer obj
           (while (< pos end)
-            (let ((prop-val (get-text-property pos property)))
-              (if (and prop-val
+            (let* ((props (text-properties-at pos))
+                   (has-prop (plist-member props property))
+                   (prop-val (plist-get props property)))
+              (if (and has-prop
                        (or (null value)
                            (equal prop-val value)))
                   (let ((next-change (or (next-single-property-change pos property nil end) end)))
