@@ -272,16 +272,28 @@ Set text properties on a string or buffer region. Replaces only the specified pr
 
 ```elisp
 ;; Set face on buffer region
-(tp-set 1 10 '(face bold))  ; => (1 . 10)
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold)))
+;; => (1 . 10)
 
 ;; Set multiple properties
-(tp-set 1 10 '(face bold help-echo "Click me"))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold help-echo "Click me")))
+;; => (1 . 10)
 
 ;; Set on specific buffer
-(tp-set 1 10 '(face italic) my-buffer)
+(let ((my-buffer (generate-new-buffer "*test*")))
+  (with-current-buffer my-buffer
+    (insert "Hello World"))
+  (tp-set 1 10 '(face italic) my-buffer)
+  (kill-buffer my-buffer))
+;; => (1 . 10)
 
 ;; Set properties on a string (0-indexed)
-(setq my-string (tp-set 0 5 '(face italic) "Hello World"))
+(let ((my-string (tp-set 0 5 '(face italic) "Hello World")))
+  my-string)
 ;; => #("Hello World" 0 5 (face italic))
 
 ;; Set properties on entire string
@@ -304,10 +316,16 @@ Completely replace ALL text properties with the specified ones.
 
 ```elisp
 ;; Replace all properties in region
-(tp-reset 1 10 '(face bold))  ; Any existing properties are removed
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(help-echo "old"))  ; Set existing property
+  (tp-reset 1 10 '(face bold))      ; Any existing properties are removed
+  (tp-at 1))
+;; => (face bold)  ; help-echo is gone
 
 ;; On string
 (tp-reset "Hello" 'face 'italic)
+;; => #("Hello" 0 5 (face italic))
 ```
 
 ---
@@ -325,17 +343,26 @@ Add or update properties with deep merge support for nested plists.
 
 ```elisp
 ;; Add properties (preserves existing, merges nested)
-(tp-add 1 10 '(help-echo "tooltip"))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-add 1 10 '(help-echo "tooltip"))
+  (tp-at 1))
+;; => (face bold help-echo "tooltip")
 
 ;; Deep merge face properties
-(tp-set 1 10 '(face (:foreground "red")))
-(tp-add 1 10 '(face (:background "blue")))
-;; Result: face is (:foreground "red" :background "blue")
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face (:foreground "red")))
+  (tp-add 1 10 '(face (:background "blue")))
+  (tp-at 1 'face))
+;; => (:foreground "red" :background "blue")
 
 ;; Face prepending - symbol faces are prepended to face list
-(tp-set "Hello" 'face 'bold)
-(tp-add "Hello" 'face 'shadow)
-;; Result: face is (shadow bold)
+(let ((str (tp-set "Hello" 'face 'bold)))
+  (tp-add str 'face 'shadow)
+  (tp-at 0 'face str))
+;; => (shadow bold)
 ```
 
 ---
@@ -379,41 +406,53 @@ For single position queries, use `tp-at` instead.
 
 ```elisp
 ;; Get from range - returns list of (START END VALUE) intervals
-(tp-get 1 10 'face)        ; => ((1 6 bold))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-get 1 10 'face))
+;; => ((1 6 bold))
 
 ;; Get with multiple intervals
-(setq str (copy-sequence "Hello World Hello"))
-(tp-set 0 5 '(face bold) str)
-(tp-set 12 17 '(face italic) str)
-(tp-get 0 17 'face str)    ; => ((0 5 bold) (12 17 italic))
+(let ((str (copy-sequence "Hello World Hello")))
+  (tp-set 0 5 '(face bold) str)
+  (tp-set 12 17 '(face italic) str)
+  (tp-get 0 17 'face str))
+;; => ((0 5 bold) (12 17 italic))
 
 ;; Get with property path as list
-(setq my-string (copy-sequence "Hello World Hello World"))
-(put-text-property 5 20 'face '(:underline (:style wave)) my-string)
-(tp-get 5 20 '(face :underline :style) my-string)  ; => ((5 20 wave))
+(let ((my-string (copy-sequence "Hello World Hello World")))
+  (put-text-property 5 20 'face '(:underline (:style wave)) my-string)
+  (tp-get 5 20 '(face :underline :style) my-string))
+;; => ((5 20 wave))
 
 ;; Get deeply nested property from entire string
-(setq str (copy-sequence "Hello World"))
-(put-text-property 0 5 'face '(:underline (:color "green")) str)
-(put-text-property 6 11 'face '(:underline (:color "yellow")) str)
-(tp-get str 'face :underline :color)  ; => ((0 5 "green") (6 11 "yellow"))
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 5 'face '(:underline (:color "green")) str)
+  (put-text-property 6 11 'face '(:underline (:color "yellow")) str)
+  (tp-get str 'face :underline :color))
+;; => ((0 5 "green") (6 11 "yellow"))
 
 ;; Get multiple keys from nested property
-(setq str (copy-sequence "Hello World"))
-(put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
-(put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
-(tp-get str 'face :underline '(:color :style))
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 5 'face '(:underline (:color "green" :style wave)) str)
+  (put-text-property 6 11 'face '(:underline (:color "yellow" :style line)) str)
+  (tp-get str 'face :underline '(:color :style)))
 ;; => ((0 5 (:color "green" :style wave)) (6 11 (:color "yellow" :style line)))
 
 ;; Get all properties from range
-(tp-get 1 10)              ; => ((1 6 (face bold help-echo "test")))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold help-echo "test"))
+  (tp-get 1 10))
+;; => ((1 6 (face bold help-echo "test")))
 
 ;; Get from entire string - returns list of intervals
-(setq str (copy-sequence "Hello World Hello"))
-(tp-set 0 5 '(face bold) str)
-(tp-set 12 17 '(face italic) str)
-(tp-get str)               ; => ((0 5 (face bold)) (12 17 (face italic)))
-(tp-get str 'face)         ; => ((0 5 bold) (12 17 italic))
+(let ((str (copy-sequence "Hello World Hello")))
+  (tp-set 0 5 '(face bold) str)
+  (tp-set 12 17 '(face italic) str)
+  (list (tp-get str)              ; => ((0 5 (face bold)) (12 17 (face italic)))
+        (tp-get str 'face)))      ; => ((0 5 bold) (12 17 italic))
+;; => (((0 5 (face bold)) (12 17 (face italic))) ((0 5 bold) (12 17 italic)))
 ```
 
 ---
@@ -442,25 +481,42 @@ For single-position property queries (previously done with `tp-get`), use `tp-at
 
 ```elisp
 ;; Get all properties at position 5 in current buffer
-(tp-at 5)  ; => (face bold help-echo "test")
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold help-echo "test"))
+  (tp-at 5))
+;; => (face bold help-echo "test")
 
 ;; Get all properties at position 0 in string
-(setq my-string (tp-set "Hello" 'face 'italic 'help-echo "greeting"))
-(tp-at 0 my-string)  ; => (face italic help-echo "greeting")
+(let ((my-string (tp-set "Hello" 'face 'italic 'help-echo "greeting")))
+  (tp-at 0 my-string))
+;; => (face italic help-echo "greeting")
 
 ;; Get specific property at position
-(tp-at 5 'face)  ; => bold
-(tp-at 0 'face my-string)  ; => italic
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-at 5 'face))
+;; => bold
+
+;; Get specific property at position in string
+(let ((my-string (tp-set "Hello" 'face 'italic)))
+  (tp-at 0 'face my-string))
+;; => italic
 
 ;; Get nested sub-property at position
-(tp-at 5 '(face :foreground))  ; => "red"
-(tp-at 5 '(face :box :color))  ; => "blue"
-(tp-at 5 '(display :width))    ; => 10
+(with-temp-buffer
+  (insert "Hello World")
+  (put-text-property 1 10 'face '(:foreground "red" :box (:color "blue")))
+  (list (tp-at 5 '(face :foreground))
+        (tp-at 5 '(face :box :color))))
+;; => ("red" "blue")
 
 ;; Get nested sub-property from string
-(setq str (copy-sequence "Hello"))
-(put-text-property 0 5 'face '(:foreground "red" :underline t) str)
-(tp-at 0 '(face :foreground) str)  ; => "red"
+(let ((str (copy-sequence "Hello")))
+  (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
+  (tp-at 0 '(face :foreground) str))
+;; => "red"
 ```
 
 ---
@@ -489,20 +545,48 @@ Remove a property or nested sub-property from a region or entire string.
 
 ```elisp
 ;; Remove entire property
-(tp-remove 1 10 'face)
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold help-echo "test"))
+  (tp-remove 1 10 'face)
+  (tp-at 1))
+;; => (help-echo "test")
 
 ;; Remove sub-property from face
-(tp-remove 1 10 '(face :underline))
+(with-temp-buffer
+  (insert "Hello World")
+  (put-text-property 1 10 'face '(:foreground "red" :underline t))
+  (tp-remove 1 10 '(face :underline))
+  (tp-at 1 'face))
+;; => (:foreground "red")
 
 ;; Remove specific nested keys, keep others
-(tp-remove 1 10 '(face :underline (:style :position)))
-;; Removes :style and :position from :underline
-;; If :color exists in :underline, it's preserved
+(with-temp-buffer
+  (insert "Hello World")
+  (put-text-property 1 10 'face '(:underline (:style wave :position t :color "blue")))
+  (tp-remove 1 10 '(face :underline (:style :position)))
+  (tp-at 1 '(face :underline)))
+;; => (:color "blue")  ; :style and :position removed, :color preserved
 
-;; Remove from entire string
-(tp-remove "Hello World" 'face 'help-echo)  ; Remove multiple properties
-(tp-remove "Hello World" 'face :underline)  ; Remove sub-property
-(tp-remove "Hello World" 'face :underline '(:style :position))  ; Remove nested
+;; Remove from entire string - multiple properties
+(let ((str (tp-set "Hello World" 'face 'bold 'help-echo "tip")))
+  (tp-remove str 'face 'help-echo)
+  (tp-at 0 str))
+;; => nil
+
+;; Remove sub-property from string
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 11 'face '(:foreground "red" :underline t) str)
+  (tp-remove str 'face :underline)
+  (tp-at 0 'face str))
+;; => (:foreground "red")
+
+;; Remove nested keys from string
+(let ((str (copy-sequence "Hello World")))
+  (put-text-property 0 11 'face '(:underline (:style wave :color "blue")) str)
+  (tp-remove str 'face :underline '(:style))
+  (tp-at 0 '(face :underline) str))
+;; => (:color "blue")
 ```
 
 ---
@@ -518,8 +602,21 @@ Clear all text properties from a region.
 **Examples:**
 
 ```elisp
-(tp-clear 1 10)     ; Clear region
-(tp-clear)          ; Clear entire buffer
+;; Clear region
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-clear 1 10)
+  (tp-at 1))
+;; => nil
+
+;; Clear entire buffer
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 12 '(face bold))
+  (tp-clear)
+  (tp-at 5))
+;; => nil
 ```
 
 ---
@@ -541,16 +638,20 @@ OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 ;; In buffer - returns list of (START . END) pairs
-(tp-match-set "TODO" '(face warning))
-;; => ((10 . 14) (50 . 54) ...)
+(with-temp-buffer
+  (insert "TODO: fix this. TODO: also this.")
+  (tp-match-set "TODO" '(face warning)))
+;; => ((1 . 5) (17 . 21))
 
 ;; On string - returns modified string
 (tp-match-set "o" '(face bold) "Hello World")
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
 ;; Multiple patterns - match both "world" and "Hello"
-(tp-match-set '("world" "Hello") '(face bold))
-;; Matches all occurrences of "world" AND all occurrences of "Hello"
+(with-temp-buffer
+  (insert "Hello world, Hello again")
+  (tp-match-set '("world" "Hello") '(face bold)))
+;; => ((1 . 6) (7 . 12) (14 . 19))  ; Matches "Hello", "world", "Hello"
 
 ;; Multiple patterns on string
 (tp-match-set '("Hello" "world") '(face bold) "Hello world")
@@ -573,12 +674,19 @@ OBJECT is a buffer or string; nil means current buffer.
 **Examples:**
 
 ```elisp
-(tp-match-reset "TODO" '(face warning))
 ;; Replaces ALL properties on matched text
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-set 1 5 '(help-echo "original"))  ; Set existing property
+  (tp-match-reset "TODO" '(face warning))
+  (tp-at 1))
+;; => (face warning)  ; help-echo is removed
 
 ;; Multiple patterns
-(tp-match-reset '("TODO" "FIXME") '(face warning))
-;; Replaces properties on all occurrences of "TODO" and "FIXME"
+(with-temp-buffer
+  (insert "TODO: fix. FIXME: also fix.")
+  (tp-match-reset '("TODO" "FIXME") '(face warning)))
+;; => ((1 . 5) (12 . 17))
 ```
 
 ---
@@ -597,12 +705,19 @@ OBJECT is a buffer or string; nil means current buffer.
 **Examples:**
 
 ```elisp
-(tp-match-add "TODO" '(face (:underline t)))
 ;; Merges with existing properties
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-set 1 5 '(help-echo "important"))
+  (tp-match-add "TODO" '(face (:underline t)))
+  (tp-at 1))
+;; => (face (:underline t) help-echo "important")
 
 ;; Multiple patterns
-(tp-match-add '("TODO" "FIXME") '(face (:underline t)))
-;; Merges properties on all occurrences of "TODO" and "FIXME"
+(with-temp-buffer
+  (insert "TODO: fix. FIXME: also fix.")
+  (tp-match-add '("TODO" "FIXME") '(face (:underline t))))
+;; => ((1 . 5) (12 . 17))
 ```
 
 ---
@@ -622,7 +737,11 @@ OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 ;; Highlight all numbers in buffer
-(tp-regexp-set "[0-9]+" '(face font-lock-number-face))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-set "[0-9]+" '(face font-lock-number-face))
+  (list (tp-at 5 'face) (tp-at 13 'face)))
+;; => (font-lock-number-face font-lock-number-face)
 
 ;; On string
 (tp-regexp-set "[A-Z]+" '(face bold) "Hello WORLD")
@@ -630,7 +749,7 @@ OBJECT is a buffer or string; nil means current buffer.
 
 ;; Multiple regexps - match both numbers and uppercase letters
 (tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
-;; Matches "123" and "XYZ"
+;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
 ```
 
 ---
@@ -646,6 +765,25 @@ OBJECT is a buffer or string; nil means current buffer.
 (tp-regexp-reset PATTERN PLIST &optional OBJECT)
 ```
 
+**Examples:**
+
+```elisp
+;; Reset all properties on regexp matches
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-set 5 8 '(help-echo "original"))
+  (tp-regexp-reset "[0-9]+" '(face bold))
+  (tp-at 5))
+;; => (face bold)  ; help-echo is removed
+
+;; On string
+(let ((str (copy-sequence "abc 123 def")))
+  (tp-set 4 7 '(help-echo "original") str)
+  (tp-regexp-reset "[0-9]+" '(face italic) str)
+  (tp-at 4 str))
+;; => (face italic)
+```
+
 ---
 
 #### `tp-regexp-add` - Regexp and Add
@@ -657,6 +795,25 @@ OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 (tp-regexp-add PATTERN PLIST &optional OBJECT)
+```
+
+**Examples:**
+
+```elisp
+;; Add properties to regexp matches (preserves existing)
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-set 5 8 '(help-echo "number"))
+  (tp-regexp-add "[0-9]+" '(face bold))
+  (tp-at 5))
+;; => (face bold help-echo "number")
+
+;; On string
+(let ((str (copy-sequence "abc 123 def")))
+  (tp-set 4 7 '(help-echo "number") str)
+  (tp-regexp-add "[0-9]+" '(face italic) str)
+  (tp-at 4 str))
+;; => (face italic help-echo "number")
 ```
 
 ---
@@ -694,19 +851,30 @@ Search forward/backward N times for text with PROPERTY.
 
 ```elisp
 ;; Find next text with 'marker property
-(tp-forward 'marker)
+(with-temp-buffer
+  (insert "Hello World Test")
+  (tp-set 7 12 '(marker t))
+  (goto-char 1)
+  (let ((match (tp-forward 'marker)))
+    (when match
+      (prop-match-beginning match))))
+;; => 7
 
 ;; Find next text where 'type equals 'heading
-(tp-forward 'type 'heading)
-
-;; Search forward 3 times
-(tp-forward 'marker nil nil 3)
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(type heading))
+  (goto-char 1)
+  (let ((match (tp-forward 'type 'heading)))
+    (when match
+      (prop-match-value match))))
+;; => heading
 
 ;; Search in a string
-(setq my-string (copy-sequence "Hello World Hello"))
-(tp-set 0 5 '(marker t) my-string)
-(tp-set 12 17 '(marker t) my-string)
-(tp-forward 'marker nil my-string 2)
+(let ((my-string (copy-sequence "Hello World Hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-forward 'marker nil my-string 2))
 ;; => ((0 5 t) (12 17 t))
 ```
 
@@ -733,28 +901,42 @@ Search forward/backward N times for text with PROPERTY and apply FUNCTION to mat
 
 ```elisp
 ;; Upcase matched text in buffer (starting from current point)
-(tp-forward-do #'upcase 'marker nil nil nil 3)
+(with-temp-buffer
+  (insert "hello world test")
+  (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
+  (goto-char 1)
+  (tp-forward-do #'upcase 'marker nil nil nil 2)
+  (buffer-string))
+;; => "HELLO world TEST"
 
 ;; Upcase matched text in string (starting from position 0)
-(setq my-string (copy-sequence "hello world hello"))
-(tp-set 0 5 '(marker t) my-string)
-(tp-set 12 17 '(marker t) my-string)
-(tp-forward-do #'upcase 'marker nil my-string nil 2)
-;; my-string is now "HELLO world HELLO"
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-forward-do #'upcase 'marker nil my-string nil 2)
+  my-string)
+;; => "HELLO world HELLO"
 
 ;; Start search from specific position
-(setq my-string (copy-sequence "hello world hello"))
-(tp-set 0 5 '(marker t) my-string)
-(tp-set 12 17 '(marker t) my-string)
-(tp-forward-do #'upcase 'marker nil my-string 6 2)
-;; Only matches from position 6 onward are processed
-;; my-string is now "hello world HELLO"
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-forward-do #'upcase 'marker nil my-string 6 2)
+  my-string)
+;; => "hello world HELLO"  ; Only matches from position 6 onward
 
 ;; Custom transformation
-(tp-forward-do
- (lambda (text)
-   (concat "[" text "]"))
- 'marker nil nil nil 3)
+(with-temp-buffer
+  (insert "hello world test")
+  (tp-set 1 6 '(marker t))
+  (goto-char 1)
+  (tp-forward-do
+   (lambda (text)
+     (concat "[" text "]"))
+   'marker nil nil nil 1)
+  (buffer-string))
+;; => "[hello] world test"
 ```
 
 ---
@@ -777,15 +959,27 @@ Returns a list of (START END VALUE) for all matching regions.
 
 ```elisp
 ;; Find all 'marker properties in buffer range
-(tp-search 1 100 'marker)
-;; => ((5 10 t) (20 25 t) ...)
+(with-temp-buffer
+  (insert "Hello World Test Again")
+  (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
+  (tp-search 1 22 'marker))
+;; => ((1 6 t) (13 17 t))
 
 ;; Find all 'type properties with value 'heading in string
-(tp-search my-string 'type 'heading)
-;; => ((0 10 heading) (50 60 heading) ...)
+(let ((my-string (copy-sequence "Title Here Body Text")))
+  (tp-set 0 10 '(type heading) my-string)
+  (tp-search my-string 'type 'heading))
+;; => ((0 10 heading))
 
 ;; Filter by value
-(tp-search 1 100 'type 'heading)
+(with-temp-buffer
+  (insert "Heading1 Body Heading2")
+  (tp-set 1 9 '(type heading))
+  (tp-set 10 14 '(type body))
+  (tp-set 15 23 '(type heading))
+  (tp-search 1 23 'type 'heading))
+;; => ((1 9 heading) (15 23 heading))
 ```
 
 ---
@@ -810,16 +1004,31 @@ Apply FUNCTION to matched text for all matches of PROPERTY.
 
 ```elisp
 ;; Upcase all markers in string
-(tp-search-map #'upcase my-string 'marker)
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-search-map #'upcase my-string 'marker)
+  my-string)
+;; => "HELLO world HELLO"
 
 ;; Upcase all markers in buffer range
-(tp-search-map #'upcase 1 100 'marker)
+(with-temp-buffer
+  (insert "hello world test")
+  (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
+  (tp-search-map #'upcase 1 17 'marker)
+  (buffer-string))
+;; => "HELLO world TEST"
 
 ;; Custom transformation
-(tp-search-map
- (lambda (text)
-   (concat "[" text "]"))
- my-string 'marker)
+(let ((my-string (copy-sequence "hello world")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-search-map
+   (lambda (text)
+     (concat "[" text "]"))
+   my-string 'marker)
+  my-string)
+;; => "[hello] world"
 ```
 
 ---
@@ -868,21 +1077,34 @@ The first layer in the definition is the top layer (visible by default).
 
 ```elisp
 ;; Define individual layers
-(tp-define-layer highlight
-  (face (:background "yellow" :foreground "black")))
+(progn
+  (setq tp-layer-alist nil)  ; Reset for clean example
+  (tp-define-layer highlight
+    (face (:background "yellow" :foreground "black")))
+  (tp-layer-props 'highlight))
+;; => (face (:background "yellow" :foreground "black") tp-name highlight)
 
-(tp-define-layer error
-  (face (:background "red" :foreground "white")
-   help-echo "Error!"))
+(progn
+  (tp-define-layer error
+    (face (:background "red" :foreground "white")
+     help-echo "Error!"))
+  (tp-layer-props 'error))
+;; => (face (:background "red" :foreground "white") help-echo "Error!" tp-name error)
 
-(tp-define-layer info
-  (face (:background "blue" :foreground "white")))
+(progn
+  (tp-define-layer info
+    (face (:background "blue" :foreground "white")))
+  (tp-layer-props 'info))
+;; => (face (:background "blue" :foreground "white") tp-name info)
 
 ;; Define a layer group
-(tp-define-layer status-colors
-  highlight
-  error
-  info)
+(progn
+  (tp-define-layer status-colors
+    highlight
+    error
+    info)
+  (length (tp-group-props 'status-colors)))
+;; => 3
 ```
 
 ---
@@ -896,6 +1118,27 @@ The first layer in the definition is the top layer (visible by default).
 
 Get properties for a layer or all layers in a group.
 
+**Examples:**
+
+```elisp
+;; Get layer properties
+(progn
+  (setq tp-layer-alist nil)
+  (tp-define-layer my-layer (face bold help-echo "tip"))
+  (tp-layer-props 'my-layer))
+;; => (face bold help-echo "tip" tp-name my-layer)
+
+;; Get group properties
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-define-layer my-group layer1 layer2)
+  (length (tp-group-props 'my-group)))
+;; => 2
+```
+
 ---
 
 #### `tp-layer-undefine` / `tp-group-undefine`
@@ -907,6 +1150,28 @@ Get properties for a layer or all layers in a group.
 
 Remove layer or group definition.
 
+**Examples:**
+
+```elisp
+;; Undefine a layer
+(progn
+  (setq tp-layer-alist nil)
+  (tp-define-layer temp-layer (face bold))
+  (tp-layer-undefine 'temp-layer)
+  (tp-layer-props 'temp-layer))
+;; => nil
+
+;; Undefine a group
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer l1 (face bold))
+  (tp-define-layer my-group l1)
+  (tp-group-undefine 'my-group)
+  (assoc 'my-group tp-layer-groups))
+;; => nil
+```
+
 ---
 
 #### `tp-layer-reset`
@@ -916,6 +1181,16 @@ Remove layer or group definition.
 ```
 
 Clear all layer and group definitions.
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-define-layer test-layer (face bold))
+  (tp-layer-reset)
+  (list tp-layer-alist tp-layer-groups))
+;; => (nil nil)
+```
 
 ---
 
@@ -940,17 +1215,40 @@ Set layer(s) at a specific index position in the layer stack.
 **Examples:**
 
 ```elisp
-(tp-define-layer base (face default))
-(tp-define-layer highlight (face (:background "yellow")))
-
 ;; Put base layer at top
-(tp-put-layer 1 10 'base 0)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 'base 0)
+    (tp-at 1 'tp-name)))
+;; => base
 
 ;; Put highlight at index 1 (below top)
-(tp-put-layer 1 10 'highlight 1)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 'base 0)
+    (tp-put-layer 1 10 'highlight 1)
+    (tp-layer-count 1 10)))
+;; => 2
 
 ;; Put layer at bottom
-(tp-put-layer 1 10 'info -1)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer info (face (:foreground "blue")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 'base 0)
+    (tp-put-layer 1 10 'info -1)
+    (tp-layer-top 1 10)))
+;; => base  ; info is at bottom, base is visible
 ```
 
 ---
@@ -970,14 +1268,28 @@ Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
 **Examples:**
 
 ```elisp
-(tp-define-layer base (face default))
-(tp-define-layer highlight (face (:background "yellow")))
-
 ;; Push base layer first
-(tp-push-layer 1 10 'base)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-at 1 'tp-name)))
+;; => base
 
 ;; Push highlight on top (now visible)
-(tp-push-layer 1 10 'highlight)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-at 1 'tp-name)))
+;; => highlight
 ```
 
 ---
@@ -1000,13 +1312,43 @@ Delete a layer from anywhere in the stack by name or index.
 
 ```elisp
 ;; Remove by name
-(tp-delete-layer 1 10 'highlight)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer base (face default))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-delete-layer 1 10 'highlight)
+    (tp-at 1 'tp-name)))
+;; => base
 
 ;; Remove top layer (idx=0)
-(tp-delete-layer 1 10 0)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-delete-layer 1 10 0)
+    (tp-at 1 'tp-name)))
+;; => layer1
 
 ;; Remove bottom layer
-(tp-delete-layer 1 10 -1)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-delete-layer 1 10 -1)
+    (tp-layer-count 1 10)))
+;; => 1
 ```
 
 ---
@@ -1022,6 +1364,22 @@ Delete a layer from anywhere in the stack by name or index.
 ```
 
 Remove the top layer (equivalent to `tp-delete-layer ... 0`).
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-pop-layer 1 10)
+    (tp-at 1 'tp-name)))
+;; => layer1
+```
 
 ---
 
@@ -1042,11 +1400,35 @@ Raise a layer by N positions. Positive N moves toward top, negative moves toward
 **Examples:**
 
 ```elisp
-;; Move layer1 up by 2 positions
-(tp-raise-layer 1 10 'layer1 2)
+;; Move layer1 up by 2 positions (to top)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-define-layer layer3 (face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; Stack: layer3 (top), layer2, layer1 (bottom)
+    (tp-raise-layer 1 10 'layer1 2)
+    (tp-layer-top 1 10)))
+;; => layer1
 
-;; Move layer at idx 2 down by 1 position
-(tp-raise-layer 1 10 2 -1)
+;; Move layer at idx 0 down by 1 position
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; Stack: layer2 (idx 0), layer1 (idx 1)
+    (tp-raise-layer 1 10 0 -1)
+    (tp-layer-top 1 10)))
+;; => layer1
 ```
 
 ---
@@ -1067,8 +1449,19 @@ Rotate layers - top goes to bottom, next becomes visible.
 
 ```elisp
 ;; Stack: highlight (top) -> base (bottom)
-(tp-rotate-layer 1 10)
-;; Stack: base (top) -> highlight (bottom)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    ;; Stack: highlight (top) -> base (bottom)
+    (tp-rotate-layer 1 10)
+    ;; Stack: base (top) -> highlight (bottom)
+    (tp-layer-top 1 10)))
+;; => base
 ```
 
 ---
@@ -1089,7 +1482,18 @@ Move a specific layer to the top (make it visible).
 
 ```elisp
 ;; Make 'base the top layer
-(tp-pin-layer 1 10 'base)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer base (face default))
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    ;; highlight is on top
+    (tp-pin-layer 1 10 'base)
+    (tp-layer-top 1 10)))
+;; => base
 ```
 
 ---
@@ -1110,7 +1514,19 @@ Swap positions of two layers.
 
 ```elisp
 ;; Switch layer1 and layer2
-(tp-switch-layer 1 10 'layer1 'layer2)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; layer2 is on top
+    (tp-switch-layer 1 10 'layer1 'layer2)
+    ;; Now layer1 is on top
+    (tp-layer-top 1 10)))
+;; => layer1
 ```
 
 ---
@@ -1133,10 +1549,30 @@ Merge specified layers into a new layer. Earlier layers in the list take precede
 
 ```elisp
 ;; Merge layer1 and layer2 into merged-layer
-(tp-merge-layers 1 10 'merged-layer '(layer1 layer2))
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-merge-layers 1 10 'merged-layer '(layer1 layer2))
+    (tp-at 1 'tp-name)))
+;; => merged-layer
 
 ;; Merge by index
-(tp-merge-layers 1 10 'merged '(0 1 2))
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-merge-layers 1 10 'merged '(0 1))
+    (tp-layer-count 1 10)))
+;; => 1
 ```
 
 ---
@@ -1157,10 +1593,28 @@ Flatten all layers into a single layer with the given name.
 
 ```elisp
 ;; Flatten all layers into 'flat-layer
-(tp-flatten-layers 1 10 'flat-layer)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-flatten-layers 1 10 'flat-layer)
+    (tp-at 1 'tp-name)))
+;; => flat-layer
 
 ;; Flatten with nil name (unnamed layer)
-(tp-flatten-layers 1 10 nil)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-flatten-layers 1 10 nil)
+    (tp-at 1 'tp-name)))
+;; => nil
 ```
 
 ---
@@ -1178,7 +1632,16 @@ Get list of all layer names in region.
 **Examples:**
 
 ```elisp
-(tp-layer-list 1 10)  ; => (highlight base)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer base (face default))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-layer-list 1 10)))
+;; => (highlight base)
 ```
 
 ---
@@ -1191,6 +1654,21 @@ Get list of all layer names in region.
 
 Count layers in region.
 
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-layer-count 1 10)))
+;; => 2
+```
+
 ---
 
 #### `tp-layer-exists-p`
@@ -1200,6 +1678,20 @@ Count layers in region.
 ```
 
 Check if layer exists in region.
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (list (tp-layer-exists-p 1 10 'layer1)
+          (tp-layer-exists-p 1 10 'layer2))))
+;; => (t nil)
+```
 
 ---
 
@@ -1211,6 +1703,21 @@ Check if layer exists in region.
 
 Get name of the top (visible) layer.
 
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-layer-top 1 10)))
+;; => layer2
+```
+
 ---
 
 ## Practical Examples
@@ -1218,40 +1725,52 @@ Get name of the top (visible) layer.
 ### Syntax Highlighting with Multiple Layers
 
 ```elisp
-;; Define layers for different highlighting purposes
-(tp-define-layer code-base
-  (face font-lock-keyword-face))
+;; Complete example that can be run in a buffer
+(progn
+  (tp-layer-reset)
+  ;; Define layers for different highlighting purposes
+  (tp-define-layer code-base
+    (face font-lock-keyword-face))
+  (tp-define-layer code-error
+    (face (:underline (:color "red" :style wave))
+     help-echo "Syntax error"))
+  (tp-define-layer code-debug
+    (face (:background "dark blue")))
+  (with-temp-buffer
+    (insert (make-string 100 ?x))  ; Create 100-char buffer
+    ;; Apply base highlighting
+    (tp-push-layer 1 100 'code-base)
+    ;; Add error highlight on problematic code
+    (tp-push-layer 50 60 'code-error)
+    ;; Check the top layer at position 55
+    (tp-layer-top 50 60)))
+;; => code-error
 
-(tp-define-layer code-error
-  (face (:underline (:color "red" :style wave))
-   help-echo "Syntax error"))
-
-(tp-define-layer code-debug
-  (face (:background "dark blue")))
-
-;; Apply base highlighting
-(tp-push-layer 1 100 'code-base)
-
-;; Add error highlight on problematic code
-(tp-push-layer 50 60 'code-error)
-
-;; Toggle between error and normal view
-(defun toggle-error-view ()
-  (interactive)
-  (tp-rotate-layer 50 60))
+;; Toggle function (for use in real buffers)
+(defun toggle-error-view (start end)
+  "Toggle between error and normal view."
+  (interactive "r")
+  (tp-rotate-layer start end))
 ```
 
 ### Status Indicator
 
 ```elisp
-;; Define status layers as a group
-(tp-define-layer status-todo (face (:foreground "gray")))
-(tp-define-layer status-progress (face (:foreground "yellow")))
-(tp-define-layer status-done (face (:foreground "green")))
-(tp-define-layer task-status status-todo status-progress status-done)
+;; Complete example with layer group
+(progn
+  (tp-layer-reset)
+  ;; Define status layers as a group
+  (tp-define-layer status-todo (face (:foreground "gray")))
+  (tp-define-layer status-progress (face (:foreground "yellow")))
+  (tp-define-layer status-done (face (:foreground "green")))
+  (tp-define-layer task-status status-todo status-progress status-done)
+  ;; Check group is defined
+  (length (tp-group-props 'task-status)))
+;; => 3
 
-;; Cycle through statuses
+;; Cycle through statuses (for use in real buffers)
 (defun cycle-task-status ()
+  "Cycle through task status layers on current line."
   (interactive)
   (tp-rotate-layer (line-beginning-position) (line-end-position)))
 ```
@@ -1259,15 +1778,22 @@ Get name of the top (visible) layer.
 ### Temporary Highlights
 
 ```elisp
-(tp-define-layer temp-highlight
-  (face (:background "yellow")))
+;; Define temporary highlight layer
+(progn
+  (tp-layer-reset)
+  (tp-define-layer temp-highlight
+    (face (:background "yellow")))
+  (tp-layer-props 'temp-highlight))
+;; => (face (:background "yellow") tp-name temp-highlight)
 
+;; Flash function (for use in real buffers)
 (defun flash-region (start end)
   "Flash a region temporarily."
   (tp-push-layer start end 'temp-highlight)
   (run-with-timer 0.5 nil
-                  (lambda ()
-                    (tp-delete-layer start end 'temp-highlight))))
+                  (lambda (s e)
+                    (tp-delete-layer s e 'temp-highlight))
+                  start end))
 ```
 
 ---
