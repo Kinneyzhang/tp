@@ -252,24 +252,26 @@ Return the modified object (string) or region (START . END) for buffer."
         (let* ((current-props (text-properties-at pos object))
                (next-pos (or (next-property-change pos object finish) finish)))
           ;; Merge each property in props
-          (cl-loop for (key val) on props by #'cddr
-                   do (let* ((current-val (plist-get current-props key))
-                             (new-val
-                              (cond
-                               ;; Handle face property specially - prepend faces
-                               ((eq key 'face)
-                                (tp--prepend-face val current-val))
-                               ;; Both are plists - deep merge
-                               ((and (listp val) (keywordp (car-safe val))
-                                     (listp current-val) (keywordp (car-safe current-val)))
-                                (tp--deep-merge-plist current-val val))
-                               ;; Otherwise use new value
-                               (t val))))
-                        (put-text-property pos next-pos key new-val object)))
+          (cl-loop
+           for (key val) on props by #'cddr
+           do (let* ((current-val (plist-get current-props key))
+                     (new-val
+                      (cond
+                       ;; Handle face property specially - prepend faces
+                       ((eq key 'face)
+                        (tp--prepend-face val current-val))
+                       ;; Both are plists - deep merge
+                       ((and (listp val) (keywordp (car-safe val))
+                             (listp current-val) (keywordp (car-safe current-val)))
+                        (tp--deep-merge-plist current-val val))
+                       ;; Otherwise use new value
+                       (t val))))
+                (put-text-property pos next-pos key new-val object)))
           (setq pos next-pos))))
     (if (stringp object)
         object
       (cons start finish))))
+
 (defun tp--parse-single-prop-args (start-or-string end-or-val val-or-object rest)
   "Parse arguments for single-property functions like tp-set-face.
 Returns (OBJECT START END VALUE)."
@@ -310,7 +312,8 @@ This function supports four calling conventions:
 This replaces only the face property, preserving other properties.
 Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,face)
-               (tp--parse-single-prop-args start-or-string end-or-face face-or-object rest)))
+               (tp--parse-single-prop-args
+                start-or-string end-or-face face-or-object rest)))
     (put-text-property start finish 'face face object)
     (if (stringp object)
         object
@@ -336,12 +339,12 @@ This function supports four calling conventions:
 This replaces only the display property, preserving other properties.
 Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,display)
-               (tp--parse-single-prop-args start-or-string end-or-display display-or-object rest)))
+               (tp--parse-single-prop-args
+                start-or-string end-or-display display-or-object rest)))
     (put-text-property start finish 'display display object)
     (if (stringp object)
         object
       (cons start finish))))
-
 
 (defun tp--get-nested (value path)
   "Get nested value from VALUE following PATH.
@@ -595,9 +598,6 @@ POINT defaults to current point.
 OBJECT defaults to current buffer."
   (text-properties-at (or point (point)) object))
 
-;;; Match and regexp functions (similar to ov-match and ov-regexp)
-
-
 ;;; Private functions for fine-grained property manipulation
 
 (defun tp--remove-sub (start end property sub-property &optional object)
@@ -750,6 +750,8 @@ OBJECT defaults to current buffer."
   (let ((beg (or start (point-min)))
         (finish (or end (point-max))))
     (set-text-properties beg finish nil object)))
+
+;;; Match and regexp functions
 
 (defun tp--match-apply (pattern properties apply-fn &optional object)
   "Internal function to apply APPLY-FN to matches of PATTERN.
@@ -1339,7 +1341,6 @@ Appends 'tp-name property to identify the layer."
 
 (defalias 'tp-layer-group-properties 'tp-group-props
   "Alias for `tp-group-props'.")
-
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
