@@ -63,94 +63,90 @@ A complete overview of all tp.el functions organized by category:
 #### Core Property Functions
 | Function | Description |
 |----------|-------------|
-| `tp-set` | Set text properties (replaces specified properties only) |
-| `tp-reset` | Replace ALL text properties |
-| `tp-add` | Add/merge properties with deep merge support |
-| `tp-set-face` | Set only the face property |
-| `tp-set-display` | Set only the display property |
-| `tp-get` | Get property value(s) from position or range |
-| `tp-get-sub` | Get nested sub-property value |
-| `tp-put-sub` | Set nested sub-property value |
-| `tp-remove-sub` | Remove nested sub-property |
-| `tp-at` | Get all properties at a position |
-| `tp-remove` | Remove a property or sub-property |
-| `tp-remove-list` | Remove multiple properties at once |
-| `tp-clear` | Clear all text properties from a region |
+| [`tp-set`](#tp-set---set-text-properties) | Set text properties (replaces specified properties only) |
+| [`tp-reset`](#tp-reset---replace-all-properties) | Replace ALL text properties |
+| [`tp-add`](#tp-add---addmerge-properties) | Add/merge properties with deep merge support |
+| [`tp-set-face`](#tp-set-face---set-face-property) | Set only the face property |
+| [`tp-set-display`](#tp-set-display---set-display-property) | Set only the display property |
+| [`tp-get`](#tp-get---get-property-value) | Get property value(s) from position or range |
+| [`tp-at`](#tp-at---get-all-properties) | Get all properties at a position |
+| [`tp-remove`](#tp-remove---remove-property) | Remove a property or sub-property |
+| [`tp-clear`](#tp-clear---clear-all-properties) | Clear all text properties from a region |
 
 #### Pattern Matching Functions
 | Function | Description |
 |----------|-------------|
-| `tp-match` | Set properties on string pattern matches |
-| `tp-match-reset` | Reset all properties on string matches |
-| `tp-match-add` | Add/merge properties on string matches |
-| `tp-regexp` | Set properties on regexp matches |
-| `tp-regexp-reset` | Reset all properties on regexp matches |
-| `tp-regexp-add` | Add/merge properties on regexp matches |
+| [`tp-match`](#tp-match---match-string) | Set properties on string pattern matches |
+| [`tp-match-reset`](#tp-match-reset---match-and-reset) | Reset all properties on string matches |
+| [`tp-match-add`](#tp-match-add---match-and-add) | Add/merge properties on string matches |
+| [`tp-regexp`](#tp-regexp---match-regexp) | Set properties on regexp matches |
+| [`tp-regexp-reset`](#tp-regexp-reset---regexp-and-reset) | Reset all properties on regexp matches |
+| [`tp-regexp-add`](#tp-regexp-add---regexp-and-add) | Add/merge properties on regexp matches |
 
 #### Search & Navigation Functions
 | Function | Description |
 |----------|-------------|
-| `tp-forward` | Search forward for text with property |
-| `tp-backward` | Search backward for text with property |
-| `tp-next` | Get next position with text properties |
-| `tp-prev` | Get previous position with text properties |
-| `tp-goto-next` | Move point to next text with property |
-| `tp-goto-prev` | Move point to previous text with property |
-| `tp-regions-map` | Apply function to all regions with property |
-| `tp-strings-map` | Apply function to all strings with property |
+| [`tp-forward`](#tp-forward--tp-backward) | Search forward for text with property |
+| [`tp-backward`](#tp-forward--tp-backward) | Search backward for text with property |
+| [`tp-next`](#tp-next--tp-prev) | Get next position with text properties |
+| [`tp-prev`](#tp-next--tp-prev) | Get previous position with text properties |
+| [`tp-goto-next`](#tp-goto-next--tp-goto-prev) | Move point to next text with property |
+| [`tp-goto-prev`](#tp-goto-next--tp-goto-prev) | Move point to previous text with property |
+| [`tp-regions-map`](#tp-regions-map--tp-strings-map) | Apply function to all regions with property |
+| [`tp-strings-map`](#tp-regions-map--tp-strings-map) | Apply function to all strings with property |
 
 #### Query Functions
 | Function | Description |
 |----------|-------------|
-| `tp-in` | Find all regions with a specific property |
-| `tp-all` | Get all propertized regions |
-| `tp-intervals` | Get property intervals in a region |
-| `tp-empty-p` | Check if object has no properties |
-| `tp-plist` | Get merged plist of all properties |
+| [`tp-in`](#tp-in---find-regions-with-property) | Find all regions with a specific property |
+| [`tp-all`](#tp-all---get-all-propertized-regions) | Get all propertized regions |
+| [`tp-intervals`](#tp-intervals---get-property-intervals) | Get property intervals in a region |
+| [`tp-empty-p`](#tp-empty-p---check-for-properties) | Check if object has no properties |
+| [`tp-plist`](#tp-plist---get-merged-properties) | Get merged plist of all properties |
 
 #### Layer Definition Functions
 | Function | Description |
 |----------|-------------|
-| `tp-define-layer` | Define a layer or layer group |
-| `tp-layer-props` | Get properties for a layer |
-| `tp-group-props` | Get properties for all layers in a group |
-| `tp-layer-undefine` | Remove layer definition |
-| `tp-group-undefine` | Remove group definition |
-| `tp-layer-reset` | Clear all layer/group definitions |
+| [`tp-define-layer`](#tp-define-layer---define-layers) | Define a layer or layer group |
+| [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
+| [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
+| [`tp-layer-undefine`](#tp-layer-undefine--tp-group-undefine) | Remove layer definition |
+| [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | Remove group definition |
+| [`tp-layer-reset`](#tp-layer-reset) | Clear all layer/group definitions |
 
 #### Layer Placement Functions
 | Function | Description |
 |----------|-------------|
-| `tp-put-layer` | Set layer at specific index position |
-| `tp-push-layer` | Push layer to top of stack |
+| [`tp-put-layer`](#tp-put-layer---set-layer-at-index) | Set layer at specific index position |
+| [`tp-push-layer`](#tp-push-layer---push-layer-to-top) | Push layer to top of stack |
 
 #### Layer Deletion Functions
 | Function | Description |
 |----------|-------------|
-| `tp-delete-layer` | Delete layer by name or index |
-| `tp-pop-layer` | Remove top layer |
+| [`tp-delete-layer`](#tp-delete-layer---delete-layer-by-nameindex) | Delete layer by name or index |
+| [`tp-pop-layer`](#tp-pop-layer---pop-top-layer) | Remove top layer |
 
 #### Layer Movement Functions
 | Function | Description |
 |----------|-------------|
-| `tp-raise-layer` | Move layer up/down by N positions |
-| `tp-rotate-layer` | Cycle layers (top goes to bottom) |
-| `tp-pin-layer` | Pin a layer to top (make visible) |
-| `tp-switch-layer` | Swap positions of two layers |
+| [`tp-raise-layer`](#tp-raise-layer---move-layer-updown) | Move layer up/down by N positions |
+| [`tp-rotate-layer`](#tp-rotate-layer---cycle-layers) | Cycle layers (top goes to bottom) |
+| [`tp-pin-layer`](#tp-pin-layer---pin-layer-to-top) | Pin a layer to top (make visible) |
+| [`tp-switch-layer`](#tp-switch-layer---switch-two-layers) | Swap positions of two layers |
 
 #### Layer Merging Functions
 | Function | Description |
 |----------|-------------|
-| `tp-merge-layers` | Merge specified layers into a new layer |
-| `tp-flatten-layers` | Flatten all layers into a single layer |
+| [`tp-merge-layers`](#tp-merge-layers---merge-multiple-layers) | Merge specified layers into a new layer |
+| [`tp-flatten-layers`](#tp-flatten-layers---flatten-all-layers) | Flatten all layers into a single layer |
 
 #### Layer Query Functions
 | Function | Description |
 |----------|-------------|
-| `tp-layer-list` | List all layer names in region |
-| `tp-layer-count` | Count layers in region |
-| `tp-layer-exists-p` | Check if layer exists in region |
-| `tp-layer-top` | Get name of top (visible) layer |
+| [`tp-layer-list`](#tp-layer-list---list-all-layers) | List all layer names in region |
+| [`tp-layer-count`](#tp-layer-count) | Count layers in region |
+| [`tp-layer-exists-p`](#tp-layer-exists-p) | Check if layer exists in region |
+| [`tp-layer-top`](#tp-layer-top) | Get name of top (visible) layer |
 
 ---
 
@@ -364,36 +360,6 @@ For range and entire string queries, returns a list of `(START END VALUE)` inter
 
 ---
 
-#### Fine-grained Property Functions
-
-For manipulating sub-properties within complex properties like `face` or `display`:
-
-```elisp
-;; Get sub-property
-(tp-get-sub POSITION PROPERTY SUB-PROPERTY &optional OBJECT)
-
-;; Set sub-property
-(tp-put-sub START END PROPERTY SUB-PROPERTY VALUE &optional OBJECT)
-
-;; Remove sub-property
-(tp-remove-sub START END PROPERTY SUB-PROPERTY &optional OBJECT)
-```
-
-**Examples:**
-
-```elisp
-;; Get :foreground from face
-(tp-get-sub 1 'face :foreground)  ; => "red"
-
-;; Set :weight on face
-(tp-put-sub 1 6 'face :weight 'bold)
-
-;; Remove :background from face
-(tp-remove-sub 1 6 'face :background)
-```
-
----
-
 #### `tp-at` - Get All Properties
 
 ```elisp
@@ -449,22 +415,6 @@ Remove a property or nested sub-property from a region or entire string.
 (tp-remove "Hello World" 'face 'help-echo)  ; Remove multiple properties
 (tp-remove "Hello World" 'face :underline)  ; Remove sub-property
 (tp-remove "Hello World" 'face :underline '(:style :position))  ; Remove nested
-```
-
----
-
-#### `tp-remove-list` - Remove Multiple Properties
-
-```elisp
-(tp-remove-list START END PROPERTIES &optional OBJECT)
-```
-
-Remove multiple properties at once.
-
-**Examples:**
-
-```elisp
-(tp-remove-list 1 10 '(face help-echo mouse-face))
 ```
 
 ---

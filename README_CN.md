@@ -62,94 +62,90 @@ tp.el 所有函数按类别组织的完整概览：
 #### 核心属性函数
 | 函数 | 描述 |
 |------|------|
-| `tp-set` | 设置文本属性（仅替换指定属性） |
-| `tp-reset` | 替换所有文本属性 |
-| `tp-add` | 添加/合并属性，支持深度合并 |
-| `tp-set-face` | 仅设置 face 属性 |
-| `tp-set-display` | 仅设置 display 属性 |
-| `tp-get` | 从位置或范围获取属性值 |
-| `tp-get-sub` | 获取嵌套子属性值 |
-| `tp-put-sub` | 设置嵌套子属性值 |
-| `tp-remove-sub` | 移除嵌套子属性 |
-| `tp-at` | 获取某位置的所有属性 |
-| `tp-remove` | 移除属性或子属性 |
-| `tp-remove-list` | 一次移除多个属性 |
-| `tp-clear` | 清除区域中的所有文本属性 |
+| [`tp-set`](#tp-set---设置文本属性) | 设置文本属性（仅替换指定属性） |
+| [`tp-reset`](#tp-reset---替换所有属性) | 替换所有文本属性 |
+| [`tp-add`](#tp-add---添加合并属性) | 添加/合并属性，支持深度合并 |
+| [`tp-set-face`](#tp-set-face---设置-face-属性) | 仅设置 face 属性 |
+| [`tp-set-display`](#tp-set-display---设置-display-属性) | 仅设置 display 属性 |
+| [`tp-get`](#tp-get---获取属性值) | 从位置或范围获取属性值 |
+| [`tp-at`](#tp-at---获取所有属性) | 获取某位置的所有属性 |
+| [`tp-remove`](#tp-remove---移除属性) | 移除属性或子属性 |
+| [`tp-clear`](#tp-clear---清除所有属性) | 清除区域中的所有文本属性 |
 
 #### 模式匹配函数
 | 函数 | 描述 |
 |------|------|
-| `tp-match` | 在字符串匹配处设置属性 |
-| `tp-match-reset` | 在字符串匹配处重置所有属性 |
-| `tp-match-add` | 在字符串匹配处添加/合并属性 |
-| `tp-regexp` | 在正则匹配处设置属性 |
-| `tp-regexp-reset` | 在正则匹配处重置所有属性 |
-| `tp-regexp-add` | 在正则匹配处添加/合并属性 |
+| [`tp-match`](#tp-match---匹配字符串) | 在字符串匹配处设置属性 |
+| [`tp-match-reset`](#tp-match-reset---匹配并重置) | 在字符串匹配处重置所有属性 |
+| [`tp-match-add`](#tp-match-add---匹配并添加) | 在字符串匹配处添加/合并属性 |
+| [`tp-regexp`](#tp-regexp---匹配正则表达式) | 在正则匹配处设置属性 |
+| [`tp-regexp-reset`](#tp-regexp-reset---正则匹配并重置) | 在正则匹配处重置所有属性 |
+| [`tp-regexp-add`](#tp-regexp-add---正则匹配并添加) | 在正则匹配处添加/合并属性 |
 
 #### 搜索和导航函数
 | 函数 | 描述 |
 |------|------|
-| `tp-forward` | 向前搜索具有属性的文本 |
-| `tp-backward` | 向后搜索具有属性的文本 |
-| `tp-next` | 获取下一个具有文本属性的位置 |
-| `tp-prev` | 获取上一个具有文本属性的位置 |
-| `tp-goto-next` | 移动光标到下一个具有属性的文本 |
-| `tp-goto-prev` | 移动光标到上一个具有属性的文本 |
-| `tp-regions-map` | 对所有具有属性的区域应用函数 |
-| `tp-strings-map` | 对所有具有属性的字符串应用函数 |
+| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索具有属性的文本 |
+| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索具有属性的文本 |
+| [`tp-next`](#tp-next--tp-prev) | 获取下一个具有文本属性的位置 |
+| [`tp-prev`](#tp-next--tp-prev) | 获取上一个具有文本属性的位置 |
+| [`tp-goto-next`](#tp-goto-next--tp-goto-prev) | 移动光标到下一个具有属性的文本 |
+| [`tp-goto-prev`](#tp-goto-next--tp-goto-prev) | 移动光标到上一个具有属性的文本 |
+| [`tp-regions-map`](#tp-regions-map--tp-strings-map) | 对所有具有属性的区域应用函数 |
+| [`tp-strings-map`](#tp-regions-map--tp-strings-map) | 对所有具有属性的字符串应用函数 |
 
 #### 查询函数
 | 函数 | 描述 |
 |------|------|
-| `tp-in` | 查找所有具有特定属性的区域 |
-| `tp-all` | 获取所有带属性的区域 |
-| `tp-intervals` | 获取区域中的属性区间 |
-| `tp-empty-p` | 检查对象是否没有属性 |
-| `tp-plist` | 获取所有属性的合并列表 |
+| [`tp-in`](#tp-in---查找具有属性的区域) | 查找所有具有特定属性的区域 |
+| [`tp-all`](#tp-all---获取所有带属性的区域) | 获取所有带属性的区域 |
+| [`tp-intervals`](#tp-intervals---获取属性区间) | 获取区域中的属性区间 |
+| [`tp-empty-p`](#tp-empty-p---检查属性) | 检查对象是否没有属性 |
+| [`tp-plist`](#tp-plist---获取合并的属性) | 获取所有属性的合并列表 |
 
 #### 图层定义函数
 | 函数 | 描述 |
 |------|------|
-| `tp-define-layer` | 定义图层或图层组 |
-| `tp-layer-props` | 获取图层的属性 |
-| `tp-group-props` | 获取图层组中所有图层的属性 |
-| `tp-layer-undefine` | 移除图层定义 |
-| `tp-group-undefine` | 移除图层组定义 |
-| `tp-layer-reset` | 清除所有图层/图层组定义 |
+| [`tp-define-layer`](#tp-define-layer---定义图层) | 定义图层或图层组 |
+| [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取图层的属性 |
+| [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取图层组中所有图层的属性 |
+| [`tp-layer-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除图层定义 |
+| [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除图层组定义 |
+| [`tp-layer-reset`](#tp-layer-reset) | 清除所有图层/图层组定义 |
 
 #### 图层放置函数
 | 函数 | 描述 |
 |------|------|
-| `tp-put-layer` | 在指定索引位置设置图层 |
-| `tp-push-layer` | 将图层推到堆栈顶部 |
+| [`tp-put-layer`](#tp-put-layer---在指定位置设置图层) | 在指定索引位置设置图层 |
+| [`tp-push-layer`](#tp-push-layer---推送图层到顶部) | 将图层推到堆栈顶部 |
 
 #### 图层删除函数
 | 函数 | 描述 |
 |------|------|
-| `tp-delete-layer` | 按名称或索引删除图层 |
-| `tp-pop-layer` | 移除顶层图层 |
+| [`tp-delete-layer`](#tp-delete-layer---按名称索引删除图层) | 按名称或索引删除图层 |
+| [`tp-pop-layer`](#tp-pop-layer---弹出顶层) | 移除顶层图层 |
 
 #### 图层移动函数
 | 函数 | 描述 |
 |------|------|
-| `tp-raise-layer` | 将图层上移/下移 N 个位置 |
-| `tp-rotate-layer` | 轮换图层（顶层移到底部） |
-| `tp-pin-layer` | 将图层置顶（使其可见） |
-| `tp-switch-layer` | 交换两个图层的位置 |
+| [`tp-raise-layer`](#tp-raise-layer---上移下移图层) | 将图层上移/下移 N 个位置 |
+| [`tp-rotate-layer`](#tp-rotate-layer---轮换图层) | 轮换图层（顶层移到底部） |
+| [`tp-pin-layer`](#tp-pin-layer---将图层置顶) | 将图层置顶（使其可见） |
+| [`tp-switch-layer`](#tp-switch-layer---交换两个图层) | 交换两个图层的位置 |
 
 #### 图层合并函数
 | 函数 | 描述 |
 |------|------|
-| `tp-merge-layers` | 将指定图层合并为新图层 |
-| `tp-flatten-layers` | 将所有图层扁平化为单一图层 |
+| [`tp-merge-layers`](#tp-merge-layers---合并多个图层) | 将指定图层合并为新图层 |
+| [`tp-flatten-layers`](#tp-flatten-layers---扁平化所有图层) | 将所有图层扁平化为单一图层 |
 
 #### 图层查询函数
 | 函数 | 描述 |
 |------|------|
-| `tp-layer-list` | 列出区域中的所有图层名称 |
-| `tp-layer-count` | 计算区域中的图层数量 |
-| `tp-layer-exists-p` | 检查区域中是否存在某图层 |
-| `tp-layer-top` | 获取顶层（可见）图层的名称 |
+| [`tp-layer-list`](#tp-layer-list---列出所有图层) | 列出区域中的所有图层名称 |
+| [`tp-layer-count`](#tp-layer-count) | 计算区域中的图层数量 |
+| [`tp-layer-exists-p`](#tp-layer-exists-p) | 检查区域中是否存在某图层 |
+| [`tp-layer-top`](#tp-layer-top) | 获取顶层（可见）图层的名称 |
 
 ---
 
@@ -363,36 +359,6 @@ tp.el 所有函数按类别组织的完整概览：
 
 ---
 
-#### 细粒度属性函数
-
-用于操作复杂属性（如 `face` 或 `display`）内的子属性：
-
-```elisp
-;; 获取子属性
-(tp-get-sub POSITION PROPERTY SUB-PROPERTY &optional OBJECT)
-
-;; 设置子属性
-(tp-put-sub START END PROPERTY SUB-PROPERTY VALUE &optional OBJECT)
-
-;; 移除子属性
-(tp-remove-sub START END PROPERTY SUB-PROPERTY &optional OBJECT)
-```
-
-**示例：**
-
-```elisp
-;; 获取 face 的 :foreground
-(tp-get-sub 1 'face :foreground)  ; => "red"
-
-;; 设置 face 的 :weight
-(tp-put-sub 1 6 'face :weight 'bold)
-
-;; 移除 face 的 :background
-(tp-remove-sub 1 6 'face :background)
-```
-
----
-
 #### `tp-at` - 获取所有属性
 
 ```elisp
@@ -448,22 +414,6 @@ tp.el 所有函数按类别组织的完整概览：
 (tp-remove "Hello World" 'face 'help-echo)  ; 移除多个属性
 (tp-remove "Hello World" 'face :underline)  ; 移除子属性
 (tp-remove "Hello World" 'face :underline '(:style :position))  ; 移除嵌套
-```
-
----
-
-#### `tp-remove-list` - 移除多个属性
-
-```elisp
-(tp-remove-list START END PROPERTIES &optional OBJECT)
-```
-
-一次移除多个属性。
-
-**示例：**
-
-```elisp
-(tp-remove-list 1 10 '(face help-echo mouse-face))
 ```
 
 ---

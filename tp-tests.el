@@ -72,16 +72,6 @@
     (should (null (tp-get 1 'face)))
     (should (equal (tp-get 1 'help-echo) "test"))))
 
-(ert-deftest tp-test-remove-list ()
-  "Test tp-remove-list removes multiple properties."
-  (tp-test-with-temp-buffer
-    (insert "Hello")
-    (tp-set 1 6 '(face bold help-echo "test" mouse-face highlight))
-    (tp-remove-list 1 6 '(face help-echo))
-    (should (null (tp-get 1 'face)))
-    (should (null (tp-get 1 'help-echo)))
-    (should (eq (tp-get 1 'mouse-face) 'highlight))))
-
 (ert-deftest tp-test-clear ()
   "Test tp-clear removes all properties."
   (tp-test-with-temp-buffer
@@ -778,39 +768,39 @@ Returns list of (START END VALUE) intervals."
 ;;; ============================================================
 
 (ert-deftest tp-test-get-sub-property ()
-  "Test tp-get-sub retrieves sub-property from face."
+  "Test tp--get-sub retrieves sub-property from face."
   (tp-test-with-temp-buffer
     (insert "Hello")
     (put-text-property 1 6 'face '(:foreground "red" :weight bold))
-    (should (equal (tp-get-sub 1 'face :foreground) "red"))
-    (should (eq (tp-get-sub 1 'face :weight) 'bold))
-    (should (null (tp-get-sub 1 'face :background)))))
+    (should (equal (tp--get-sub 1 'face :foreground) "red"))
+    (should (eq (tp--get-sub 1 'face :weight) 'bold))
+    (should (null (tp--get-sub 1 'face :background)))))
 
 (ert-deftest tp-test-put-sub-property ()
-  "Test tp-put-sub sets sub-property on face."
+  "Test tp--put-sub sets sub-property on face."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-put-sub 1 6 'face :foreground "blue")
-    (should (equal (tp-get-sub 1 'face :foreground) "blue"))
+    (tp--put-sub 1 6 'face :foreground "blue")
+    (should (equal (tp--get-sub 1 'face :foreground) "blue"))
     ;; Add another sub-property
-    (tp-put-sub 1 6 'face :weight 'bold)
-    (should (eq (tp-get-sub 1 'face :weight) 'bold))
-    (should (equal (tp-get-sub 1 'face :foreground) "blue"))))
+    (tp--put-sub 1 6 'face :weight 'bold)
+    (should (eq (tp--get-sub 1 'face :weight) 'bold))
+    (should (equal (tp--get-sub 1 'face :foreground) "blue"))))
 
 (ert-deftest tp-test-remove-sub-property ()
-  "Test tp-remove-sub removes sub-property from face."
+  "Test tp--remove-sub removes sub-property from face."
   (tp-test-with-temp-buffer
     (insert "Hello")
     (put-text-property 1 6 'face '(:foreground "red" :weight bold))
-    (tp-remove-sub 1 6 'face :foreground)
-    (should (null (tp-get-sub 1 'face :foreground)))
-    (should (eq (tp-get-sub 1 'face :weight) 'bold))))
+    (tp--remove-sub 1 6 'face :foreground)
+    (should (null (tp--get-sub 1 'face :foreground)))
+    (should (eq (tp--get-sub 1 'face :weight) 'bold))))
 
 (ert-deftest tp-test-sub-property-on-string ()
   "Test fine-grained property manipulation on strings."
   (let ((str (copy-sequence "Hello")))
-    (tp-put-sub 0 5 'face :foreground "green" str)
-    (should (equal (tp-get-sub 0 'face :foreground str) "green"))))
+    (tp--put-sub 0 5 'face :foreground "green" str)
+    (should (equal (tp--get-sub 0 'face :foreground str) "green"))))
 
 ;;; ============================================================
 ;;; New API Tests (tp-reset, tp-set, tp-set-face, tp-set-display, tp-add)
@@ -1137,6 +1127,26 @@ Returns list of (START END VALUE) intervals."
       (should (equal (plist-get face :foreground) "red"))
       (should (equal (plist-get underline :color) "blue"))
       (should (null (plist-get underline :style))))))
+
+(ert-deftest tp-test-remove-entire-string-single-nested-key ()
+  "Test tp-remove removes a single nested key from a sub-property.
+This tests the fix for the bug where (tp-remove str 'face :underline :position)
+was removing the entire :underline instead of just :position."
+  (let ((str (copy-sequence "happy hacking emacs")))
+    (tp-set str 'face '(:foreground "red" :underline (:position t :color "green"))
+            'line-prefix ">> " 'other "other")
+    (tp-remove str 'face :underline :position)
+    (let* ((face (get-text-property 0 'face str))
+           (underline (plist-get face :underline)))
+      ;; :foreground should be preserved
+      (should (equal (plist-get face :foreground) "red"))
+      ;; :underline should still exist but without :position
+      (should underline)
+      (should (equal (plist-get underline :color) "green"))
+      (should (null (plist-get underline :position)))
+      ;; Other properties should be preserved
+      (should (equal (get-text-property 0 'line-prefix str) ">> "))
+      (should (equal (get-text-property 0 'other str) "other")))))
 
 ;;; ============================================================
 ;;; New API Tests - Issue 3 & 4: tp-get for strings and new API

@@ -673,12 +673,13 @@ OBJECT defaults to current buffer."
           (nreverse intervals)))))
    (t (error "Invalid arguments to tp-get"))))
 
-;;; Fine-grained property manipulation for nested properties
+;;; Fine-grained property manipulation for nested properties (internal)
 
-(defun tp-get-sub (position property sub-property &optional object)
+(defun tp--get-sub (position property sub-property &optional object)
   "Get SUB-PROPERTY from PROPERTY at POSITION in OBJECT.
 For example, get :foreground from a face property.
-OBJECT defaults to current buffer."
+OBJECT defaults to current buffer.
+Internal function - use `tp-get' with nested path for public API."
   (let ((prop-value (get-text-property position property object)))
     (cond
      ;; Property is a plist (e.g., (:foreground \"red\" :weight bold))
@@ -694,11 +695,12 @@ OBJECT defaults to current buffer."
                thereis (plist-get spec sub-property)))
      (t nil))))
 
-(defun tp-put-sub (start end property sub-property value &optional object)
+(defun tp--put-sub (start end property sub-property value &optional object)
   "Set SUB-PROPERTY of PROPERTY to VALUE from START to END in OBJECT.
 Merges the sub-property into the existing property value.
 For example, set :foreground of a face property.
-OBJECT defaults to current buffer."
+OBJECT defaults to current buffer.
+Internal function - use `tp-add' with nested plist for public API."
   (let* ((pos start))
     (while (< pos end)
       (let* ((current-value (get-text-property pos property object))
@@ -724,10 +726,11 @@ OBJECT defaults to current buffer."
       object
     (cons start end)))
 
-(defun tp-remove-sub (start end property sub-property &optional object)
+(defun tp--remove-sub (start end property sub-property &optional object)
   "Remove SUB-PROPERTY from PROPERTY between START and END in OBJECT.
 For example, remove :foreground from a face property.
-OBJECT defaults to current buffer."
+OBJECT defaults to current buffer.
+Internal function - use `tp-remove' with nested path for public API."
   (let* ((pos start))
     (while (< pos end)
       (let* ((current-value (get-text-property pos property object))
@@ -769,7 +772,7 @@ PROPERTY can be a symbol or a list for nested removal."
            (nested-keys (caddr property)))
       (if (null nested-keys)
           ;; Remove sub-key from property
-          (tp-remove-sub start end prop-name sub-key object)
+          (tp--remove-sub start end prop-name sub-key object)
         ;; Remove nested keys from sub-key
         (let ((pos start))
           (while (< pos end)
@@ -829,15 +832,21 @@ Returns the modified string for string input, or nil for buffer operations."
           (start 0)
           (end (length start-or-string)))
       (cond
-       ;; (tp-remove str 'face :underline '(:style :position)) - nested sub-property removal
+       ;; (tp-remove str 'face :underline '(:style :position)) - nested sub-property removal with list
        ((and (symbolp end-or-prop)
              (keywordp prop-or-sub)
              rest
              (listp (car rest)))
         (tp--remove-property start end (list end-or-prop prop-or-sub (car rest)) str))
+       ;; (tp-remove str 'face :underline :position :style ...) - nested sub-property removal with keywords
+       ((and (symbolp end-or-prop)
+             (keywordp prop-or-sub)
+             rest
+             (keywordp (car rest)))
+        (tp--remove-property start end (list end-or-prop prop-or-sub rest) str))
        ;; (tp-remove str 'face :underline) - sub-property removal
        ((and (symbolp end-or-prop) (keywordp prop-or-sub))
-        (tp-remove-sub start end end-or-prop prop-or-sub str))
+        (tp--remove-sub start end end-or-prop prop-or-sub str))
        ;; (tp-remove str 'face 'help-echo ...) - multiple properties
        ((symbolp end-or-prop)
         (let ((props (cons end-or-prop (cons prop-or-sub rest))))
@@ -857,12 +866,6 @@ Returns the modified string for string input, or nil for buffer operations."
       (tp--remove-property start end property object)
       nil))
    (t (error "Invalid arguments to tp-remove"))))
-
-(defun tp-remove-list (start end properties &optional object)
-  "Remove list of PROPERTIES from text between START and END in OBJECT.
-PROPERTIES should be a list of property names."
-  (let ((plist (mapcan (lambda (p) (list p nil)) properties)))
-    (remove-text-properties start end plist object)))
 
 ;;;###autoload
 (defun tp-clear (&optional start end object)
