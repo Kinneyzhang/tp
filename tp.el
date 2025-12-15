@@ -1321,7 +1321,10 @@ Example:
               (text (if (stringp obj)
                         (substring obj start end)
                       (buffer-substring start end)))
-              (new-text (if (>= (cdr arity) 2)
+              (max-arity (cdr arity))
+              (can-accept-idx (or (eq max-arity 'many)
+                                  (and (numberp max-arity) (>= max-arity 2))))
+              (new-text (if can-accept-idx
                             (funcall function text idx)
                           (funcall function text))))
          (setq idx (1+ idx))
