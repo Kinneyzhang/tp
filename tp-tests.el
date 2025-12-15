@@ -39,21 +39,21 @@
     (insert "Hello World")
     ;; Set a single property
     (tp-set 1 6 '(face bold))
-    (should (eq (tp-get 1 'face) 'bold))
-    (should (eq (tp-get 3 'face) 'bold))
-    (should (null (tp-get 7 'face)))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (eq (tp-at 3 'face) 'bold))
+    (should (null (tp-at 7 'face)))
     ;; Set multiple properties
     (tp-set 7 12 '(face italic help-echo "test"))
-    (should (eq (tp-get 7 'face) 'italic))
-    (should (equal (tp-get 7 'help-echo) "test"))))
+    (should (eq (tp-at 7 'face) 'italic))
+    (should (equal (tp-at 7 'help-echo) "test"))))
 
 (ert-deftest tp-test-put-with-list ()
   "Test tp-set accepts properties as a list."
   (tp-test-with-temp-buffer
     (insert "Hello")
     (tp-set 1 6 '(face bold help-echo "greeting"))
-    (should (eq (tp-get 1 'face) 'bold))
-    (should (equal (tp-get 1 'help-echo) "greeting"))))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "greeting"))))
 
 (ert-deftest tp-test-put-returns-region ()
   "Test tp-set returns the modified region."
@@ -67,10 +67,10 @@
   (tp-test-with-temp-buffer
     (insert "Hello")
     (tp-set 1 6 '(face bold help-echo "test"))
-    (should (eq (tp-get 1 'face) 'bold))
+    (should (eq (tp-at 1 'face) 'bold))
     (tp-remove 1 6 'face)
-    (should (null (tp-get 1 'face)))
-    (should (equal (tp-get 1 'help-echo) "test"))))
+    (should (null (tp-at 1 'face)))
+    (should (equal (tp-at 1 'help-echo) "test"))))
 
 (ert-deftest tp-test-clear ()
   "Test tp-clear removes all properties."
@@ -79,8 +79,8 @@
     (tp-set 1 6 '(face bold))
     (tp-set 7 12 '(face italic))
     (tp-clear 1 12)
-    (should (null (tp-get 1 'face)))
-    (should (null (tp-get 7 'face)))))
+    (should (null (tp-at 1 'face)))
+    (should (null (tp-at 7 'face)))))
 
 (ert-deftest tp-test-clear-defaults-to-buffer ()
   "Test tp-clear defaults to entire buffer."
@@ -88,8 +88,8 @@
     (insert "Hello World")
     (tp-set 1 12 '(face bold))
     (tp-clear)
-    (should (null (tp-get 1 'face)))
-    (should (null (tp-get 7 'face)))))
+    (should (null (tp-at 1 'face)))
+    (should (null (tp-at 7 'face)))))
 
 (ert-deftest tp-test-at ()
   "Test tp-at returns all properties at point."
@@ -100,13 +100,51 @@
       (should (eq (plist-get props 'face) 'bold))
       (should (equal (plist-get props 'help-echo) "test")))))
 
+(ert-deftest tp-test-at-with-property ()
+  "Test tp-at returns specific property at point."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-set 1 6 '(face bold help-echo "test"))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "test"))
+    (should (null (tp-at 1 'mouse-face)))))
+
+(ert-deftest tp-test-at-with-object ()
+  "Test tp-at with string object."
+  (let ((str (copy-sequence "Hello World")))
+    (tp-set 0 5 '(face bold help-echo "greeting") str)
+    ;; All properties at position
+    (let ((props (tp-at 0 str)))
+      (should (eq (plist-get props 'face) 'bold))
+      (should (equal (plist-get props 'help-echo) "greeting")))
+    ;; Specific property at position
+    (should (eq (tp-at 0 'face str) 'bold))
+    (should (equal (tp-at 0 'help-echo str) "greeting"))))
+
+(ert-deftest tp-test-at-with-nested-path ()
+  "Test tp-at with nested property path."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (put-text-property 1 6 'face '(:foreground "red" :box (:color "blue" :line-width 2)))
+    (should (equal (tp-at 1 '(face :foreground)) "red"))
+    (should (equal (tp-at 1 '(face :box)) '(:color "blue" :line-width 2)))
+    (should (equal (tp-at 1 '(face :box :color)) "blue"))
+    (should (equal (tp-at 1 '(face :box :line-width)) 2))))
+
+(ert-deftest tp-test-at-with-nested-path-on-string ()
+  "Test tp-at with nested property path on string."
+  (let ((str (copy-sequence "Hello World")))
+    (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave)) str)
+    (should (equal (tp-at 0 '(face :foreground) str) "red"))
+    (should (equal (tp-at 0 '(face :underline :style) str) 'wave))))
+
 (ert-deftest tp-test-at-defaults-to-point ()
-  "Test tp-at defaults to current point."
+  "Test tp-at works with current point."
   (tp-test-with-temp-buffer
     (insert "Hello")
     (tp-set 1 6 '(face bold))
     (goto-char 3)
-    (should (eq (plist-get (tp-at) 'face) 'bold))))
+    (should (eq (plist-get (tp-at (point)) 'face) 'bold))))
 
 (ert-deftest tp-test-plist ()
   "Test tp-plist merges properties from region."
@@ -280,8 +318,8 @@
     (insert "Hello")
     (tp-define-layer layer1 (face bold))
     (tp-push-layer 1 6 'layer1)
-    (should (eq (tp-get 1 'face) 'bold))
-    (should (eq (tp-get 1 'tp-name) 'layer1))))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (eq (tp-at 1 'tp-name) 'layer1))))
 
 (ert-deftest tp-test-push-layer-multiple ()
   "Test pushing multiple layers."
@@ -292,10 +330,10 @@
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; layer2 should be on top (visible)
-    (should (eq (tp-get 1 'face) 'italic))
-    (should (eq (tp-get 1 'tp-name) 'layer2))
+    (should (eq (tp-at 1 'face) 'italic))
+    (should (eq (tp-at 1 'tp-name) 'layer2))
     ;; layer1 should be in the stack below
-    (should (tp-get 1 'tp-layers))))
+    (should (tp-at 1 'tp-layers))))
 
 (ert-deftest tp-test-delete-layer ()
   "Test tp-delete-layer removes layer from stack."
@@ -308,8 +346,8 @@
     ;; Delete top layer
     (tp-delete-layer 1 6 'layer2)
     ;; layer1 should now be visible
-    (should (eq (tp-get 1 'face) 'bold))
-    (should (eq (tp-get 1 'tp-name) 'layer1))))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (eq (tp-at 1 'tp-name) 'layer1))))
 
 (ert-deftest tp-test-delete-layer-from-middle ()
   "Test deleting layer from middle of stack."
@@ -324,7 +362,7 @@
     ;; Delete middle layer
     (tp-delete-layer 1 6 'layer2)
     ;; Top layer should still be visible
-    (should (eq (tp-get 1 'tp-name) 'layer3))
+    (should (eq (tp-at 1 'tp-name) 'layer3))
     ;; layer2 should not exist anymore
     (should-not (tp-layer-exists-p 1 6 'layer2))))
 
@@ -339,7 +377,7 @@
     ;; Pop top layer
     (tp-pop-layer 1 6)
     ;; layer1 should now be visible
-    (should (eq (tp-get 1 'tp-name) 'layer1))))
+    (should (eq (tp-at 1 'tp-name) 'layer1))))
 
 (ert-deftest tp-test-rotate-layer ()
   "Test tp-rotate-layer cycles layers."
@@ -436,7 +474,7 @@
     ;; Should have 1 layer now
     (should (= (tp-layer-count 1 6) 1))
     ;; The merged layer should have properties from both
-    (should (eq (tp-get 1 'tp-name) 'merged-layer))))
+    (should (eq (tp-at 1 'tp-name) 'merged-layer))))
 
 (ert-deftest tp-test-flatten-layers ()
   "Test tp-flatten-layers flattens all layers."
@@ -450,7 +488,7 @@
     (tp-flatten-layers 1 6 'flat-layer)
     ;; Should have 1 layer now
     (should (= (tp-layer-count 1 6) 1))
-    (should (eq (tp-get 1 'tp-name) 'flat-layer))))
+    (should (eq (tp-at 1 'tp-name) 'flat-layer))))
 
 ;;; ============================================================
 ;;; Layer Query Tests
@@ -513,8 +551,8 @@
     (insert "Hello World Hello")
     (let ((regions (tp-match "Hello" 'face 'bold)))
       (should (= (length regions) 2))
-      (should (eq (tp-get 1 'face) 'bold))
-      (should (eq (tp-get 13 'face) 'bold)))))
+      (should (eq (tp-at 1 'face) 'bold))
+      (should (eq (tp-at 13 'face) 'bold)))))
 
 (ert-deftest tp-test-match-returns-regions ()
   "Test tp-match returns correct region pairs."
@@ -531,8 +569,8 @@
     (insert "abc 123 def 456")
     (let ((regions (tp-regexp "[0-9]+" 'face 'bold)))
       (should (= (length regions) 2))
-      (should (eq (tp-get 5 'face) 'bold))
-      (should (eq (tp-get 13 'face) 'bold)))))
+      (should (eq (tp-at 5 'face) 'bold))
+      (should (eq (tp-at 13 'face) 'bold)))))
 
 (ert-deftest tp-test-regexp-returns-regions ()
   "Test tp-regexp returns correct region pairs."
@@ -613,7 +651,7 @@
     (goto-char 1)
     (skip-unless (fboundp 'text-property-search-forward))
     ;; Test that function receives text and can transform it
-    (let ((count (tp-forward-do #'upcase 'marker nil nil 2)))
+    (let ((count (tp-forward-do #'upcase 'marker nil nil nil 2)))
       (should (= count 2))
       ;; Check that text was upcased
       (should (equal (buffer-substring 1 6) "HELLO"))
@@ -631,7 +669,7 @@
       (tp--forward-do
        (lambda (match obj)
          (push (prop-match-beginning match) result))
-       'marker nil nil 2)
+       'marker nil nil nil 2)
       (should (= (length result) 2)))))
 
 (ert-deftest tp-test-backward-do ()
@@ -643,7 +681,7 @@
     (goto-char 18)
     (skip-unless (fboundp 'text-property-search-backward))
     ;; Test that function receives text and can transform it
-    (let ((count (tp-backward-do #'upcase 'marker nil nil 2)))
+    (let ((count (tp-backward-do #'upcase 'marker nil nil nil 2)))
       (should (= count 2))
       ;; Check that text was upcased
       (should (equal (buffer-substring 1 6) "HELLO"))
@@ -661,7 +699,7 @@
       (tp--backward-do
        (lambda (match obj)
          (push (prop-match-beginning match) result))
-       'marker nil nil 2)
+       'marker nil nil nil 2)
       (should (= (length result) 2)))))
 
 (ert-deftest tp-test-forward-do-on-string ()
@@ -669,7 +707,7 @@
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    (let ((count (tp-forward-do #'upcase 'marker nil str 2)))
+    (let ((count (tp-forward-do #'upcase 'marker nil str nil 2)))
       (should (= count 2))
       ;; Check that text was upcased
       (should (equal (substring str 0 5) "HELLO"))
@@ -680,11 +718,37 @@
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    (let ((count (tp-backward-do #'upcase 'marker nil str 2)))
+    (let ((count (tp-backward-do #'upcase 'marker nil str nil 2)))
       (should (= count 2))
       ;; Check that text was upcased
       (should (equal (substring str 0 5) "HELLO"))
       (should (equal (substring str 12 17) "HELLO")))))
+
+(ert-deftest tp-test-forward-do-with-point ()
+  "Test tp-forward-do with point parameter."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    ;; Start from position 6 (after first match)
+    (let ((count (tp-forward-do #'upcase 'marker nil str 6 2)))
+      (should (= count 1))  ; Only one match from position 6
+      ;; First match should NOT be upcased
+      (should (equal (substring str 0 5) "hello"))
+      ;; Second match should be upcased
+      (should (equal (substring str 12 17) "HELLO")))))
+
+(ert-deftest tp-test-backward-do-with-point ()
+  "Test tp-backward-do with point parameter."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    ;; Start from position 10 (before second match)
+    (let ((count (tp-backward-do #'upcase 'marker nil str 10 2)))
+      (should (= count 1))  ; Only one match before position 10
+      ;; First match should be upcased
+      (should (equal (substring str 0 5) "HELLO"))
+      ;; Second match should NOT be upcased
+      (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-search-on-string ()
   "Test tp-search finds all matching properties in a string."
@@ -813,7 +877,7 @@
     ;; Test tp-set alias
     (insert "Hello")
     (tp-set 1 6 '(face bold))
-    (should (eq (tp-get 1 'face) 'bold))))
+    (should (eq (tp-at 1 'face) 'bold))))
 
 ;;; ============================================================
 ;;; Edge Case Tests
@@ -831,19 +895,19 @@
     (insert "Hello World")
     (tp-set 1 8 '(prop1 val1))
     (tp-set 5 12 '(prop2 val2))
-    (should (eq (tp-get 1 'prop1) 'val1))
-    (should (null (tp-get 1 'prop2)))
-    (should (eq (tp-get 6 'prop1) 'val1))
-    (should (eq (tp-get 6 'prop2) 'val2))
-    (should (null (tp-get 10 'prop1)))
-    (should (eq (tp-get 10 'prop2) 'val2))))
+    (should (eq (tp-at 1 'prop1) 'val1))
+    (should (null (tp-at 1 'prop2)))
+    (should (eq (tp-at 6 'prop1) 'val1))
+    (should (eq (tp-at 6 'prop2) 'val2))
+    (should (null (tp-at 10 'prop1)))
+    (should (eq (tp-at 10 'prop2) 'val2))))
 
 (ert-deftest tp-test-single-char-region ()
   "Test operations on single character."
   (tp-test-with-temp-buffer
     (insert "H")
     (tp-set 1 2 '(face bold))
-    (should (eq (tp-get 1 'face) 'bold))))
+    (should (eq (tp-at 1 'face) 'bold))))
 
 (ert-deftest tp-test-layer-on-string ()
   "Test layer operations on string object."
@@ -905,8 +969,8 @@
   (tp-test-with-temp-buffer
     (insert "Hello")
     (tp-set 1 6 '(face bold))
-    (should (eq (tp-get 1 'face) 'bold))
-    (should (eq (tp-get 3 'face) 'bold))))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (eq (tp-at 3 'face) 'bold))))
 
 (ert-deftest tp-test-get-range-property ()
   "Test tp-get with range and specific property.
@@ -947,9 +1011,9 @@ Returns list of (START END VALUE) intervals."
     (tp-set 1 6 '(face bold help-echo "test"))
     ;; tp-reset should completely replace
     (tp-reset 1 6 '(mouse-face highlight))
-    (should (eq (tp-get 1 'mouse-face) 'highlight))
-    (should (null (tp-get 1 'face)))
-    (should (null (tp-get 1 'help-echo)))))
+    (should (eq (tp-at 1 'mouse-face) 'highlight))
+    (should (null (tp-at 1 'face)))
+    (should (null (tp-at 1 'help-echo)))))
 
 (ert-deftest tp-test-reset-on-string ()
   "Test tp-reset on string."
@@ -973,8 +1037,8 @@ Returns list of (START END VALUE) intervals."
     (tp-set 1 6 '(face bold help-echo "test"))
     ;; tp-set should only replace specified properties
     (tp-set 1 6 '(face italic))
-    (should (eq (tp-get 1 'face) 'italic))
-    (should (equal (tp-get 1 'help-echo) "test"))))
+    (should (eq (tp-at 1 'face) 'italic))
+    (should (equal (tp-at 1 'help-echo) "test"))))
 
 (ert-deftest tp-test-set-face ()
   "Test tp-set-face sets only face property."
@@ -982,8 +1046,8 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello")
     (tp-set 1 6 '(face bold help-echo "test"))
     (tp-set-face 1 6 'italic)
-    (should (eq (tp-get 1 'face) 'italic))
-    (should (equal (tp-get 1 'help-echo) "test"))))
+    (should (eq (tp-at 1 'face) 'italic))
+    (should (equal (tp-at 1 'help-echo) "test"))))
 
 (ert-deftest tp-test-set-face-on-string ()
   "Test tp-set-face on string."
@@ -1005,8 +1069,8 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello")
     (tp-set 1 6 '(face bold help-echo "test"))
     (tp-set-display 1 6 '(space :width 10))
-    (should (equal (tp-get 1 'display) '(space :width 10)))
-    (should (eq (tp-get 1 'face) 'bold))))
+    (should (equal (tp-at 1 'display) '(space :width 10)))
+    (should (eq (tp-at 1 'face) 'bold))))
 
 (ert-deftest tp-test-add ()
   "Test tp-add adds/updates properties without replacing."
@@ -1014,9 +1078,9 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello")
     (tp-set 1 6 '(face bold help-echo "test"))
     (tp-add 1 6 '(mouse-face highlight))
-    (should (eq (tp-get 1 'face) 'bold))
-    (should (equal (tp-get 1 'help-echo) "test"))
-    (should (eq (tp-get 1 'mouse-face) 'highlight))))
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "test"))
+    (should (eq (tp-at 1 'mouse-face) 'highlight))))
 
 (ert-deftest tp-test-add-deep-merge ()
   "Test tp-add deeply merges nested properties."
@@ -1024,7 +1088,7 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello")
     (tp-set 1 6 '(face (:foreground "red" :weight bold)))
     (tp-add 1 6 '(face (:background "blue")))
-    (let ((face (tp-get 1 'face)))
+    (let ((face (tp-at 1 'face)))
       (should (equal (plist-get face :foreground) "red"))
       (should (eq (plist-get face :weight) 'bold))
       (should (equal (plist-get face :background) "blue")))))
@@ -1038,26 +1102,26 @@ Returns list of (START END VALUE) intervals."
     (should (equal (get-text-property 0 'help-echo str) "test"))))
 
 ;;; ============================================================
-;;; Enhanced tp-get Tests
+;;; Enhanced tp-at Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-get-nested-sub-property ()
-  "Test tp-get with nested sub-properties."
+(ert-deftest tp-test-at-nested-sub-property ()
+  "Test tp-at with nested sub-properties."
   (tp-test-with-temp-buffer
     (insert "Hello")
     (put-text-property 1 6 'face '(:foreground "red" :box (:color "blue" :line-width 2)))
-    (should (equal (tp-get 1 'face :foreground) "red"))
-    (should (equal (tp-get 1 'face :box :color) "blue"))
-    (should (equal (tp-get 1 'face :box :line-width) 2))))
+    (should (equal (tp-at 1 '(face :foreground)) "red"))
+    (should (equal (tp-at 1 '(face :box :color)) "blue"))
+    (should (equal (tp-at 1 '(face :box :line-width)) 2))))
 
-(ert-deftest tp-test-get-display-sub-property ()
-  "Test tp-get with display sub-properties that are plists."
+(ert-deftest tp-test-at-display-sub-property ()
+  "Test tp-at with display sub-properties that are plists."
   (tp-test-with-temp-buffer
     (insert "Hello")
     ;; Use a plist-style display property
     (put-text-property 1 6 'display '(:height 1.5 :width 10))
-    (should (equal (tp-get 1 'display :height) 1.5))
-    (should (equal (tp-get 1 'display :width) 10))))
+    (should (equal (tp-at 1 '(display :height)) 1.5))
+    (should (equal (tp-at 1 '(display :width)) 10))))
 
 ;;; ============================================================
 ;;; Enhanced tp-remove Tests
@@ -1070,7 +1134,7 @@ Returns list of (START END VALUE) intervals."
     (put-text-property 1 6 'face '(:foreground "red" :underline (:style wave :color "blue")))
     ;; Remove just :underline from face
     (tp-remove 1 6 '(face :underline))
-    (let ((face (tp-get 1 'face)))
+    (let ((face (tp-at 1 'face)))
       (should (equal (plist-get face :foreground) "red"))
       (should (null (plist-get face :underline))))))
 
@@ -1081,7 +1145,7 @@ Returns list of (START END VALUE) intervals."
     (put-text-property 1 6 'face '(:foreground "red" :underline (:style wave :position t :color "blue")))
     ;; Remove :style and :position from :underline, keep :color
     (tp-remove 1 6 '(face :underline (:style :position)))
-    (let* ((face (tp-get 1 'face))
+    (let* ((face (tp-at 1 'face))
            (underline (plist-get face :underline)))
       (should (equal (plist-get face :foreground) "red"))
       (should (equal (plist-get underline :color) "blue"))
@@ -1106,9 +1170,9 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello World Hello")
     (tp-set 1 6 '(help-echo "original"))
     (tp-match-reset "Hello" '(face bold))
-    (should (eq (tp-get 1 'face) 'bold))
+    (should (eq (tp-at 1 'face) 'bold))
     ;; Properties should be completely replaced
-    (should (null (tp-get 1 'help-echo)))))
+    (should (null (tp-at 1 'help-echo)))))
 
 (ert-deftest tp-test-match-add ()
   "Test tp-match-add adds/updates properties."
@@ -1116,9 +1180,9 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello World Hello")
     (tp-set 1 6 '(help-echo "original"))
     (tp-match-add "Hello" '(face bold))
-    (should (eq (tp-get 1 'face) 'bold))
+    (should (eq (tp-at 1 'face) 'bold))
     ;; Original properties should be preserved
-    (should (equal (tp-get 1 'help-echo) "original"))))
+    (should (equal (tp-at 1 'help-echo) "original"))))
 
 (ert-deftest tp-test-regexp-reset ()
   "Test tp-regexp-reset completely replaces properties."
@@ -1126,9 +1190,9 @@ Returns list of (START END VALUE) intervals."
     (insert "abc 123 def 456")
     (tp-set 5 8 '(help-echo "original"))
     (tp-regexp-reset "[0-9]+" '(face bold))
-    (should (eq (tp-get 5 'face) 'bold))
+    (should (eq (tp-at 5 'face) 'bold))
     ;; Properties should be completely replaced
-    (should (null (tp-get 5 'help-echo)))))
+    (should (null (tp-at 5 'help-echo)))))
 
 (ert-deftest tp-test-regexp-add ()
   "Test tp-regexp-add adds/updates properties."
@@ -1136,9 +1200,9 @@ Returns list of (START END VALUE) intervals."
     (insert "abc 123 def 456")
     (tp-set 5 8 '(help-echo "original"))
     (tp-regexp-add "[0-9]+" '(face bold))
-    (should (eq (tp-get 5 'face) 'bold))
+    (should (eq (tp-at 5 'face) 'bold))
     ;; Original properties should be preserved
-    (should (equal (tp-get 5 'help-echo) "original"))))
+    (should (equal (tp-at 5 'help-echo) "original"))))
 
 (ert-deftest tp-test-match-reset-on-string ()
   "Test tp-match-reset on string."

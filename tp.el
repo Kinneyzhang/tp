@@ -406,59 +406,49 @@ Example: (tp--get-nested \\='(:a 1 :b 2 :c 3) \\='((:a :b))) => (:a 1 :b 2)"
              (t nil))))
       (tp--get-nested next-value rest))))
 
-(defun tp-get (pos-or-start-or-string &optional property-or-end &rest args)
+(defun tp-get (start-or-string &optional end-or-property &rest args)
   "Get text property value(s) with support for nested sub-properties.
 
 This function supports multiple calling conventions:
 
-1. Single position, single property:
-   (tp-get POSITION PROPERTY)
-   (tp-get POSITION PROPERTY OBJECT)
-
-2. Single position, nested sub-property:
-   (tp-get POSITION PROPERTY SUB-KEY ...)
-   (tp-get 5 \\='face :foreground)
-   (tp-get 5 \\='face :box :color)
-   (tp-get 5 \\='display \\='space :width)
-
-3. Range with property path as list:
+1. Range with property path as list:
    (tp-get START END \\='(PROPERTY) OBJECT)
    (tp-get START END \\='(PROPERTY SUB-KEY ...) OBJECT)
    (tp-get 5 20 \\='(face) str-or-buffer-or-nil)
    (tp-get 5 20 \\='(face :underline) str-or-buffer-or-nil)
    (tp-get 5 20 \\='(face :underline :style) str-or-buffer-or-nil)
 
-4. Range, single property:
+2. Range, single property:
    (tp-get START END PROPERTY)
    (tp-get START END PROPERTY OBJECT)
 
-5. Range, nested sub-property:
+3. Range, nested sub-property:
    (tp-get START END PROPERTY SUB-KEY ...)
 
-6. Range, all properties:
+4. Range, all properties:
    (tp-get START END)
    (tp-get START END OBJECT)
 
-7. Entire string, all properties:
+5. Entire string, all properties:
    (tp-get STRING)
 
-8. Entire string, single property:
+6. Entire string, single property:
    (tp-get STRING PROPERTY)
 
-9. Entire string, nested sub-property:
+7. Entire string, nested sub-property:
    (tp-get STRING PROPERTY SUB-KEY ...)
    (tp-get str \\='face)
    (tp-get str \\='face :underline)
    (tp-get str \\='face :underline :style)
 
-10. Entire string with property path as list:
-    (tp-get STRING \\='(PROPERTY SUB-KEY ...))
-    (tp-get str \\='(face :foreground))
+8. Entire string with property path as list:
+   (tp-get STRING \\='(PROPERTY SUB-KEY ...))
+   (tp-get str \\='(face :foreground))
 
-For range and entire string queries, returns a list of (START END VALUE)
-intervals, allowing you to see all property values across the range.
+Returns a list of (START END VALUE) intervals, allowing you to see all
+property values across the range.
 
-For single position queries, returns the property value at that position.
+For single position queries, use `tp-at' instead.
 
 For buffers, positions are 1-indexed.
 For strings, positions are 0-indexed.
@@ -466,14 +456,14 @@ OBJECT defaults to current buffer."
   (cond
    ;; (tp-get STRING ...) - entire string
    ;; Returns list of (START END VALUE) intervals for all property values
-   ((stringp pos-or-start-or-string)
-    (let* ((str pos-or-start-or-string)
+   ((stringp start-or-string)
+    (let* ((str start-or-string)
            (len (length str))
            (property nil)
            (sub-path nil))
       (cond
        ;; (tp-get str) - return all property intervals
-       ((null property-or-end)
+       ((null end-or-property)
         (let ((intervals nil)
               (pos 0))
           (while (< pos len)
@@ -484,9 +474,9 @@ OBJECT defaults to current buffer."
               (setq pos next-pos)))
           (nreverse intervals)))
        ;; (tp-get str '(face :foreground)) - property path as list
-       ((listp property-or-end)
-        (setq property (car property-or-end))
-        (setq sub-path (cdr property-or-end))
+       ((listp end-or-property)
+        (setq property (car end-or-property))
+        (setq sub-path (cdr end-or-property))
         (let ((intervals nil)
               (pos 0))
           (while (< pos len)
@@ -500,8 +490,8 @@ OBJECT defaults to current buffer."
               (setq pos next-pos)))
           (nreverse intervals)))
        ;; (tp-get str 'face ...) - property as symbol with optional sub-path
-       ((symbolp property-or-end)
-        (setq property property-or-end)
+       ((symbolp end-or-property)
+        (setq property end-or-property)
         (setq sub-path args)
         (let ((intervals nil)
               (pos 0))
@@ -515,28 +505,11 @@ OBJECT defaults to current buffer."
                 (push (list pos next-pos value) intervals))
               (setq pos next-pos)))
           (nreverse intervals))))))
-   ;; (tp-get POS PROP ...) or (tp-get POS PROP OBJECT) - single position with symbol property
-   ((and (numberp pos-or-start-or-string)
-         (symbolp property-or-end))
-    (let* ((prop-value (get-text-property pos-or-start-or-string property-or-end nil))
-           ;; Determine if last arg is object or sub-property path
-           (sub-path args)
-           (object nil))
-      ;; Check if last arg could be an object
-      (when (and args
-                 (let ((last (car (last args))))
-                   (or (bufferp last) (stringp last))))
-        (setq object (car (last args)))
-        (setq sub-path (butlast args))
-        (setq prop-value (get-text-property pos-or-start-or-string property-or-end object)))
-      (if sub-path
-          (tp--get-nested prop-value sub-path)
-        prop-value)))
    ;; (tp-get START END ...) - range form
-   ((and (numberp pos-or-start-or-string)
-         (numberp property-or-end))
-    (let* ((start pos-or-start-or-string)
-           (end property-or-end)
+   ((and (numberp start-or-string)
+         (numberp end-or-property))
+    (let* ((start start-or-string)
+           (end end-or-property)
            (rest-args args)
            (property nil)
            (sub-path nil)
@@ -592,11 +565,71 @@ OBJECT defaults to current buffer."
           (nreverse intervals)))))
    (t (error "Invalid arguments to tp-get"))))
 
-(defun tp-at (&optional point object)
-  "Get all text properties at POINT in OBJECT.
-POINT defaults to current point.
-OBJECT defaults to current buffer."
-  (text-properties-at (or point (point)) object))
+(defun tp-at (pos &optional property-or-object object)
+  "Get text properties at POS in OBJECT, optionally filtered by PROPERTY.
+
+This function supports multiple calling conventions:
+
+1. Get all properties at position:
+   (tp-at POS)
+   (tp-at POS OBJECT)
+
+2. Get specific property at position:
+   (tp-at POS PROPERTY)
+   (tp-at POS PROPERTY OBJECT)
+
+3. Get nested sub-property at position:
+   (tp-at POS \\='(PROPERTY SUB-KEY ...))
+   (tp-at POS \\='(PROPERTY SUB-KEY ...) OBJECT)
+
+POS is the position to query.
+PROPERTY-OR-OBJECT can be a property symbol/list, or an object (buffer/string).
+OBJECT is the buffer or string to query; nil defaults to current buffer.
+
+For strings, positions are 0-indexed.
+For buffers, positions are 1-indexed.
+
+Examples:
+  ;; Get all properties at position 5 in current buffer
+  (tp-at 5)
+  ;; Get all properties at position 0 in string
+  (tp-at 0 my-string)
+  ;; Get face property at position 5
+  (tp-at 5 \\='face)
+  ;; Get face property at position 0 in string
+  (tp-at 0 \\='face my-string)
+  ;; Get nested sub-property
+  (tp-at 5 \\='(face :foreground))
+  (tp-at 5 \\='(face :box :color))
+  (tp-at 5 \\='(display :width))"
+  (let ((property nil)
+        (sub-path nil)
+        (obj nil))
+    ;; Parse arguments
+    (cond
+     ;; property-or-object is nil - just get all props
+     ((null property-or-object)
+      (setq obj nil))
+     ;; property-or-object is a buffer/string - it's the object
+     ((or (bufferp property-or-object) (stringp property-or-object))
+      (setq obj property-or-object))
+     ;; property-or-object is a symbol - it's a property
+     ((symbolp property-or-object)
+      (setq property property-or-object
+            obj object))
+     ;; property-or-object is a list - it's a property path
+     ((listp property-or-object)
+      (setq property (car property-or-object)
+            sub-path (cdr property-or-object)
+            obj object))
+     (t (error "Invalid PROPERTY-OR-OBJECT argument: %S" property-or-object)))
+    ;; Get the value
+    (if property
+        (let ((prop-value (get-text-property pos property obj)))
+          (if sub-path
+              (tp--get-nested prop-value sub-path)
+            prop-value))
+      (text-properties-at pos obj))))
 
 ;;; Private functions for fine-grained property manipulation
 
@@ -1060,7 +1093,7 @@ Uses `tp-search-backward' for buffers and `tp-search' for strings."
             (setq result (tp-search-backward property value))))
         result)))))
 
-(defun tp--forward-do (function property &optional value object n)
+(defun tp--forward-do (function property &optional value object point n)
   "Internal: Search forward N times for PROPERTY and apply FUNCTION to each match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
@@ -1068,13 +1101,18 @@ and OBJECT.
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
+POINT is the starting position for search; for buffers nil means current point,
+for strings nil means 0.
 
 Returns the number of successful matches."
   (let ((count (or n 1)))
     (cond
      ;; String object
      ((stringp object)
-      (let ((matches (seq-take (tp-search object property value) count)))
+      (let* ((start-pos (or point 0))
+             (all-matches (tp-search object property value))
+             (filtered-matches (seq-filter (lambda (m) (>= (car m) start-pos)) all-matches))
+             (matches (seq-take filtered-matches count)))
         (dolist (match matches)
           (funcall function match object))
         (length matches)))
@@ -1083,13 +1121,15 @@ Returns the number of successful matches."
       (let ((matches 0)
             (buf (or object (current-buffer))))
         (with-current-buffer buf
-          (dotimes (_ count)
-            (when-let ((match (tp-search-forward property value)))
-              (funcall function match buf)
-              (cl-incf matches))))
+          (save-excursion
+            (when point (goto-char point))
+            (dotimes (_ count)
+              (when-let ((match (tp-search-forward property value)))
+                (funcall function match buf)
+                (cl-incf matches)))))
         matches)))))
 
-(defun tp-forward-do (function property &optional value object n)
+(defun tp-forward-do (function property &optional value object point n)
   "Search forward N times for text with PROPERTY and apply FUNCTION to each match.
 
 FUNCTION receives the matched text as its only argument.  The return value
@@ -1098,6 +1138,8 @@ of FUNCTION replaces the matched text in the string or buffer.
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
+POINT is the starting position for search; for buffers nil means current point,
+for strings nil means 0.
 
 Returns the number of successful matches.
 
@@ -1108,7 +1150,10 @@ If the replacement is longer, it will be truncated.
 
 Example:
   ;; Upcase all matched text
-  (tp-forward-do #\\='upcase \\='marker nil my-string 3)"
+  (setq my-string (copy-sequence \"hello world hello\"))
+  (tp-set 0 5 \\='(marker t) my-string)
+  (tp-set 12 17 \\='(marker t) my-string)
+  (tp-forward-do #\\='upcase \\='marker nil my-string nil 3)"
   (tp--forward-do
    (lambda (match obj)
      (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
@@ -1140,9 +1185,9 @@ Example:
                (delete-region start end)
                (goto-char start)
                (insert new-text)))))))
-   property value object n))
+   property value object point n))
 
-(defun tp--backward-do (function property &optional value object n)
+(defun tp--backward-do (function property &optional value object point n)
   "Internal: Search backward N times for PROPERTY and apply FUNCTION to each match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
@@ -1150,13 +1195,18 @@ and OBJECT.
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
+POINT is the starting position for search; for buffers nil means current point,
+for strings nil means end of string.
 
 Returns the number of successful matches."
   (let ((count (or n 1)))
     (cond
      ;; String object - reverse the matches
      ((stringp object)
-      (let ((matches (seq-take (nreverse (tp-search object property value)) count)))
+      (let* ((start-pos (or point (length object)))
+             (all-matches (tp-search object property value))
+             (filtered-matches (seq-filter (lambda (m) (<= (cadr m) start-pos)) all-matches))
+             (matches (seq-take (nreverse filtered-matches) count)))
         (dolist (match matches)
           (funcall function match object))
         (length matches)))
@@ -1165,13 +1215,15 @@ Returns the number of successful matches."
       (let ((matches 0)
             (buf (or object (current-buffer))))
         (with-current-buffer buf
-          (dotimes (_ count)
-            (when-let ((match (tp-search-backward property value)))
-              (funcall function match buf)
-              (cl-incf matches))))
+          (save-excursion
+            (when point (goto-char point))
+            (dotimes (_ count)
+              (when-let ((match (tp-search-backward property value)))
+                (funcall function match buf)
+                (cl-incf matches)))))
         matches)))))
 
-(defun tp-backward-do (function property &optional value object n)
+(defun tp-backward-do (function property &optional value object point n)
   "Search backward N times for text with PROPERTY and apply FUNCTION to each match.
 
 FUNCTION receives the matched text as its only argument.  The return value
@@ -1180,6 +1232,8 @@ of FUNCTION replaces the matched text in the string or buffer.
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
+POINT is the starting position for search; for buffers nil means current point,
+for strings nil means end of string.
 
 Returns the number of successful matches.
 
@@ -1190,7 +1244,10 @@ If the replacement is longer, it will be truncated.
 
 Example:
   ;; Upcase all matched text
-  (tp-backward-do #\\='upcase \\='marker nil my-string 3)"
+  (setq my-string (copy-sequence \"hello world hello\"))
+  (tp-set 0 5 \\='(marker t) my-string)
+  (tp-set 12 17 \\='(marker t) my-string)
+  (tp-backward-do #\\='upcase \\='marker nil my-string nil 3)"
   (tp--backward-do
    (lambda (match obj)
      (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
@@ -1222,7 +1279,7 @@ Example:
                (delete-region start end)
                (goto-char start)
                (insert new-text)))))))
-   property value object n))
+   property value object point n))
 
 (defun tp-search (start-or-string &optional end-or-property property-or-value value object)
   "Search for all text with PROPERTY in a buffer/string range or entire string.
