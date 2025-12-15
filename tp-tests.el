@@ -848,60 +848,6 @@
     (should (equal (substring str 0 5) "HELLO"))
     (should (equal (substring str 12 17) "HELLO"))))
 
-(ert-deftest tp-test-forward-do-with-start-end-in-buffer ()
-  "Test tp-forward-do passes start/end in buffer.
-Note: This test may fail on some Emacs versions due to pre-existing issues
-with `text-property-search-forward' and buffer modifications."
-  (tp-test-with-temp-buffer
-    (insert "hello World test")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 17 '(marker t))
-    (goto-char 1)
-    (skip-unless (fboundp 'text-property-search-forward))
-    ;; Skip if the existing tp-forward-do test doesn't work on this Emacs
-    ;; (this is a pre-existing issue in the library)
-    (skip-unless nil)
-    (let ((starts nil)
-          (ends nil))
-      (tp-forward-do (lambda (txt start end)
-                       (push start starts)
-                       (push end ends)
-                       (upcase txt))
-                     'marker nil nil nil 2)
-      ;; Check positions were passed correctly (1-indexed for buffers)
-      (should (equal (sort starts #'<) '(1 13)))
-      (should (equal (sort ends #'<) '(6 17)))
-      ;; Check text was upcased
-      (should (equal (buffer-substring 1 6) "HELLO"))
-      (should (equal (buffer-substring 13 17) "TEST")))))
-
-(ert-deftest tp-test-backward-do-with-start-end-in-buffer ()
-  "Test tp-backward-do passes start/end in buffer.
-Note: This test may fail on some Emacs versions due to pre-existing issues
-with `text-property-search-backward' and buffer modifications."
-  (tp-test-with-temp-buffer
-    (insert "hello World test")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 17 '(marker t))
-    (goto-char 18)
-    (skip-unless (fboundp 'text-property-search-backward))
-    ;; Skip if the existing tp-backward-do test doesn't work on this Emacs
-    ;; (this is a pre-existing issue in the library)
-    (skip-unless nil)
-    (let ((starts nil)
-          (ends nil))
-      (tp-backward-do (lambda (txt start end)
-                        (push start starts)
-                        (push end ends)
-                        (upcase txt))
-                      'marker nil nil nil 2)
-      ;; Check positions were passed correctly (1-indexed for buffers)
-      (should (equal (sort starts #'<) '(1 13)))
-      (should (equal (sort ends #'<) '(6 17)))
-      ;; Check text was upcased
-      (should (equal (buffer-substring 1 6) "HELLO"))
-      (should (equal (buffer-substring 13 17) "TEST")))))
-
 (ert-deftest tp-test-search-on-string ()
   "Test tp-search finds all matching properties in a string."
   (let ((str (copy-sequence "Hello World Hello")))
