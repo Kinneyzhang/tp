@@ -1101,6 +1101,11 @@ OBJECT can be a buffer or string; nil defaults to current buffer.
 
 Returns the number of successful matches.
 
+Note: For string objects, the replacement text must have the same length
+as the original matched text, since strings have fixed length in Emacs.
+If the replacement is shorter, only that portion will be replaced.
+If the replacement is longer, it will be truncated.
+
 Example:
   ;; Upcase all matched text
   (tp-forward-do #\\='upcase \\='marker nil my-string 3)"
@@ -1115,6 +1120,7 @@ Example:
        (when (and new-text (not (equal new-text text)))
          (if (stringp obj)
              ;; For strings, we need to replace in-place
+             ;; Note: store-substring has length restrictions
              (progn
                (store-substring obj start new-text))
            ;; For buffers, delete and insert
@@ -1165,6 +1171,11 @@ OBJECT can be a buffer or string; nil defaults to current buffer.
 
 Returns the number of successful matches.
 
+Note: For string objects, the replacement text must have the same length
+as the original matched text, since strings have fixed length in Emacs.
+If the replacement is shorter, only that portion will be replaced.
+If the replacement is longer, it will be truncated.
+
 Example:
   ;; Upcase all matched text
   (tp-backward-do #\\='upcase \\='marker nil my-string 3)"
@@ -1179,6 +1190,7 @@ Example:
        (when (and new-text (not (equal new-text text)))
          (if (stringp obj)
              ;; For strings, we need to replace in-place
+             ;; Note: store-substring has length restrictions
              (progn
                (store-substring obj start new-text))
            ;; For buffers, delete and insert
@@ -1307,6 +1319,11 @@ FUNCTION receives the matched text as its only argument.  The return value
 of FUNCTION replaces the matched text in the string or buffer.
 
 Returns the number of matches processed.
+
+Note: For string objects, the replacement text must have the same length
+as the original matched text, since strings have fixed length in Emacs.
+If the replacement is shorter, only that portion will be replaced.
+If the replacement is longer, it will be truncated.
 
 Example:
   ;; Upcase all matched text
