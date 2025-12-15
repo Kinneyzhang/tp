@@ -2141,7 +2141,7 @@ OBJECT defaults to current buffer."
 
 ;;; Layer property manipulation functions
 
-(defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object object)
+(defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object &rest rest)
   "Add/merge properties to specified layers.
 
 This function supports two calling conventions:
@@ -2150,13 +2150,14 @@ This function supports two calling conventions:
    (tp-add-to-layers IDX-OR-LAYER-NAME-LIST START END PLIST OBJECT)
 
 2. Entire string:
-   (tp-add-to-layers IDX-OR-LAYER-NAME-LIST STRING &rest PLIST)
+   (tp-add-to-layers IDX-OR-LAYER-NAME-LIST STRING PROP VAL ...)
 
 IDX-OR-LAYER-NAME-LIST is a list of layer indices (integers) or
 layer names (symbols) specifying which layers to add properties to.
 For indices: 0 means top layer, -1 means bottom layer.
 
-PLIST is a property list to merge into the specified layers.
+For region form, PLIST is a property list to merge into the specified layers.
+For string form, PROP VAL ... are property-value pairs to merge.
 Properties are deeply merged (nested plists are merged, not replaced).
 
 OBJECT defaults to current buffer for region form.
@@ -2165,25 +2166,26 @@ Returns the modified object (string) or nil for buffer operations."
   (let (start end plist obj layer-ids)
     (setq layer-ids idx-or-layer-name-list)
     (cond
-     ;; Entire string form: (tp-add-to-layers ids string &rest plist)
+     ;; Entire string form: (tp-add-to-layers ids string prop val ...)
      ((stringp start-or-string)
       (setq obj start-or-string
             start 0
-            end (length start-or-string)
-            plist (if (listp end-or-plist)
-                      (if plist-or-object
-                          (cons end-or-plist (cons plist-or-object (when object (list object))))
-                        end-or-plist)
-                    (list end-or-plist plist-or-object))))
+            end (length start-or-string))
+      ;; Construct plist from end-or-plist, plist-or-object, and rest
+      (when end-or-plist
+        (setq plist (cons end-or-plist
+                          (if plist-or-object
+                              (cons plist-or-object rest)
+                            rest)))))
      ;; Region form: (tp-add-to-layers ids start end plist object)
      ((numberp start-or-string)
       (setq start start-or-string
             end end-or-plist
             plist plist-or-object
-            obj object)))
+            obj (car rest))))
 
-    ;; Handle plist as list if needed
-    (when (and (listp plist) (listp (car plist)) (keywordp (caar plist)))
+    ;; Handle plist wrapped in a list (from region form)
+    (when (and (listp plist) (not (keywordp (car-safe plist))) (listp (car-safe plist)))
       (setq plist (car plist)))
 
     ;; Process each interval
@@ -2210,7 +2212,7 @@ Returns the modified object (string) or nil for buffer operations."
      start end obj)
     (if (stringp obj) obj nil)))
 
-(defun tp-add-to-all-layers (start-or-string &optional end-or-plist plist-or-object object)
+(defun tp-add-to-all-layers (start-or-string &optional end-or-plist plist-or-object &rest rest)
   "Add/merge properties to all layers.
 
 This function supports two calling conventions:
@@ -2219,9 +2221,10 @@ This function supports two calling conventions:
    (tp-add-to-all-layers START END PLIST OBJECT)
 
 2. Entire string:
-   (tp-add-to-all-layers STRING &rest PLIST)
+   (tp-add-to-all-layers STRING PROP VAL ...)
 
-PLIST is a property list to merge into all layers.
+For region form, PLIST is a property list to merge into all layers.
+For string form, PROP VAL ... are property-value pairs to merge.
 Properties are deeply merged (nested plists are merged, not replaced).
 
 OBJECT defaults to current buffer for region form.
@@ -2232,25 +2235,26 @@ layer indices and passing them to add the plist to every layer.
 Returns the modified object (string) or nil for buffer operations."
   (let (start end plist obj)
     (cond
-     ;; Entire string form: (tp-add-to-all-layers string &rest plist)
+     ;; Entire string form: (tp-add-to-all-layers string prop val ...)
      ((stringp start-or-string)
       (setq obj start-or-string
             start 0
-            end (length start-or-string)
-            plist (if (listp end-or-plist)
-                      (if plist-or-object
-                          (cons end-or-plist (cons plist-or-object (when object (list object))))
-                        end-or-plist)
-                    (list end-or-plist plist-or-object))))
+            end (length start-or-string))
+      ;; Construct plist from end-or-plist, plist-or-object, and rest
+      (when end-or-plist
+        (setq plist (cons end-or-plist
+                          (if plist-or-object
+                              (cons plist-or-object rest)
+                            rest)))))
      ;; Region form: (tp-add-to-all-layers start end plist object)
      ((numberp start-or-string)
       (setq start start-or-string
             end end-or-plist
             plist plist-or-object
-            obj object)))
+            obj (car rest))))
 
-    ;; Handle plist as list if needed
-    (when (and (listp plist) (listp (car plist)) (keywordp (caar plist)))
+    ;; Handle plist wrapped in a list (from region form)
+    (when (and (listp plist) (not (keywordp (car-safe plist))) (listp (car-safe plist)))
       (setq plist (car plist)))
 
     ;; Get the maximum layer count in the region to build a list of all indices
