@@ -832,18 +832,39 @@ POINT defaults to current point.
 OBJECT defaults to current buffer."
   (text-properties-at (or point (point)) object))
 
-(defun tp-plist (start end &optional object)
-  "Get the property list of text at START to END in OBJECT.
-Returns a plist of all properties in the region."
-  (let ((props nil)
-        (pos start))
-    (while (< pos end)
-      (let ((current-props (tp-at pos object)))
-        (cl-loop for (key val) on current-props by #'cddr
-                 do (unless (plist-member props key)
-                      (setq props (plist-put props key val)))))
-      (setq pos (next-single-property-change pos nil object end)))
-    props))
+(defun tp-plist (start-or-string &optional end object)
+  "Get the property list of text in a region or string.
+
+This function supports two calling conventions:
+
+1. Buffer/string region:
+   (tp-plist START END &optional OBJECT)
+
+2. Entire string:
+   (tp-plist STRING)
+
+Returns a plist of all properties in the region or string."
+  (let (start finish obj)
+    (cond
+     ;; Entire string form: (tp-plist string)
+     ((stringp start-or-string)
+      (setq obj start-or-string
+            start 0
+            finish (length start-or-string)))
+     ;; Region form: (tp-plist start end &optional object)
+     ((numberp start-or-string)
+      (setq start start-or-string
+            finish end
+            obj object)))
+    (let ((props nil)
+          (pos start))
+      (while (< pos finish)
+        (let ((current-props (tp-at pos obj)))
+          (cl-loop for (key val) on current-props by #'cddr
+                   do (unless (plist-member props key)
+                        (setq props (plist-put props key val)))))
+        (setq pos (next-single-property-change pos nil obj finish)))
+      props)))
 
 ;;; Text property intervals
 ;; Note: Uses `object-intervals' which requires Emacs 28.1+
@@ -863,10 +884,18 @@ Uses `object-intervals' (Emacs 28.1+)."
      (t (error "Invalid format of object: %S"
                (type-of object))))))
 
-(defun tp-empty-p (object)
+(defun tp-empty-p (&optional object)
   "Return t if OBJECT has no text properties.
+OBJECT can be a string or buffer; nil defaults to current buffer.
 Uses `object-intervals' (Emacs 28.1+)."
-  (null (object-intervals object)))
+  (let ((obj (or object (current-buffer))))
+    (cond
+     ((stringp obj)
+      (null (object-intervals obj)))
+     ((bufferp obj)
+      (with-current-buffer obj
+        (null (object-intervals (buffer-substring (point-min) (point-max))))))
+     (t (error "Invalid object type: %S" (type-of obj))))))
 
 (defun tp-intervals-map (function start end &optional object)
   "Apply FUNCTION to all intervals between START and END in OBJECT.
@@ -1469,6 +1498,180 @@ VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-forward'."
   "Search backward for text with PROPERTY.
 VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-backward'."
   (text-property-search-backward property value predicate not-current))
+
+(defun tp-forward (property &optional value object n)
+  "Search forward N times for text with PROPERTY.
+
+N is the number of searches, defaulting to 1.
+VALUE is the optional value to match.
+OBJECT can be a buffer; nil defaults to current buffer.
+
+Returns the prop-match object from the last successful search,
+or nil if not found.
+
+Uses `tp-search-forward' internally."
+  (let ((count (or n 1))
+        (result nil))
+    (when object
+      (set-buffer object))
+    (dotimes (_ count)
+      (setq result (tp-search-forward property value)))
+    result))
+
+(defun tp-backward (property &optional value object n)
+  "Search backward N times for text with PROPERTY.
+
+N is the number of searches, defaulting to 1.
+VALUE is the optional value to match.
+OBJECT can be a buffer; nil defaults to current buffer.
+
+Returns the prop-match object from the last successful search,
+or nil if not found.
+
+Uses `tp-search-backward' internally."
+  (let ((count (or n 1))
+        (result nil))
+    (when object
+      (set-buffer object))
+    (dotimes (_ count)
+      (setq result (tp-search-backward property value)))
+    result))
+
+(defun tp-forward-do (function property &optional value object n)
+  "Search forward N times for text with PROPERTY and apply FUNCTION to each match.
+
+FUNCTION receives two arguments: the prop-match object and OBJECT.
+N is the number of searches, defaulting to 1.
+VALUE is the optional value to match.
+OBJECT can be a buffer; nil defaults to current buffer.
+
+Returns the number of successful matches."
+  (let ((count (or n 1))
+        (matches 0)
+        (buf (or object (current-buffer))))
+    (with-current-buffer buf
+      (dotimes (_ count)
+        (when-let ((match (tp-search-forward property value)))
+          (funcall function match buf)
+          (cl-incf matches))))
+    matches))
+
+(defun tp-backward-do (function property &optional value object n)
+  "Search backward N times for text with PROPERTY and apply FUNCTION to each match.
+
+FUNCTION receives two arguments: the prop-match object and OBJECT.
+N is the number of searches, defaulting to 1.
+VALUE is the optional value to match.
+OBJECT can be a buffer; nil defaults to current buffer.
+
+Returns the number of successful matches."
+  (let ((count (or n 1))
+        (matches 0)
+        (buf (or object (current-buffer))))
+    (with-current-buffer buf
+      (dotimes (_ count)
+        (when-let ((match (tp-search-backward property value)))
+          (funcall function match buf)
+          (cl-incf matches))))
+    matches))
+
+(defun tp-search (start-or-string &optional end-or-property property-or-value value object)
+  "Search for all text with PROPERTY in a buffer/string range or entire string.
+
+This function supports two calling conventions:
+
+1. Buffer/string region:
+   (tp-search START END PROPERTY &optional VALUE OBJECT)
+
+2. Entire string:
+   (tp-search STRING PROPERTY &optional VALUE)
+
+Returns a list of prop-match objects for all matching regions.
+Each prop-match object has beginning, end, and value information."
+  (cond
+   ;; Entire string form: (tp-search string property &optional value)
+   ((stringp start-or-string)
+    (let* ((str start-or-string)
+           (property end-or-property)
+           (value property-or-value)
+           (results nil)
+           (pos 0)
+           (len (length str)))
+      (while (< pos len)
+        (let ((prop-val (get-text-property pos property str)))
+          (if (and prop-val
+                   (or (null value)
+                       (equal prop-val value)))
+              ;; Find the extent of this property
+              (let ((next-change (or (next-single-property-change pos property str len) len)))
+                (push (list pos next-change prop-val) results)
+                (setq pos next-change))
+            ;; No match, move to next change
+            (setq pos (or (next-single-property-change pos property str len) len)))))
+      (nreverse results)))
+   ;; Buffer/string region form: (tp-search start end property &optional value object)
+   ((numberp start-or-string)
+    (let* ((start start-or-string)
+           (end end-or-property)
+           (property property-or-value)
+           (value value)
+           (obj (or object (current-buffer)))
+           (results nil)
+           (pos start))
+      (if (stringp obj)
+          ;; String object
+          (while (< pos end)
+            (let ((prop-val (get-text-property pos property obj)))
+              (if (and prop-val
+                       (or (null value)
+                           (equal prop-val value)))
+                  (let ((next-change (or (next-single-property-change pos property obj end) end)))
+                    (push (list pos next-change prop-val) results)
+                    (setq pos next-change))
+                (setq pos (or (next-single-property-change pos property obj end) end)))))
+        ;; Buffer object
+        (with-current-buffer obj
+          (while (< pos end)
+            (let ((prop-val (get-text-property pos property)))
+              (if (and prop-val
+                       (or (null value)
+                           (equal prop-val value)))
+                  (let ((next-change (or (next-single-property-change pos property nil end) end)))
+                    (push (list pos next-change prop-val) results)
+                    (setq pos next-change))
+                (setq pos (or (next-single-property-change pos property nil end) end)))))))
+      (nreverse results)))
+   (t (error "Invalid first argument: %S" start-or-string))))
+
+(defun tp-search-do (function start-or-string &optional end-or-property property-or-value value object)
+  "Execute FUNCTION on all matches of PROPERTY in a buffer/string range or entire string.
+
+This function supports two calling conventions:
+
+1. Buffer/string region:
+   (tp-search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
+
+2. Entire string:
+   (tp-search-do FUNCTION STRING PROPERTY &optional VALUE)
+
+FUNCTION receives two arguments: the prop-match (list of START END VALUE) and OBJECT.
+Returns the number of matches processed."
+  (let ((matches
+         (cond
+          ;; Entire string form
+          ((stringp start-or-string)
+           (tp-search start-or-string end-or-property property-or-value))
+          ;; Buffer/string region form
+          ((numberp start-or-string)
+           (tp-search start-or-string end-or-property property-or-value value object))
+          (t (error "Invalid first argument: %S" start-or-string))))
+        (obj (cond
+              ((stringp start-or-string) start-or-string)
+              ((numberp start-or-string) (or object (current-buffer)))
+              (t nil))))
+    (dolist (match matches)
+      (funcall function match obj))
+    (length matches)))
 
 ;;; Match and regexp functions (similar to ov-match and ov-regexp)
 

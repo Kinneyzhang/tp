@@ -86,20 +86,18 @@ A complete overview of all tp.el functions organized by category:
 #### Search & Navigation Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-forward`](#tp-forward--tp-backward) | Search forward for text with property |
-| [`tp-backward`](#tp-forward--tp-backward) | Search backward for text with property |
-| [`tp-next`](#tp-next--tp-prev) | Get next position with text properties |
-| [`tp-prev`](#tp-next--tp-prev) | Get previous position with text properties |
-| [`tp-goto-next`](#tp-goto-next--tp-goto-prev) | Move point to next text with property |
-| [`tp-goto-prev`](#tp-goto-next--tp-goto-prev) | Move point to previous text with property |
-| [`tp-regions-map`](#tp-regions-map--tp-strings-map) | Apply function to all regions with property |
-| [`tp-strings-map`](#tp-regions-map--tp-strings-map) | Apply function to all strings with property |
+| [`tp-search-forward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-forward |
+| [`tp-search-backward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-backward |
+| [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property |
+| [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to N forward matches |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to N backward matches |
+| [`tp-search`](#tp-search---search-all-matches) | Search all matching properties in range or string |
+| [`tp-search-do`](#tp-search-do---apply-function-to-all-matches) | Apply function to all matching properties |
 
 #### Query Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-in`](#tp-in---find-regions-with-property) | Find all regions with a specific property |
-| [`tp-all`](#tp-all---get-all-propertized-regions) | Get all propertized regions |
 | [`tp-intervals`](#tp-intervals---get-property-intervals) | Get property intervals in a region |
 | [`tp-empty-p`](#tp-empty-p---check-for-properties) | Check if object has no properties |
 | [`tp-plist`](#tp-plist---get-merged-properties) | Get merged plist of all properties |
@@ -552,14 +550,31 @@ Add/merge properties on regexp matches with deep merge support.
 
 ### Search & Navigation Functions
 
+#### `tp-search-forward` / `tp-search-backward`
+
+```elisp
+(tp-search-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
+(tp-search-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
+```
+
+Raw wrappers for Emacs's `text-property-search-forward` and `text-property-search-backward`.
+These are low-level search functions that work directly with prop-match objects.
+
+---
+
 #### `tp-forward` / `tp-backward`
 
 ```elisp
-(tp-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
-(tp-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
+(tp-forward PROPERTY &optional VALUE OBJECT N)
+(tp-backward PROPERTY &optional VALUE OBJECT N)
 ```
 
-Search forward/backward for text with PROPERTY.
+Search forward/backward N times for text with PROPERTY.
+
+- **N** is the number of searches, defaulting to 1.
+- **VALUE** is the optional value to match.
+- **OBJECT** can be a buffer; nil defaults to current buffer.
+- Returns the prop-match object from the last successful search.
 
 **Examples:**
 
@@ -569,85 +584,104 @@ Search forward/backward for text with PROPERTY.
 
 ;; Find next text where 'type equals 'heading
 (tp-forward 'type 'heading)
+
+;; Search forward 3 times
+(tp-forward 'marker nil nil 3)
 ```
 
 ---
 
-#### `tp-next` / `tp-prev`
+#### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-next &optional POINT PROPERTY VALUE)
-(tp-prev &optional POINT PROPERTY VALUE)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
 ```
 
-Get the next/previous position with text properties.
+Search forward/backward N times for text with PROPERTY and apply FUNCTION to each match.
 
----
-
-#### `tp-goto-next` / `tp-goto-prev`
-
-```elisp
-(tp-goto-next &optional PROPERTY VALUE)
-(tp-goto-prev &optional PROPERTY VALUE)
-```
-
-Move point to next/previous text with PROPERTY.
-
----
-
-#### `tp-regions-map` / `tp-strings-map`
-
-```elisp
-(tp-regions-map FUNCTION PROPERTY &optional VALUE PREDICATE COLLECT)
-(tp-strings-map FUNCTION PROPERTY &optional VALUE PREDICATE COLLECT)
-```
-
-Apply a function to all regions/strings with PROPERTY.
+- **FUNCTION** receives two arguments: the prop-match object and OBJECT.
+- **N** is the number of searches, defaulting to 1.
+- Returns the number of successful matches.
 
 **Examples:**
 
 ```elisp
-;; Upcase all marked text
-(tp-strings-map
- (lambda (str idx)
-   (message "Found: %s at index %d" str idx))
- 'marker)
+;; Apply function to next 3 markers
+(tp-forward-do
+ (lambda (match obj)
+   (message "Found at %d" (prop-match-beginning match)))
+ 'marker nil nil 3)
+```
+
+---
+
+#### `tp-search` - Search All Matches
+
+```elisp
+;; Buffer/string region
+(tp-search START END PROPERTY &optional VALUE OBJECT)
+
+;; Entire string
+(tp-search STRING PROPERTY &optional VALUE)
+```
+
+Search for all text with PROPERTY in a buffer/string range or entire string.
+
+Returns a list of (START END VALUE) for all matching regions.
+
+**Examples:**
+
+```elisp
+;; Find all 'marker properties in buffer range
+(tp-search 1 100 'marker)
+;; => ((5 10 t) (20 25 t) ...)
+
+;; Find all 'type properties with value 'heading in string
+(tp-search my-string 'type 'heading)
+;; => ((0 10 heading) (50 60 heading) ...)
+
+;; Filter by value
+(tp-search 1 100 'type 'heading)
+```
+
+---
+
+#### `tp-search-do` - Apply Function to All Matches
+
+```elisp
+;; Buffer/string region
+(tp-search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
+
+;; Entire string
+(tp-search-do FUNCTION STRING PROPERTY &optional VALUE)
+```
+
+Execute FUNCTION on all matches of PROPERTY in a buffer/string range or entire string.
+
+- **FUNCTION** receives two arguments: the match (list of START END VALUE) and OBJECT.
+- Returns the number of matches processed.
+
+**Examples:**
+
+```elisp
+;; Process all markers in buffer range
+(tp-search-do
+ (lambda (match obj)
+   (message "Found at %d-%d with value %s"
+            (car match) (cadr match) (caddr match)))
+ 1 100 'marker)
+
+;; Process all headings in string
+(tp-search-do
+ (lambda (match obj)
+   (upcase (substring obj (car match) (cadr match))))
+ my-string 'type 'heading)
 ```
 
 ---
 
 ### Query Functions
-
-#### `tp-in` - Find Regions with Property
-
-```elisp
-(tp-in PROPERTY &optional VALUE START END)
-```
-
-Get all regions with PROPERTY in current buffer.
-
-**Examples:**
-
-```elisp
-;; Get all regions with 'marker property
-(tp-in 'marker)
-;; => ((1 5 (marker t ...)) (10 15 (marker t ...)))
-
-;; Filter by value
-(tp-in 'type 'heading)
-```
-
----
-
-#### `tp-all` - Get All Propertized Regions
-
-```elisp
-(tp-all &optional START END)
-```
-
-Get all regions with any text properties.
-
----
 
 #### `tp-intervals` - Get Property Intervals
 
@@ -662,20 +696,54 @@ Get all text property intervals in a region.
 #### `tp-empty-p` - Check for Properties
 
 ```elisp
-(tp-empty-p OBJECT)
+(tp-empty-p &optional OBJECT)
 ```
 
 Return t if OBJECT has no text properties.
+
+- **OBJECT** can be a string or buffer; nil defaults to current buffer.
+
+**Examples:**
+
+```elisp
+;; Check current buffer
+(tp-empty-p)
+(tp-empty-p nil)
+
+;; Check specific string
+(tp-empty-p "plain string")  ; => t
+(tp-empty-p (propertize "styled" 'face 'bold))  ; => nil
+
+;; Check specific buffer
+(tp-empty-p my-buffer)
+```
 
 ---
 
 #### `tp-plist` - Get Merged Properties
 
 ```elisp
+;; Buffer/string region
 (tp-plist START END &optional OBJECT)
+
+;; Entire string
+(tp-plist STRING)
 ```
 
-Get a merged plist of all properties in a region.
+Get a merged plist of all properties in a region or entire string.
+
+**Examples:**
+
+```elisp
+;; Get properties from buffer region
+(tp-plist 1 10)
+
+;; Get properties from string region
+(tp-plist 0 5 my-string)
+
+;; Get properties from entire string
+(tp-plist my-string)
+```
 
 ---
 

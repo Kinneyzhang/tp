@@ -119,6 +119,23 @@
       (should (eq (plist-get props 'face) 'bold))
       (should (equal (plist-get props 'help-echo) "test")))))
 
+(ert-deftest tp-test-plist-on-string ()
+  "Test tp-plist works on entire string."
+  (let ((str (tp-set "Hello World" 'face 'bold 'help-echo "test")))
+    (let ((props (tp-plist str)))
+      (should (eq (plist-get props 'face) 'bold))
+      (should (equal (plist-get props 'help-echo) "test")))))
+
+(ert-deftest tp-test-plist-on-string-range ()
+  "Test tp-plist works on string range with object parameter."
+  (let ((str (copy-sequence "Hello World")))
+    (tp-set 0 5 '(face bold) str)
+    (tp-set 6 11 '(help-echo "test") str)
+    (let ((props-start (tp-plist 0 5 str))
+          (props-end (tp-plist 6 11 str)))
+      (should (eq (plist-get props-start 'face) 'bold))
+      (should (equal (plist-get props-end 'help-echo) "test")))))
+
 ;;; ============================================================
 ;;; Text Property Interval Tests
 ;;; ============================================================
@@ -127,6 +144,29 @@
   "Test tp-empty-p detects empty properties."
   (should (tp-empty-p "plain string"))
   (should-not (tp-empty-p (propertize "styled" 'face 'bold))))
+
+(ert-deftest tp-test-empty-p-with-nil ()
+  "Test tp-empty-p with nil (current buffer)."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    ;; Empty buffer (no properties)
+    (should (tp-empty-p nil))
+    (should (tp-empty-p))
+    ;; Add properties
+    (tp-set 1 6 '(face bold))
+    (should-not (tp-empty-p nil))
+    (should-not (tp-empty-p))))
+
+(ert-deftest tp-test-empty-p-with-buffer ()
+  "Test tp-empty-p with explicit buffer object."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (let ((buf (current-buffer)))
+      ;; Empty (no properties)
+      (should (tp-empty-p buf))
+      ;; Add properties
+      (tp-set 1 6 '(face bold))
+      (should-not (tp-empty-p buf)))))
 
 (ert-deftest tp-test-intervals ()
   "Test tp-intervals returns property intervals."
@@ -517,6 +557,19 @@
       (should match)
       (should (= (prop-match-beginning match) 7)))))
 
+(ert-deftest tp-test-forward-with-n ()
+  "Test tp-forward with N parameter."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Test Again")
+    (tp-set 1 6 '(face bold))
+    (tp-set 7 12 '(face italic))
+    (tp-set 13 17 '(face bold))
+    (goto-char 1)
+    (skip-unless (fboundp 'text-property-search-forward))
+    ;; Search twice should find third match
+    (let ((match (tp-forward 'face nil nil 2)))
+      (should match))))
+
 (ert-deftest tp-test-backward ()
   "Test tp-backward finds previous property."
   (tp-test-with-temp-buffer
@@ -530,98 +583,102 @@
       (should match)
       (should (= (prop-match-beginning match) 1)))))
 
-(ert-deftest tp-test-next ()
-  "Test tp-next returns next position with property."
+(ert-deftest tp-test-forward-do ()
+  "Test tp-forward-do applies function to matches."
   (tp-test-with-temp-buffer
-    (insert "Hello World")
-    (tp-set 7 12 '(face bold))
-    (let ((pos (tp-next 1 'face)))
-      (should (= pos 7)))))
-
-(ert-deftest tp-test-prev ()
-  "Test tp-prev returns previous position with property."
-  (tp-test-with-temp-buffer
-    (insert "Hello World")
-    (tp-set 1 6 '(face bold))
-    (let ((pos (tp-prev 12 'face)))
-      (should (= pos 1)))))
-
-(ert-deftest tp-test-goto-next ()
-  "Test tp-goto-next moves point."
-  (tp-test-with-temp-buffer
-    (insert "Hello World")
-    (tp-set 7 12 '(face bold))
+    (insert "Hello World Test")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 17 '(marker t))
     (goto-char 1)
-    (tp-goto-next 'face)
-    (should (= (point) 7))))
+    (skip-unless (fboundp 'text-property-search-forward))
+    (let ((result nil))
+      (tp-forward-do
+       (lambda (match obj)
+         (push (prop-match-beginning match) result))
+       'marker nil nil 2)
+      (should (= (length result) 2)))))
 
-(ert-deftest tp-test-goto-prev ()
-  "Test tp-goto-prev moves point."
+(ert-deftest tp-test-backward-do ()
+  "Test tp-backward-do applies function to matches."
   (tp-test-with-temp-buffer
-    (insert "Hello World")
-    (tp-set 1 6 '(face bold))
-    (goto-char 12)
-    (tp-goto-prev 'face)
-    (should (= (point) 1))))
+    (insert "Hello World Test")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 17 '(marker t))
+    (goto-char 18)
+    (skip-unless (fboundp 'text-property-search-backward))
+    (let ((result nil))
+      (tp-backward-do
+       (lambda (match obj)
+         (push (prop-match-beginning match) result))
+       'marker nil nil 2)
+      (should (= (length result) 2)))))
+
+(ert-deftest tp-test-search-on-string ()
+  "Test tp-search finds all matching properties in a string."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((matches (tp-search str 'marker)))
+      (should (= (length matches) 2))
+      (should (equal (car matches) '(0 5 t)))
+      (should (equal (cadr matches) '(12 17 t))))))
+
+(ert-deftest tp-test-search-on-string-with-value ()
+  "Test tp-search filters by value in a string."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(type heading) str)
+    (tp-set 6 11 '(type paragraph) str)
+    (tp-set 12 17 '(type heading) str)
+    (let ((matches (tp-search str 'type 'heading)))
+      (should (= (length matches) 2))
+      (should (equal (caddr (car matches)) 'heading))
+      (should (equal (caddr (cadr matches)) 'heading)))))
+
+(ert-deftest tp-test-search-in-range ()
+  "Test tp-search finds all matching properties in a buffer range."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 18 '(marker t))
+    (let ((matches (tp-search 1 18 'marker)))
+      (should (= (length matches) 2))
+      (should (equal (car matches) '(1 6 t)))
+      (should (equal (cadr matches) '(13 18 t))))))
+
+(ert-deftest tp-test-search-do-on-string ()
+  "Test tp-search-do applies function to all matches in a string."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((result nil))
+      (tp-search-do
+       (lambda (match obj)
+         (push (car match) result))
+       str 'marker)
+      (should (= (length result) 2))
+      (should (member 0 result))
+      (should (member 12 result)))))
+
+(ert-deftest tp-test-search-do-in-range ()
+  "Test tp-search-do applies function to all matches in a buffer range."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 18 '(marker t))
+    (let ((result nil))
+      (tp-search-do
+       (lambda (match obj)
+         (push (car match) result))
+       1 18 'marker)
+      (should (= (length result) 2))
+      (should (member 1 result))
+      (should (member 13 result)))))
 
 ;;; ============================================================
 ;;; Utility Function Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-in ()
-  "Test tp-in finds regions with property."
-  (tp-test-with-temp-buffer
-    (insert "Hello World Test")
-    (tp-set 1 6 '(my-prop value1))
-    (tp-set 7 12 '(my-prop value2))
-    (let ((regions (tp-in 'my-prop)))
-      (should (= (length regions) 2)))))
-
-(ert-deftest tp-test-in-with-value ()
-  "Test tp-in filters by value."
-  (tp-test-with-temp-buffer
-    (insert "Hello World Test")
-    (tp-set 1 6 '(my-prop value1))
-    (tp-set 7 12 '(my-prop value2))
-    (let ((regions (tp-in 'my-prop 'value1)))
-      (should (= (length regions) 1))
-      (should (equal (car (car regions)) 1)))))
-
-(ert-deftest tp-test-all ()
-  "Test tp-all returns all regions with properties."
-  (tp-test-with-temp-buffer
-    (insert "Hello World")
-    (tp-set 1 6 '(face bold))
-    (tp-set 7 12 '(face italic))
-    (let ((regions (tp-all)))
-      (should (>= (length regions) 2)))))
-
-(ert-deftest tp-test-regions-map ()
-  "Test tp-regions-map applies function to regions."
-  (tp-test-with-temp-buffer
-    (insert "Hello World Hello")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 18 '(marker t))
-    (let ((result nil))
-      (tp-regions-map
-       (lambda (start end idx)
-         (push (list start end idx) result))
-       'marker)
-      (should (= (length result) 2)))))
-
-(ert-deftest tp-test-strings-map ()
-  "Test tp-strings-map applies function to strings."
-  (tp-test-with-temp-buffer
-    (insert "Hello World Hello")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 18 '(marker t))
-    (let ((result nil))
-      (tp-strings-map
-       (lambda (str idx)
-         (push str result))
-       'marker)
-      (should (= (length result) 2))
-      (should (member "Hello" result)))))
+;; Tests for tp-search are in Search and Navigation Tests section above
 
 ;;; ============================================================
 ;;; Alias Tests
@@ -650,7 +707,7 @@
   "Test operations on empty buffer."
   (tp-test-with-temp-buffer
     (should (null (tp-at 1)))
-    (should (null (tp-all)))))
+    (should (tp-empty-p))))
 
 (ert-deftest tp-test-overlapping-regions ()
   "Test overlapping property regions."

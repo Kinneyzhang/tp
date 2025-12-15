@@ -85,20 +85,18 @@ tp.el 所有函数按类别组织的完整概览：
 #### 搜索和导航函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索具有属性的文本 |
-| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索具有属性的文本 |
-| [`tp-next`](#tp-next--tp-prev) | 获取下一个具有文本属性的位置 |
-| [`tp-prev`](#tp-next--tp-prev) | 获取上一个具有文本属性的位置 |
-| [`tp-goto-next`](#tp-goto-next--tp-goto-prev) | 移动光标到下一个具有属性的文本 |
-| [`tp-goto-prev`](#tp-goto-next--tp-goto-prev) | 移动光标到上一个具有属性的文本 |
-| [`tp-regions-map`](#tp-regions-map--tp-strings-map) | 对所有具有属性的区域应用函数 |
-| [`tp-strings-map`](#tp-regions-map--tp-strings-map) | 对所有具有属性的字符串应用函数 |
+| [`tp-search-forward`](#tp-search-forward--tp-search-backward) | text-property-search-forward 的原始包装 |
+| [`tp-search-backward`](#tp-search-forward--tp-search-backward) | text-property-search-backward 的原始包装 |
+| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本 |
+| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本 |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向前匹配应用函数 |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向后匹配应用函数 |
+| [`tp-search`](#tp-search---搜索所有匹配) | 在范围或字符串中搜索所有匹配的属性 |
+| [`tp-search-do`](#tp-search-do---对所有匹配应用函数) | 对所有匹配的属性应用函数 |
 
 #### 查询函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-in`](#tp-in---查找具有属性的区域) | 查找所有具有特定属性的区域 |
-| [`tp-all`](#tp-all---获取所有带属性的区域) | 获取所有带属性的区域 |
 | [`tp-intervals`](#tp-intervals---获取属性区间) | 获取区域中的属性区间 |
 | [`tp-empty-p`](#tp-empty-p---检查属性) | 检查对象是否没有属性 |
 | [`tp-plist`](#tp-plist---获取合并的属性) | 获取所有属性的合并列表 |
@@ -551,14 +549,31 @@ tp.el 所有函数按类别组织的完整概览：
 
 ### 搜索和导航函数
 
+#### `tp-search-forward` / `tp-search-backward`
+
+```elisp
+(tp-search-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
+(tp-search-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
+```
+
+Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的原始包装。
+这些是直接使用 prop-match 对象的底层搜索函数。
+
+---
+
 #### `tp-forward` / `tp-backward`
 
 ```elisp
-(tp-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
-(tp-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
+(tp-forward PROPERTY &optional VALUE OBJECT N)
+(tp-backward PROPERTY &optional VALUE OBJECT N)
 ```
 
-向前/向后搜索具有 PROPERTY 的文本。
+向前/向后搜索 N 次具有 PROPERTY 的文本。
+
+- **N** 是搜索次数，默认为 1。
+- **VALUE** 是可选的匹配值。
+- **OBJECT** 可以是缓冲区；nil 默认为当前缓冲区。
+- 返回最后一次成功搜索的 prop-match 对象。
 
 **示例：**
 
@@ -568,85 +583,104 @@ tp.el 所有函数按类别组织的完整概览：
 
 ;; 查找下一个 'type 等于 'heading 的文本
 (tp-forward 'type 'heading)
+
+;; 向前搜索 3 次
+(tp-forward 'marker nil nil 3)
 ```
 
 ---
 
-#### `tp-next` / `tp-prev`
+#### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-next &optional POINT PROPERTY VALUE)
-(tp-prev &optional POINT PROPERTY VALUE)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
 ```
 
-获取下一个/上一个具有文本属性的位置。
+向前/向后搜索 N 次具有 PROPERTY 的文本，并对每个匹配应用 FUNCTION。
 
----
-
-#### `tp-goto-next` / `tp-goto-prev`
-
-```elisp
-(tp-goto-next &optional PROPERTY VALUE)
-(tp-goto-prev &optional PROPERTY VALUE)
-```
-
-将光标移动到下一个/上一个具有 PROPERTY 的文本。
-
----
-
-#### `tp-regions-map` / `tp-strings-map`
-
-```elisp
-(tp-regions-map FUNCTION PROPERTY &optional VALUE PREDICATE COLLECT)
-(tp-strings-map FUNCTION PROPERTY &optional VALUE PREDICATE COLLECT)
-```
-
-对所有具有 PROPERTY 的区域/字符串应用函数。
+- **FUNCTION** 接收两个参数：prop-match 对象和 OBJECT。
+- **N** 是搜索次数，默认为 1。
+- 返回成功匹配的数量。
 
 **示例：**
 
 ```elisp
-;; 处理所有标记的文本
-(tp-strings-map
- (lambda (str idx)
-   (message "找到: %s，索引 %d" str idx))
- 'marker)
+;; 对下 3 个 marker 应用函数
+(tp-forward-do
+ (lambda (match obj)
+   (message "在 %d 处找到" (prop-match-beginning match)))
+ 'marker nil nil 3)
+```
+
+---
+
+#### `tp-search` - 搜索所有匹配
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-search START END PROPERTY &optional VALUE OBJECT)
+
+;; 整个字符串
+(tp-search STRING PROPERTY &optional VALUE)
+```
+
+在缓冲区/字符串范围或整个字符串中搜索所有具有 PROPERTY 的文本。
+
+返回所有匹配区域的 (START END VALUE) 列表。
+
+**示例：**
+
+```elisp
+;; 在缓冲区范围内查找所有 'marker 属性
+(tp-search 1 100 'marker)
+;; => ((5 10 t) (20 25 t) ...)
+
+;; 在字符串中查找所有值为 'heading 的 'type 属性
+(tp-search my-string 'type 'heading)
+;; => ((0 10 heading) (50 60 heading) ...)
+
+;; 按值过滤
+(tp-search 1 100 'type 'heading)
+```
+
+---
+
+#### `tp-search-do` - 对所有匹配应用函数
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
+
+;; 整个字符串
+(tp-search-do FUNCTION STRING PROPERTY &optional VALUE)
+```
+
+在缓冲区/字符串范围或整个字符串中对所有 PROPERTY 匹配执行 FUNCTION。
+
+- **FUNCTION** 接收两个参数：匹配（START END VALUE 列表）和 OBJECT。
+- 返回处理的匹配数量。
+
+**示例：**
+
+```elisp
+;; 处理缓冲区范围内的所有 marker
+(tp-search-do
+ (lambda (match obj)
+   (message "在 %d-%d 处找到，值为 %s"
+            (car match) (cadr match) (caddr match)))
+ 1 100 'marker)
+
+;; 处理字符串中的所有标题
+(tp-search-do
+ (lambda (match obj)
+   (upcase (substring obj (car match) (cadr match))))
+ my-string 'type 'heading)
 ```
 
 ---
 
 ### 查询函数
-
-#### `tp-in` - 查找具有属性的区域
-
-```elisp
-(tp-in PROPERTY &optional VALUE START END)
-```
-
-获取当前缓冲区中所有具有 PROPERTY 的区域。
-
-**示例：**
-
-```elisp
-;; 获取所有具有 'marker 属性的区域
-(tp-in 'marker)
-;; => ((1 5 (marker t ...)) (10 15 (marker t ...)))
-
-;; 按值过滤
-(tp-in 'type 'heading)
-```
-
----
-
-#### `tp-all` - 获取所有带属性的区域
-
-```elisp
-(tp-all &optional START END)
-```
-
-获取所有具有任何文本属性的区域。
-
----
 
 #### `tp-intervals` - 获取属性区间
 
@@ -661,20 +695,54 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-empty-p` - 检查属性
 
 ```elisp
-(tp-empty-p OBJECT)
+(tp-empty-p &optional OBJECT)
 ```
 
 如果 OBJECT 没有文本属性则返回 t。
+
+- **OBJECT** 可以是字符串或缓冲区；nil 默认为当前缓冲区。
+
+**示例：**
+
+```elisp
+;; 检查当前缓冲区
+(tp-empty-p)
+(tp-empty-p nil)
+
+;; 检查特定字符串
+(tp-empty-p "plain string")  ; => t
+(tp-empty-p (propertize "styled" 'face 'bold))  ; => nil
+
+;; 检查特定缓冲区
+(tp-empty-p my-buffer)
+```
 
 ---
 
 #### `tp-plist` - 获取合并的属性
 
 ```elisp
+;; 缓冲区/字符串区域
 (tp-plist START END &optional OBJECT)
+
+;; 整个字符串
+(tp-plist STRING)
 ```
 
-获取区域中所有属性的合并属性列表。
+获取区域或整个字符串中所有属性的合并属性列表。
+
+**示例：**
+
+```elisp
+;; 从缓冲区区域获取属性
+(tp-plist 1 10)
+
+;; 从字符串区域获取属性
+(tp-plist 0 5 my-string)
+
+;; 从整个字符串获取属性
+(tp-plist my-string)
+```
 
 ---
 
