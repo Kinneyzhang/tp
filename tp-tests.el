@@ -770,6 +770,26 @@
       (should (equal (buffer-substring 1 6) "HELLO"))
       (should (equal (buffer-substring 13 18) "HELLO")))))
 
+(ert-deftest tp-test-search-map-property-modification ()
+  "Test tp-search-map applies property modifications to matched text."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    ;; First upcase the text
+    (tp-search-map #'upcase str 'marker)
+    ;; Then add face property
+    (tp-search-map (lambda (txt)
+                     (tp-add txt 'face '(:background "orange")))
+                   str 'marker)
+    ;; Check text was upcased
+    (should (equal (substring str 0 5) "HELLO"))
+    (should (equal (substring str 12 17) "HELLO"))
+    ;; Check face property was added
+    (let ((props-0 (text-properties-at 0 str))
+          (props-12 (text-properties-at 12 str)))
+      (should (equal (plist-get (plist-get props-0 'face) :background) "orange"))
+      (should (equal (plist-get (plist-get props-12 'face) :background) "orange")))))
+
 ;;; ============================================================
 ;;; Utility Function Tests
 ;;; ============================================================

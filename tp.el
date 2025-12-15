@@ -1117,17 +1117,29 @@ Example:
                       (substring obj start end)
                     (buffer-substring start end)))
             (new-text (funcall function text)))
-       (when (and new-text (not (equal new-text text)))
+       (when (stringp new-text)
          (if (stringp obj)
-             ;; For strings, we need to replace in-place
-             ;; Note: store-substring has length restrictions
-             (progn
-               (store-substring obj start new-text))
+             ;; For strings: copy text content and properties separately
+             (let ((len (min (length new-text) (- end start))))
+               ;; Copy text content
+               (store-substring obj start new-text)
+               ;; Copy properties from new-text to obj
+               (let ((pos 0))
+                 (while (< pos len)
+                   (let* ((props (text-properties-at pos new-text))
+                          (next-change (or (next-property-change pos new-text) len)))
+                     (when props
+                       (set-text-properties (+ start pos)
+                                            (+ start (min next-change len))
+                                            props
+                                            obj))
+                     (setq pos next-change)))))
            ;; For buffers, delete and insert
-           (save-excursion
-             (delete-region start end)
-             (goto-char start)
-             (insert new-text))))))
+           (unless (equal new-text text)
+             (save-excursion
+               (delete-region start end)
+               (goto-char start)
+               (insert new-text)))))))
    property value object n))
 
 (defun tp--backward-do (function property &optional value object n)
@@ -1187,17 +1199,29 @@ Example:
                       (substring obj start end)
                     (buffer-substring start end)))
             (new-text (funcall function text)))
-       (when (and new-text (not (equal new-text text)))
+       (when (stringp new-text)
          (if (stringp obj)
-             ;; For strings, we need to replace in-place
-             ;; Note: store-substring has length restrictions
-             (progn
-               (store-substring obj start new-text))
+             ;; For strings: copy text content and properties separately
+             (let ((len (min (length new-text) (- end start))))
+               ;; Copy text content
+               (store-substring obj start new-text)
+               ;; Copy properties from new-text to obj
+               (let ((pos 0))
+                 (while (< pos len)
+                   (let* ((props (text-properties-at pos new-text))
+                          (next-change (or (next-property-change pos new-text) len)))
+                     (when props
+                       (set-text-properties (+ start pos)
+                                            (+ start (min next-change len))
+                                            props
+                                            obj))
+                     (setq pos next-change)))))
            ;; For buffers, delete and insert
-           (save-excursion
-             (delete-region start end)
-             (goto-char start)
-             (insert new-text))))))
+           (unless (equal new-text text)
+             (save-excursion
+               (delete-region start end)
+               (goto-char start)
+               (insert new-text)))))))
    property value object n))
 
 (defun tp-search (start-or-string &optional end-or-property property-or-value value object)
@@ -1315,19 +1339,27 @@ This function supports two calling conventions:
 2. Entire string:
    (tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
 
-FUNCTION receives the matched text as its only argument.  The return value
-of FUNCTION replaces the matched text in the string or buffer.
+FUNCTION receives a copy of the matched text as its only argument.
+FUNCTION can either:
+- Return a new/modified string to replace the matched text
+- Modify the text properties of the argument and return it
+- Return nil to skip replacement
+
+For text content changes, the return value replaces the matched text.
+For property-only changes, the properties are merged back to the original.
 
 Returns the number of matches processed.
 
-Note: For string objects, the replacement text must have the same length
+Note: For string objects, replacement text must have the same length
 as the original matched text, since strings have fixed length in Emacs.
 If the replacement is shorter, only that portion will be replaced.
 If the replacement is longer, it will be truncated.
 
 Example:
   ;; Upcase all matched text
-  (tp-search-map #\\='upcase my-string \\='marker)"
+  (tp-search-map #\\='upcase my-string \\='marker)
+  ;; Add properties to matched text
+  (tp-search-map (lambda (txt) (tp-add txt \\='face \\='bold)) str \\='marker)"
   (let ((obj (cond
               ((stringp start-or-string) start-or-string)
               ((numberp start-or-string) (or object (current-buffer)))
@@ -1340,15 +1372,29 @@ Example:
                         (substring obj start end)
                       (buffer-substring start end)))
               (new-text (funcall function text)))
-         (when (and new-text (not (equal new-text text)))
+         (when (stringp new-text)
            (if (stringp obj)
-               ;; For strings, replace in-place
-               (store-substring obj start new-text)
+               ;; For strings: copy text content and properties separately
+               (let ((len (min (length new-text) (- end start))))
+                 ;; Copy text content
+                 (store-substring obj start new-text)
+                 ;; Copy properties from new-text to obj
+                 (let ((pos 0))
+                   (while (< pos len)
+                     (let* ((props (text-properties-at pos new-text))
+                            (next-change (or (next-property-change pos new-text) len)))
+                       (when props
+                         (set-text-properties (+ start pos)
+                                              (+ start (min next-change len))
+                                              props
+                                              obj))
+                       (setq pos next-change)))))
              ;; For buffers, delete and insert
-             (save-excursion
-               (delete-region start end)
-               (goto-char start)
-               (insert new-text))))))
+             (unless (equal new-text text)
+               (save-excursion
+                 (delete-region start end)
+                 (goto-char start)
+                 (insert new-text)))))))
      start-or-string end-or-property property-or-value value object)))
 
 
