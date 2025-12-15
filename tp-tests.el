@@ -1124,13 +1124,32 @@ Returns list of (START END VALUE) intervals."
 ;;; Match Pattern Format Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-match-set-pattern-string-format ()
-  "Test tp-match-set with (pattern string) format."
-  (let* ((str (copy-sequence "Hello world"))
-         (result (tp-match-set '("world" "Hello world") '(face bold))))
+(ert-deftest tp-test-match-set-multiple-patterns ()
+  "Test tp-match-set with multiple patterns (list of patterns)."
+  (tp-test-with-temp-buffer
+    (insert "Hello world, Hello again")
+    ;; Match both "world" and "Hello" - both should get properties applied
+    (let ((regions (tp-match-set '("world" "Hello") '(face bold))))
+      ;; Should find 3 matches: "Hello", "world", "Hello"
+      (should (= (length regions) 3))
+      ;; Check that "Hello" at position 1 has face bold
+      (should (eq (tp-at 1 'face) 'bold))
+      ;; Check that "world" at position 7 has face bold
+      (should (eq (tp-at 7 'face) 'bold))
+      ;; Check that "Hello" at position 14 has face bold
+      (should (eq (tp-at 14 'face) 'bold)))))
+
+(ert-deftest tp-test-match-set-multiple-patterns-on-string ()
+  "Test tp-match-set with multiple patterns on string."
+  (let* ((str (copy-sequence "Hello world, Hello again"))
+         (result (tp-match-set '("world" "Hello") '(face bold) str)))
     (should (stringp result))
+    ;; Check that "Hello" at position 0 has face bold
+    (should (eq (get-text-property 0 'face result) 'bold))
+    ;; Check that "world" at position 6 has face bold
     (should (eq (get-text-property 6 'face result) 'bold))
-    (should (null (get-text-property 0 'face result)))))
+    ;; Check that "Hello" at position 13 has face bold
+    (should (eq (get-text-property 13 'face result) 'bold))))
 
 (ert-deftest tp-test-match-reset ()
   "Test tp-match-reset completely replaces properties."
@@ -1204,6 +1223,37 @@ Returns list of (START END VALUE) intervals."
       (should (eq (get-text-property 4 'face result) 'italic))
       (should (eq (get-text-property 12 'face result) 'italic))
       (should (null (get-text-property 0 'face result))))))
+
+(ert-deftest tp-test-regexp-set-multiple-patterns ()
+  "Test tp-regexp-set with multiple patterns (list of regexps)."
+  (tp-test-with-temp-buffer
+    (insert "abc 123 def 456 ghi")
+    ;; Match both numbers and "abc" - all should get properties applied
+    (let ((regions (tp-regexp-set '("[0-9]+" "abc") '(face bold))))
+      ;; Should find 3 matches: "abc", "123", "456"
+      (should (= (length regions) 3))
+      ;; Check that "abc" at position 1 has face bold
+      (should (eq (tp-at 1 'face) 'bold))
+      ;; Check that "123" at position 5 has face bold
+      (should (eq (tp-at 5 'face) 'bold))
+      ;; Check that "456" at position 13 has face bold
+      (should (eq (tp-at 13 'face) 'bold))
+      ;; Check that "def" does NOT have face bold
+      (should (null (tp-at 9 'face))))))
+
+(ert-deftest tp-test-regexp-set-multiple-patterns-on-string ()
+  "Test tp-regexp-set with multiple patterns on string."
+  (let* ((str (copy-sequence "abc 123 def 456"))
+         (result (tp-regexp-set '("[0-9]+" "abc") '(face italic) str)))
+    (should (stringp result))
+    ;; Check that "abc" at position 0 has face italic
+    (should (eq (get-text-property 0 'face result) 'italic))
+    ;; Check that "123" at position 4 has face italic
+    (should (eq (get-text-property 4 'face result) 'italic))
+    ;; Check that "456" at position 12 has face italic
+    (should (eq (get-text-property 12 'face result) 'italic))
+    ;; Check that "def" does NOT have face italic
+    (should (null (get-text-property 8 'face result)))))
 
 (ert-deftest tp-test-get-range-multiple-intervals ()
   "Test tp-get returns all property intervals in a range."

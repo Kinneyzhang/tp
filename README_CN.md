@@ -528,17 +528,20 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-match-set` - 匹配字符串
 
 ```elisp
-;; 缓冲区
+;; 单个模式 - 缓冲区
 (tp-match-set PATTERN '(PROPERTY VALUE ...))
 
-;; 字符串或缓冲区对象
+;; 单个模式 - 字符串或缓冲区对象
 (tp-match-set PATTERN OBJECT '(PROPERTY VALUE ...))
 
-;; 使用 (PATTERN STRING) 格式
-(tp-match-set '(PATTERN STRING) '(PROPERTY VALUE ...))
+;; 多个模式 - 对所有模式的所有匹配应用属性
+(tp-match-set '(PATTERN1 PATTERN2 ...) '(PROPERTY VALUE ...))
+(tp-match-set '(PATTERN1 PATTERN2 ...) '(PROPERTY VALUE ...) OBJECT)
 ```
 
 在所有字符串模式匹配处设置属性。
+PATTERN 可以是字符串（单个模式）或字符串列表（多个模式）。
+当提供多个模式时，每个模式都会被匹配并应用属性。
 
 **示例：**
 
@@ -551,9 +554,13 @@ tp.el 所有函数按类别组织的完整概览：
 (tp-match-set "o" "Hello World" '(face bold))
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
-;; 使用 (PATTERN STRING) 格式
-(tp-match-set '("world" "Hello world") '(face bold))
-;; => #("Hello world" 6 11 (face bold))
+;; 多个模式 - 同时匹配 "world" 和 "Hello"
+(tp-match-set '("world" "Hello") '(face bold))
+;; 匹配所有 "world" 出现的位置和所有 "Hello" 出现的位置
+
+;; 在字符串上使用多个模式
+(tp-match-set '("Hello" "world") '(face bold) "Hello world")
+;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
 ```
 
 ---
@@ -561,6 +568,7 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-match-reset` - 匹配并重置
 
 重置（完全替换）匹配处的所有属性。
+PATTERN 可以是字符串或字符串列表（多个模式）。
 
 ```elisp
 (tp-match-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
@@ -571,6 +579,10 @@ tp.el 所有函数按类别组织的完整概览：
 ```elisp
 (tp-match-reset "TODO" '(face warning))
 ;; 替换匹配文本上的所有属性
+
+;; 多个模式
+(tp-match-reset '("TODO" "FIXME") '(face warning))
+;; 替换所有 "TODO" 和 "FIXME" 出现位置的属性
 ```
 
 ---
@@ -578,6 +590,7 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-match-add` - 匹配并添加
 
 在匹配处添加/合并属性，支持深度合并。
+PATTERN 可以是字符串或字符串列表（多个模式）。
 
 ```elisp
 (tp-match-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
@@ -588,6 +601,10 @@ tp.el 所有函数按类别组织的完整概览：
 ```elisp
 (tp-match-add "TODO" '(face (:underline t)))
 ;; 与现有属性合并
+
+;; 多个模式
+(tp-match-add '("TODO" "FIXME") '(face (:underline t)))
+;; 合并属性到所有 "TODO" 和 "FIXME" 出现的位置
 ```
 
 ---
@@ -595,14 +612,20 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-regexp-set` - 匹配正则表达式
 
 ```elisp
-;; 缓冲区
+;; 单个正则 - 缓冲区
 (tp-regexp-set PATTERN '(PROPERTY VALUE ...))
 
-;; 字符串或缓冲区对象
+;; 单个正则 - 字符串或缓冲区对象
 (tp-regexp-set PATTERN OBJECT '(PROPERTY VALUE ...))
+
+;; 多个正则 - 对所有正则的所有匹配应用属性
+(tp-regexp-set '(REGEXP1 REGEXP2 ...) '(PROPERTY VALUE ...))
+(tp-regexp-set '(REGEXP1 REGEXP2 ...) '(PROPERTY VALUE ...) OBJECT)
 ```
 
 在所有正则表达式匹配处设置属性。
+PATTERN 可以是字符串（单个正则）或字符串列表（多个正则）。
+当提供多个模式时，每个模式都会被匹配并应用属性。
 
 **示例：**
 
@@ -613,6 +636,10 @@ tp.el 所有函数按类别组织的完整概览：
 ;; 在字符串上
 (tp-regexp-set "[A-Z]+" "Hello WORLD" '(face bold))
 ;; => #("Hello WORLD" 6 11 (face bold))
+
+;; 多个正则 - 同时匹配数字和大写字母
+(tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
+;; 匹配 "123" 和 "XYZ"
 ```
 
 ---
@@ -620,6 +647,7 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-regexp-reset` - 正则匹配并重置
 
 重置（完全替换）正则匹配处的所有属性。
+PATTERN 可以是字符串或字符串列表（多个正则）。
 
 ```elisp
 (tp-regexp-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
@@ -630,6 +658,7 @@ tp.el 所有函数按类别组织的完整概览：
 #### `tp-regexp-add` - 正则匹配并添加
 
 在正则匹配处添加/合并属性，支持深度合并。
+PATTERN 可以是字符串或字符串列表（多个正则）。
 
 ```elisp
 (tp-regexp-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)

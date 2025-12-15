@@ -712,45 +712,59 @@ OBJECT defaults to current buffer."
 
 ;;; Match and regexp functions
 
-(defun tp--match-apply (pattern properties apply-fn &optional object)
-  "Internal function to apply APPLY-FN to matches of PATTERN.
-PATTERN can be a string or (PATTERN STRING) for substring matching.
+(defun tp--match-apply-single (pattern properties apply-fn object)
+  "Apply APPLY-FN to matches of single PATTERN in OBJECT.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
 Returns modified object or list of regions."
-  (let ((search-pattern pattern)
-        (search-object object))
-    ;; Handle (PATTERN STRING) format
-    (when (and (listp pattern) (stringp (car pattern)) (stringp (cadr pattern)))
-      (setq search-pattern (car pattern)
-            search-object (cadr pattern)))
+  (cond
+   ;; String object
+   ((stringp object)
+    (let ((pos 0))
+      (while (string-match (regexp-quote pattern) object pos)
+        (let ((beg (match-beginning 0))
+              (end (match-end 0)))
+          (when properties
+            (funcall apply-fn beg end properties object))
+          (setq pos (if (= beg end) (1+ beg) end))))
+      object))
+   ;; Buffer or nil (current buffer)
+   (t
+    (let ((buf (or object (current-buffer))))
+      (with-current-buffer buf
+        (save-excursion
+          (goto-char (point-min))
+          (let (regions)
+            (while (search-forward pattern nil t)
+              (let ((beg (match-beginning 0))
+                    (end (match-end 0)))
+                (when properties
+                  (funcall apply-fn beg end properties buf))
+                (push (cons beg end) regions)))
+            (nreverse regions))))))))
+
+(defun tp--match-apply (pattern properties apply-fn &optional object)
+  "Internal function to apply APPLY-FN to matches of PATTERN.
+PATTERN can be a string or a list of strings (multiple patterns).
+When PATTERN is a list, each element is a pattern to match.
+APPLY-FN is called with (START END PROPS OBJECT) for each match.
+Returns modified object or list of regions."
+  (let ((patterns (if (listp pattern) pattern (list pattern))))
     (cond
      ;; String object
-     ((stringp search-object)
-      (let ((pos 0))
-        (while (string-match (regexp-quote search-pattern) search-object pos)
-          (let ((beg (match-beginning 0))
-                (end (match-end 0)))
-            (when properties
-              (funcall apply-fn beg end properties search-object))
-            (setq pos (if (= beg end) (1+ beg) end))))
-        search-object))
+     ((stringp object)
+      (dolist (p patterns)
+        (tp--match-apply-single p properties apply-fn object))
+      object)
      ;; Buffer or nil (current buffer)
      (t
-      (let ((buf (or search-object (current-buffer))))
-        (with-current-buffer buf
-          (save-excursion
-            (goto-char (point-min))
-            (let (regions)
-              (while (search-forward search-pattern nil t)
-                (let ((beg (match-beginning 0))
-                      (end (match-end 0)))
-                  (when properties
-                    (funcall apply-fn beg end properties buf))
-                  (push (cons beg end) regions)))
-              (nreverse regions)))))))))
+      (let ((all-regions nil))
+        (dolist (p patterns)
+          (let ((regions (tp--match-apply-single p properties apply-fn object)))
+            (setq all-regions (append all-regions regions))))
+        all-regions)))))
 
-(defun tp--regexp-apply (pattern properties apply-fn &optional object)
-  "Internal function to apply APPLY-FN to regexp matches of PATTERN.
+(defun tp--regexp-apply-single (pattern properties apply-fn object)
+  "Apply APPLY-FN to regexp matches of single PATTERN in OBJECT.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
 Returns modified object or list of regions."
   (cond
@@ -778,6 +792,27 @@ Returns modified object or list of regions."
                   (funcall apply-fn beg end properties buf))
                 (push (cons beg end) regions)))
             (nreverse regions))))))))
+
+(defun tp--regexp-apply (pattern properties apply-fn &optional object)
+  "Internal function to apply APPLY-FN to regexp matches of PATTERN.
+PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
+When PATTERN is a list, each element is a regexp to match.
+APPLY-FN is called with (START END PROPS OBJECT) for each match.
+Returns modified object or list of regions."
+  (let ((patterns (if (listp pattern) pattern (list pattern))))
+    (cond
+     ;; String object
+     ((stringp object)
+      (dolist (p patterns)
+        (tp--regexp-apply-single p properties apply-fn object))
+      object)
+     ;; Buffer or nil (current buffer)
+     (t
+      (let ((all-regions nil))
+        (dolist (p patterns)
+          (let ((regions (tp--regexp-apply-single p properties apply-fn object)))
+            (setq all-regions (append all-regions regions))))
+        all-regions)))))
 
 (defun tp--parse-match-args (args)
   "Parse match/regexp function ARGS.
@@ -824,16 +859,6 @@ Handles two calling conventions:
       (setq properties (car properties)))
     (cons object properties)))
 
-(defun tp--parse-pattern-format (pattern object)
-  "Parse PATTERN for (PATTERN STRING) format.
-Returns (PARSED-PATTERN . OBJECT)."
-  (if (and (listp pattern) (stringp (car pattern)))
-      (cons (car pattern)
-            (if (stringp (cadr pattern))
-                (cadr pattern)
-              object))
-    (cons pattern object)))
-
 (defun tp--deep-merge-apply (start end props obj)
   "Apply PROPS to OBJ from START to END with deep merge.
 Merges nested plists instead of replacing them."
@@ -866,32 +891,29 @@ This function supports multiple calling conventions:
    (tp-match-set PATTERN PROPERTY VALUE ...)
    (tp-match-set PATTERN \\='(PROPERTY VALUE ...))
 
-3. With pattern as (PATTERN STRING) to match within STRING:
-   (tp-match-set \\='(\"world\" \"Hello world\") \\='(face bold))
+3. Multiple patterns (list of patterns to match):
+   (tp-match-set \\='(\"pattern1\" \"pattern2\" ...) \\='(PROPERTY VALUE ...))
+   (tp-match-set \\='(\"pattern1\" \"pattern2\" ...) \\='(PROPERTY VALUE ...) OBJECT)
 
-PATTERN is the string to search for.
+PATTERN is a string (single pattern) or list of strings (multiple patterns).
+Each pattern will be matched and have properties applied.
 PROPERTIES is a plist of property-value pairs.
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
-         (properties (cdr parsed))
-         (parsed-pattern (tp--parse-pattern-format pattern object)))
-    (setq pattern (car parsed-pattern)
-          object (cdr parsed-pattern))
+         (properties (cdr parsed)))
     (tp--match-apply pattern properties #'tp-set object)))
 
 (defun tp-match-reset (pattern &rest args)
   "Reset (completely replace) properties on all occurrences of PATTERN.
 Same calling conventions as `tp-match-set'.
+PATTERN can be a string or list of strings (multiple patterns).
 Unlike `tp-match-set', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
-         (properties (cdr parsed))
-         (parsed-pattern (tp--parse-pattern-format pattern object)))
-    (setq pattern (car parsed-pattern)
-          object (cdr parsed-pattern))
+         (properties (cdr parsed)))
     (tp--match-apply pattern properties
                      (lambda (start end props obj)
                        (set-text-properties start end props obj))
@@ -900,13 +922,11 @@ Unlike `tp-match-set', this completely replaces all existing properties."
 (defun tp-match-add (pattern &rest args)
   "Add/update properties on all occurrences of PATTERN.
 Same calling conventions as `tp-match-set'.
+PATTERN can be a string or list of strings (multiple patterns).
 Unlike `tp-match-set', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
-         (properties (cdr parsed))
-         (parsed-pattern (tp--parse-pattern-format pattern object)))
-    (setq pattern (car parsed-pattern)
-          object (cdr parsed-pattern))
+         (properties (cdr parsed)))
     (tp--match-apply pattern properties #'tp--deep-merge-apply object)))
 
 (defun tp-regexp-set (pattern &rest args)
@@ -923,7 +943,12 @@ This function supports multiple calling conventions:
    (tp-regexp-set PATTERN PROPERTY VALUE ...)
    (tp-regexp-set PATTERN \\='(PROPERTY VALUE ...))
 
-PATTERN is the regexp to search for.
+3. Multiple patterns (list of regexps to match):
+   (tp-regexp-set \\='(\"regexp1\" \"regexp2\" ...) \\='(PROPERTY VALUE ...))
+   (tp-regexp-set \\='(\"regexp1\" \"regexp2\" ...) \\='(PROPERTY VALUE ...) OBJECT)
+
+PATTERN is a string (single regexp) or list of strings (multiple regexps).
+Each pattern will be matched and have properties applied.
 PROPERTIES is a plist of property-value pairs.
 Returns:
 - For strings: the modified string
@@ -936,6 +961,7 @@ Returns:
 (defun tp-regexp-reset (pattern &rest args)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
 Same calling conventions as `tp-regexp-set'.
+PATTERN can be a string or list of strings (multiple regexps).
 Unlike `tp-regexp-set', this completely replaces all existing properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))
@@ -948,6 +974,7 @@ Unlike `tp-regexp-set', this completely replaces all existing properties."
 (defun tp-regexp-add (pattern &rest args)
   "Add/update properties on all regexp matches of PATTERN.
 Same calling conventions as `tp-regexp-set'.
+PATTERN can be a string or list of strings (multiple regexps).
 Unlike `tp-regexp-set', this deeply merges nested properties."
   (let* ((parsed (tp--parse-match-args args))
          (object (car parsed))

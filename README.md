@@ -529,17 +529,20 @@ Clear all text properties from a region.
 #### `tp-match-set` - Match String
 
 ```elisp
-;; Buffer
+;; Single pattern - Buffer
 (tp-match-set PATTERN '(PROPERTY VALUE ...))
 
-;; String or Buffer object
+;; Single pattern - String or Buffer object
 (tp-match-set PATTERN OBJECT '(PROPERTY VALUE ...))
 
-;; Pattern as (PATTERN STRING) format
-(tp-match-set '(PATTERN STRING) '(PROPERTY VALUE ...))
+;; Multiple patterns - apply to all matches of all patterns
+(tp-match-set '(PATTERN1 PATTERN2 ...) '(PROPERTY VALUE ...))
+(tp-match-set '(PATTERN1 PATTERN2 ...) '(PROPERTY VALUE ...) OBJECT)
 ```
 
 Set properties on all occurrences of a string pattern.
+PATTERN can be a string (single pattern) or a list of strings (multiple patterns).
+When multiple patterns are provided, each is matched and has properties applied.
 
 **Examples:**
 
@@ -552,9 +555,13 @@ Set properties on all occurrences of a string pattern.
 (tp-match-set "o" "Hello World" '(face bold))
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
-;; Using (PATTERN STRING) format
-(tp-match-set '("world" "Hello world") '(face bold))
-;; => #("Hello world" 6 11 (face bold))
+;; Multiple patterns - match both "world" and "Hello"
+(tp-match-set '("world" "Hello") '(face bold))
+;; Matches all occurrences of "world" AND all occurrences of "Hello"
+
+;; Multiple patterns on string
+(tp-match-set '("Hello" "world") '(face bold) "Hello world")
+;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
 ```
 
 ---
@@ -562,6 +569,7 @@ Set properties on all occurrences of a string pattern.
 #### `tp-match-reset` - Match and Reset
 
 Reset (completely replace) all properties on matches.
+PATTERN can be a string or list of strings (multiple patterns).
 
 ```elisp
 (tp-match-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
@@ -572,6 +580,10 @@ Reset (completely replace) all properties on matches.
 ```elisp
 (tp-match-reset "TODO" '(face warning))
 ;; Replaces ALL properties on matched text
+
+;; Multiple patterns
+(tp-match-reset '("TODO" "FIXME") '(face warning))
+;; Replaces properties on all occurrences of "TODO" and "FIXME"
 ```
 
 ---
@@ -579,6 +591,7 @@ Reset (completely replace) all properties on matches.
 #### `tp-match-add` - Match and Add
 
 Add/merge properties on matches with deep merge support.
+PATTERN can be a string or list of strings (multiple patterns).
 
 ```elisp
 (tp-match-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
@@ -589,6 +602,10 @@ Add/merge properties on matches with deep merge support.
 ```elisp
 (tp-match-add "TODO" '(face (:underline t)))
 ;; Merges with existing properties
+
+;; Multiple patterns
+(tp-match-add '("TODO" "FIXME") '(face (:underline t)))
+;; Merges properties on all occurrences of "TODO" and "FIXME"
 ```
 
 ---
@@ -596,14 +613,20 @@ Add/merge properties on matches with deep merge support.
 #### `tp-regexp-set` - Match Regexp
 
 ```elisp
-;; Buffer
+;; Single regexp - Buffer
 (tp-regexp-set PATTERN '(PROPERTY VALUE ...))
 
-;; String or Buffer object
+;; Single regexp - String or Buffer object
 (tp-regexp-set PATTERN OBJECT '(PROPERTY VALUE ...))
+
+;; Multiple regexps - apply to all matches of all regexps
+(tp-regexp-set '(REGEXP1 REGEXP2 ...) '(PROPERTY VALUE ...))
+(tp-regexp-set '(REGEXP1 REGEXP2 ...) '(PROPERTY VALUE ...) OBJECT)
 ```
 
 Set properties on all matches of a regular expression.
+PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
+When multiple patterns are provided, each is matched and has properties applied.
 
 **Examples:**
 
@@ -614,6 +637,10 @@ Set properties on all matches of a regular expression.
 ;; On string
 (tp-regexp-set "[A-Z]+" "Hello WORLD" '(face bold))
 ;; => #("Hello WORLD" 6 11 (face bold))
+
+;; Multiple regexps - match both numbers and uppercase letters
+(tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
+;; Matches "123" and "XYZ"
 ```
 
 ---
@@ -621,6 +648,7 @@ Set properties on all matches of a regular expression.
 #### `tp-regexp-reset` - Regexp and Reset
 
 Reset (completely replace) all properties on regexp matches.
+PATTERN can be a string or list of strings (multiple regexps).
 
 ```elisp
 (tp-regexp-reset PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
@@ -631,6 +659,7 @@ Reset (completely replace) all properties on regexp matches.
 #### `tp-regexp-add` - Regexp and Add
 
 Add/merge properties on regexp matches with deep merge support.
+PATTERN can be a string or list of strings (multiple regexps).
 
 ```elisp
 (tp-regexp-add PATTERN '(PROPERTY VALUE ...) &optional OBJECT)
