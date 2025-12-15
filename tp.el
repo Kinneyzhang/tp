@@ -673,13 +673,13 @@ OBJECT defaults to current buffer."
           (nreverse intervals)))))
    (t (error "Invalid arguments to tp-get"))))
 
-;;; Fine-grained property manipulation for nested properties (internal)
+;;; Private functions for fine-grained property manipulation
 
 (defun tp--get-sub (position property sub-property &optional object)
   "Get SUB-PROPERTY from PROPERTY at POSITION in OBJECT.
 For example, get :foreground from a face property.
 OBJECT defaults to current buffer.
-Internal function - use `tp-get' with nested path for public API."
+This is a private function - use `tp-get' with nested path for public API."
   (let ((prop-value (get-text-property position property object)))
     (cond
      ;; Property is a plist (e.g., (:foreground \"red\" :weight bold))
