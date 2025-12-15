@@ -1603,5 +1603,179 @@ Returns list of (START END VALUE) intervals."
     (let ((intervals (tp-get 0 7 '(face :underline (:color :style)) str)))
       (should (= (length intervals) 2)))))
 
+;;; ============================================================
+;;; tp-add-to-layers and tp-add-to-all-layers Tests
+;;; ============================================================
+
+(ert-deftest tp-test-add-to-layers-buffer ()
+  "Test tp-add-to-layers adds properties to specified layers in buffer."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; Add help-echo to layer1 and layer3
+    (tp-add-to-layers '(layer1 layer3) 1 6 '(help-echo "test"))
+    ;; layer3 is on top, should have help-echo
+    (should (equal (tp-at 1 'help-echo) "test"))
+    ;; Check layer1 also got help-echo
+    (let ((layer1-props (car (tp-region-layer-props 1 6 'layer1))))
+      (should (equal (plist-get (caddr layer1-props) 'help-echo) "test")))
+    ;; layer2 should NOT have help-echo
+    (let ((layer2-props (car (tp-region-layer-props 1 6 'layer2))))
+      (should (null (plist-get (caddr layer2-props) 'help-echo))))))
+
+(ert-deftest tp-test-add-to-layers-by-index ()
+  "Test tp-add-to-layers with layer indices."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; Stack is: layer3 (0), layer2 (1), layer1 (2)
+    ;; Add help-echo to indices 0 and 2 (layer3 and layer1)
+    (tp-add-to-layers '(0 2) 1 6 '(help-echo "indexed"))
+    ;; layer3 (top) should have help-echo
+    (should (equal (tp-at 1 'help-echo) "indexed"))
+    ;; Check layer1 also got help-echo
+    (let ((layer1-props (car (tp-region-layer-props 1 6 'layer1))))
+      (should (equal (plist-get (caddr layer1-props) 'help-echo) "indexed")))
+    ;; layer2 (index 1) should NOT have help-echo
+    (let ((layer2-props (car (tp-region-layer-props 1 6 'layer2))))
+      (should (null (plist-get (caddr layer2-props) 'help-echo))))))
+
+(ert-deftest tp-test-add-to-layers-string ()
+  "Test tp-add-to-layers works on entire string."
+  (let ((str (copy-sequence "Hello")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer str 'layer1)
+    (tp-push-layer str 'layer2)
+    ;; Add help-echo to layer1
+    (tp-add-to-layers '(layer1) str 'help-echo "test")
+    ;; Check layer1 got help-echo
+    (let ((layer1-props (car (tp-region-layer-props 0 5 'layer1 str))))
+      (should (equal (plist-get (caddr layer1-props) 'help-echo) "test")))
+    ;; layer2 (top) should NOT have help-echo
+    (should (null (tp-at 0 'help-echo str)))))
+
+(ert-deftest tp-test-add-to-layers-deep-merge ()
+  "Test tp-add-to-layers deeply merges properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face (:foreground "red")))
+    (tp-push-layer 1 6 'layer1)
+    ;; Add background to layer1 - should merge with existing face
+    (tp-add-to-layers '(layer1) 1 6 '(face (:background "blue")))
+    (let ((face (tp-at 1 'face)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (equal (plist-get face :background) "blue")))))
+
+(ert-deftest tp-test-add-to-all-layers-buffer ()
+  "Test tp-add-to-all-layers adds properties to all layers in buffer."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; Add help-echo to all layers
+    (tp-add-to-all-layers 1 6 '(help-echo "all"))
+    ;; layer3 (top) should have help-echo
+    (should (equal (tp-at 1 'help-echo) "all"))
+    ;; Check all layers got help-echo
+    (let ((layer1-props (car (tp-region-layer-props 1 6 'layer1)))
+          (layer2-props (car (tp-region-layer-props 1 6 'layer2)))
+          (layer3-props (car (tp-region-layer-props 1 6 'layer3))))
+      (should (equal (plist-get (caddr layer1-props) 'help-echo) "all"))
+      (should (equal (plist-get (caddr layer2-props) 'help-echo) "all"))
+      (should (equal (plist-get (caddr layer3-props) 'help-echo) "all")))))
+
+(ert-deftest tp-test-add-to-all-layers-string ()
+  "Test tp-add-to-all-layers works on entire string."
+  (let ((str (copy-sequence "Hello")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer str 'layer1)
+    (tp-push-layer str 'layer2)
+    ;; Add help-echo to all layers
+    (tp-add-to-all-layers str 'help-echo "all")
+    ;; Check all layers got help-echo
+    (let ((layer1-props (car (tp-region-layer-props 0 5 'layer1 str)))
+          (layer2-props (car (tp-region-layer-props 0 5 'layer2 str))))
+      (should (equal (plist-get (caddr layer1-props) 'help-echo) "all"))
+      (should (equal (plist-get (caddr layer2-props) 'help-echo) "all")))))
+
+(ert-deftest tp-test-add-to-all-layers-deep-merge ()
+  "Test tp-add-to-all-layers deeply merges properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face (:foreground "red")))
+    (tp-define-layer layer2 (face (:foreground "blue")))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    ;; Add background to all layers
+    (tp-add-to-all-layers 1 6 '(face (:background "green")))
+    ;; Top layer (layer2) should have merged face
+    (let ((face (tp-at 1 'face)))
+      (should (equal (plist-get face :foreground) "blue"))
+      (should (equal (plist-get face :background) "green")))
+    ;; layer1 should also have merged face
+    (let* ((layer1-props (car (tp-region-layer-props 1 6 'layer1)))
+           (face (plist-get (caddr layer1-props) 'face)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (equal (plist-get face :background) "green")))))
+
+(ert-deftest tp-test-add-to-layers-negative-index ()
+  "Test tp-add-to-layers with negative index (-1 means bottom)."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    ;; Stack is: layer2 (0), layer1 (1)
+    ;; Add help-echo to index -1 (bottom = layer1)
+    (tp-add-to-layers '(-1) 1 6 '(help-echo "bottom"))
+    ;; layer2 (top) should NOT have help-echo
+    (should (null (tp-at 1 'help-echo)))
+    ;; layer1 (bottom) should have help-echo
+    (let ((layer1-props (car (tp-region-layer-props 1 6 'layer1))))
+      (should (equal (plist-get (caddr layer1-props) 'help-echo) "bottom")))))
+
+(ert-deftest tp-test-add-to-layers-returns-string ()
+  "Test tp-add-to-layers returns the modified string."
+  (let ((str (copy-sequence "Hello")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer layer1 (face bold))
+    (tp-push-layer str 'layer1)
+    (let ((result (tp-add-to-layers '(layer1) str 'help-echo "test")))
+      (should (stringp result))
+      (should (eq result str)))))
+
+(ert-deftest tp-test-add-to-all-layers-returns-string ()
+  "Test tp-add-to-all-layers returns the modified string."
+  (let ((str (copy-sequence "Hello")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer layer1 (face bold))
+    (tp-push-layer str 'layer1)
+    (let ((result (tp-add-to-all-layers str 'help-echo "test")))
+      (should (stringp result))
+      (should (eq result str)))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
