@@ -814,19 +814,6 @@ Returns modified object or list of regions."
             (setq all-regions (append all-regions regions))))
         all-regions)))))
 
-(defun tp--parse-match-args (args)
-  "Parse match/regexp function ARGS.
-Returns (OBJECT . PROPERTIES).
-Supports the calling convention:
-  (PLIST &optional OBJECT)
-Where PLIST is a property list and OBJECT is a buffer or string (nil for current buffer)."
-  (let ((plist (car args))
-        (object (cadr args)))
-    ;; Validate object if provided
-    (when (and object (not (or (stringp object) (bufferp object))))
-      (error "OBJECT must be a string or buffer, got: %S" object))
-    (cons object plist)))
-
 (defun tp--deep-merge-apply (start end props obj)
   "Apply PROPS to OBJ from START to END with deep merge.
 Merges nested plists instead of replacing them."
@@ -845,7 +832,7 @@ Merges nested plists instead of replacing them."
                       (put-text-property pos next-pos key new-val obj)))
         (setq pos next-pos)))))
 
-(defun tp-match-set (pattern &rest args)
+(defun tp-match-set (pattern plist &optional object)
   "Set properties on all occurrences of PATTERN.
 
   (tp-match-set PATTERN PLIST &optional OBJECT)
@@ -858,12 +845,9 @@ OBJECT is a buffer or string; nil means current buffer.
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (let* ((parsed (tp--parse-match-args args))
-         (object (car parsed))
-         (properties (cdr parsed)))
-    (tp--match-apply pattern properties #'tp-set object)))
+  (tp--match-apply pattern plist #'tp-set object))
 
-(defun tp-match-reset (pattern &rest args)
+(defun tp-match-reset (pattern plist &optional object)
   "Reset (completely replace) properties on all occurrences of PATTERN.
 
   (tp-match-reset PATTERN PLIST &optional OBJECT)
@@ -873,15 +857,12 @@ PLIST is a property list like \\='(face bold help-echo \"tip\").
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-match-set', this completely replaces all existing properties."
-  (let* ((parsed (tp--parse-match-args args))
-         (object (car parsed))
-         (properties (cdr parsed)))
-    (tp--match-apply pattern properties
-                     (lambda (start end props obj)
-                       (set-text-properties start end props obj))
-                     object)))
+  (tp--match-apply pattern plist
+                   (lambda (start end props obj)
+                     (set-text-properties start end props obj))
+                   object))
 
-(defun tp-match-add (pattern &rest args)
+(defun tp-match-add (pattern plist &optional object)
   "Add/update properties on all occurrences of PATTERN.
 
   (tp-match-add PATTERN PLIST &optional OBJECT)
@@ -891,12 +872,9 @@ PLIST is a property list like \\='(face bold help-echo \"tip\").
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-match-set', this deeply merges nested properties."
-  (let* ((parsed (tp--parse-match-args args))
-         (object (car parsed))
-         (properties (cdr parsed)))
-    (tp--match-apply pattern properties #'tp--deep-merge-apply object)))
+  (tp--match-apply pattern plist #'tp--deep-merge-apply object))
 
-(defun tp-regexp-set (pattern &rest args)
+(defun tp-regexp-set (pattern plist &optional object)
   "Set properties on all matches of PATTERN (regexp).
 
   (tp-regexp-set PATTERN PLIST &optional OBJECT)
@@ -909,12 +887,9 @@ OBJECT is a buffer or string; nil means current buffer.
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (let* ((parsed (tp--parse-match-args args))
-         (object (car parsed))
-         (properties (cdr parsed)))
-    (tp--regexp-apply pattern properties #'tp-set object)))
+  (tp--regexp-apply pattern plist #'tp-set object))
 
-(defun tp-regexp-reset (pattern &rest args)
+(defun tp-regexp-reset (pattern plist &optional object)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
 
   (tp-regexp-reset PATTERN PLIST &optional OBJECT)
@@ -924,15 +899,12 @@ PLIST is a property list like \\='(face bold help-echo \"tip\").
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-regexp-set', this completely replaces all existing properties."
-  (let* ((parsed (tp--parse-match-args args))
-         (object (car parsed))
-         (properties (cdr parsed)))
-    (tp--regexp-apply pattern properties
-                      (lambda (start end props obj)
-                        (set-text-properties start end props obj))
-                      object)))
+  (tp--regexp-apply pattern plist
+                    (lambda (start end props obj)
+                      (set-text-properties start end props obj))
+                    object))
 
-(defun tp-regexp-add (pattern &rest args)
+(defun tp-regexp-add (pattern plist &optional object)
   "Add/update properties on all regexp matches of PATTERN.
 
   (tp-regexp-add PATTERN PLIST &optional OBJECT)
@@ -942,10 +914,7 @@ PLIST is a property list like \\='(face bold help-echo \"tip\").
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-regexp-set', this deeply merges nested properties."
-  (let* ((parsed (tp--parse-match-args args))
-         (object (car parsed))
-         (properties (cdr parsed)))
-    (tp--regexp-apply pattern properties #'tp--deep-merge-apply object)))
+  (tp--regexp-apply pattern plist #'tp--deep-merge-apply object))
 
 ;;; Search functions
 
