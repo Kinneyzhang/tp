@@ -249,12 +249,12 @@
     (should (null (tp-layer-props 'undefined-layer)))))
 
 (ert-deftest tp-test-layer-undefine ()
-  "Test tp-layer-undefine removes layer definition."
+  "Test tp-undefine-layer removes layer definition."
   (tp-test-with-temp-buffer
-    (tp-define-layer test-layer (face bold))
-    (should (assoc 'test-layer tp-layer-alist))
-    (tp-layer-undefine 'test-layer)
-    (should-not (assoc 'test-layer tp-layer-alist))))
+   (tp-define-layer test-layer (face bold))
+   (should (assoc 'test-layer tp-layer-alist))
+   (tp-undefine-layer 'test-layer)
+   (should-not (assoc 'test-layer tp-layer-alist))))
 
 ;;; ============================================================
 ;;; Layer Group Tests (using tp-define-layer with multiple layers)
@@ -288,13 +288,13 @@
         (should (memq 'italic faces))))))
 
 (ert-deftest tp-test-group-undefine ()
-  "Test tp-group-undefine removes group definition."
+  "Test tp-undefine-group removes group definition."
   (tp-test-with-temp-buffer
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer my-group layer1)
-    (should (assoc 'my-group tp-layer-groups))
-    (tp-group-undefine 'my-group)
-    (should-not (assoc 'my-group tp-layer-groups))))
+   (tp-define-layer layer1 (face bold))
+   (tp-define-layer my-group layer1)
+   (should (assoc 'my-group tp-layer-groups))
+   (tp-undefine-group 'my-group)
+   (should-not (assoc 'my-group tp-layer-groups))))
 
 (ert-deftest tp-test-layer-reset ()
   "Test tp-layer-reset clears all definitions."
@@ -861,33 +861,14 @@
 ;; Tests for tp-search are in Search and Navigation Tests section above
 
 ;;; ============================================================
-;;; Alias Tests
-;;; ============================================================
-
-(ert-deftest tp-test-aliases-exist ()
-  "Test that all aliases are properly defined."
-  (should (fboundp 'tp-set))
-  (should (fboundp 'tp-layer-properties))
-  (should (fboundp 'tp-layer-group-properties))
-  (should (fboundp 'tp-layer-group-undefine)))
-
-(ert-deftest tp-test-aliases-work ()
-  "Test that aliases work correctly."
-  (tp-test-with-temp-buffer
-    ;; Test tp-set alias
-    (insert "Hello")
-    (tp-set 1 6 '(face bold))
-    (should (eq (tp-at 1 'face) 'bold))))
-
-;;; ============================================================
 ;;; Edge Case Tests
 ;;; ============================================================
 
 (ert-deftest tp-test-empty-region ()
   "Test operations on empty buffer."
   (tp-test-with-temp-buffer
-    (should (null (tp-at 1)))
-    (should (tp-empty-p))))
+   (should (null (tp-at 1)))
+   (should (tp-empty-p))))
 
 (ert-deftest tp-test-overlapping-regions ()
   "Test overlapping property regions."

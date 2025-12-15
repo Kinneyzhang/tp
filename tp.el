@@ -1515,18 +1515,12 @@ Appends 'tp-name property to identify the layer."
   (when-let ((plist (cdr (assoc layer-name tp-layer-alist))))
     (append plist (list 'tp-name layer-name))))
 
-(defalias 'tp-layer-properties 'tp-layer-props
-  "Alias for `tp-layer-props'.")
-
 (defun tp-group-props (group-name)
   "Return list of properties for all layers in GROUP-NAME."
   (when-let ((layers (cdr (assoc group-name tp-layer-groups))))
     (mapcar (lambda (layer)
               (tp-layer-props layer))
             layers)))
-
-(defalias 'tp-layer-group-properties 'tp-group-props
-  "Alias for `tp-group-props'.")
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
@@ -1535,16 +1529,13 @@ Clears both `tp-layer-alist' and `tp-layer-groups'."
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil))
 
-(defun tp-layer-undefine (name)
+(defun tp-undefine-layer (name)
   "Remove layer NAME from `tp-layer-alist'."
   (setq tp-layer-alist (assq-delete-all name tp-layer-alist)))
 
-(defun tp-group-undefine (name)
+(defun tp-undefine-group (name)
   "Remove layer group NAME from `tp-layer-groups'."
   (setq tp-layer-groups (assq-delete-all name tp-layer-groups)))
-
-(defalias 'tp-layer-group-undefine 'tp-group-undefine
-  "Alias for `tp-group-undefine'.")
 
 (defun tp-intervals-map (function start end &optional object)
   "Apply FUNCTION to all intervals between START and END in OBJECT.

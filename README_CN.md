@@ -208,8 +208,8 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-define-layer`](#tp-define-layer---定义属性层) | 定义属性层或属性层组 |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取属性层的属性 |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取属性层组中所有属性层的属性 |
-| [`tp-layer-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除属性层定义 |
-| [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除属性层组定义 |
+| [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | 移除属性层定义 |
+| [`tp-undefine-group`](#tp-undefine-layer--tp-undefine-group) | 移除属性层组定义 |
 | [`tp-layer-reset`](#tp-layer-reset) | 清除所有属性层/属性层组定义 |
 
 #### 属性层放置函数
@@ -1133,11 +1133,11 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-#### `tp-layer-undefine` / `tp-group-undefine`
+#### `tp-undefine-layer` / `tp-undefine-group`
 
 ```elisp
-(tp-layer-undefine NAME)
-(tp-group-undefine NAME)
+(tp-undefine-layer NAME)
+(tp-undefine-group NAME)
 ```
 
 移除属性层或属性层组定义。
@@ -1149,7 +1149,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (setq tp-layer-alist nil)
   (tp-define-layer temp-layer (face bold))
-  (tp-layer-undefine 'temp-layer)
+  (tp-undefine-layer 'temp-layer)
   (tp-layer-props 'temp-layer))
 ;; => nil
 
@@ -1159,7 +1159,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (setq tp-layer-groups nil)
   (tp-define-layer l1 (face bold))
   (tp-define-layer my-group l1)
-  (tp-group-undefine 'my-group)
+  (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
 ;; => nil
 ```
@@ -1787,18 +1787,6 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
                     (tp-delete-layer s e 'temp-highlight))
                   start end))
 ```
-
----
-
-## 别名
-
-为方便使用，tp.el 提供以下别名：
-
-| 别名 | 原函数 |
-|------|--------|
-| `tp-layer-properties` | `tp-layer-props` |
-| `tp-layer-group-properties` | `tp-group-props` |
-| `tp-layer-group-undefine` | `tp-group-undefine` |
 
 ---
 

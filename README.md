@@ -209,8 +209,8 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-define-layer`](#tp-define-layer---define-layers) | Define a layer or layer group |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
-| [`tp-layer-undefine`](#tp-layer-undefine--tp-group-undefine) | Remove layer definition |
-| [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | Remove group definition |
+| [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | Remove layer definition |
+| [`tp-undefine-group`](#tp-undefine-layer--tp-undefine-group) | Remove group definition |
 | [`tp-layer-reset`](#tp-layer-reset) | Clear all layer/group definitions |
 
 #### Property Layer Placement Functions
@@ -1139,11 +1139,11 @@ Get properties for a layer or all layers in a group.
 
 ---
 
-#### `tp-layer-undefine` / `tp-group-undefine`
+#### `tp-undefine-layer` / `tp-undefine-group`
 
 ```elisp
-(tp-layer-undefine NAME)
-(tp-group-undefine NAME)
+(tp-undefine-layer NAME)
+(tp-undefine-group NAME)
 ```
 
 Remove layer or group definition.
@@ -1155,7 +1155,7 @@ Remove layer or group definition.
 (progn
   (setq tp-layer-alist nil)
   (tp-define-layer temp-layer (face bold))
-  (tp-layer-undefine 'temp-layer)
+  (tp-undefine-layer 'temp-layer)
   (tp-layer-props 'temp-layer))
 ;; => nil
 
@@ -1165,7 +1165,7 @@ Remove layer or group definition.
   (setq tp-layer-groups nil)
   (tp-define-layer l1 (face bold))
   (tp-define-layer my-group l1)
-  (tp-group-undefine 'my-group)
+  (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
 ;; => nil
 ```
@@ -1793,18 +1793,6 @@ Get name of the top (visible) layer.
                     (tp-delete-layer s e 'temp-highlight))
                   start end))
 ```
-
----
-
-## Aliases
-
-For convenience, tp.el provides these aliases:
-
-| Alias | Original Function |
-|-------|-------------------|
-| `tp-layer-properties` | `tp-layer-props` |
-| `tp-layer-group-properties` | `tp-group-props` |
-| `tp-layer-group-undefine` | `tp-group-undefine` |
 
 ---
 
