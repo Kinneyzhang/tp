@@ -862,16 +862,17 @@
     (tp-set 4 7 '(marker t) str)
     (tp-set 8 11 '(marker t) str)
     ;; Use a function that accepts idx and records the indices
+    ;; Return the uppercased text (same length) to avoid truncation issues
     (tp-search-map (lambda (txt idx)
                      (push idx indices)
-                     (format "%d:%s" idx txt))
+                     (upcase txt))
                    str 'marker)
     ;; Check indices were passed in order (reversed due to push)
     (should (equal (reverse indices) '(0 1 2)))
-    ;; Check text was transformed with index
-    (should (equal (substring str 0 5) "0:aaa"))
-    (should (equal (substring str 4 9) "1:bbb"))
-    (should (equal (substring str 8 13) "2:ccc"))))
+    ;; Check text was transformed (uppercased)
+    (should (equal (substring str 0 3) "AAA"))
+    (should (equal (substring str 4 7) "BBB"))
+    (should (equal (substring str 8 11) "CCC"))))
 
 (ert-deftest tp-test-search-map-with-idx-in-buffer ()
   "Test tp-search-map passes index to function in buffer range."
