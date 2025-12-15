@@ -1,7 +1,7 @@
 # tp.el - Emacs 文本属性操作库
 
 <p align="center">
-  <strong>一个功能强大的文本属性操作库，具有创新的图层系统</strong>
+  <strong>一个功能强大的文本属性操作库，具有创新的属性层系统</strong>
 </p>
 
 <p align="center">
@@ -9,27 +9,147 @@
   <a href="#安装">安装</a> •
   <a href="#快速开始">快速开始</a> •
   <a href="#api-参考">API 参考</a> •
-  <a href="#图层系统">图层系统</a>
+  <a href="#属性层系统">属性层系统</a>
 </p>
 
 ---
 
-**tp.el** 提供了一个便捷统一的 API 来操作 Emacs 文本属性。灵感来自用于叠加层的 [ov.el](https://github.com/emacsorphanage/ov)，tp.el 提供：
+## 概述
 
-- **统一 API**：所有属性设置函数同时支持 **字符串** 和 **缓冲区**
-- **图层系统**：在同一文本区域上堆叠多组属性
-- **模式匹配**：将属性应用到匹配字符串或正则表达式的文本
+**tp.el** 是一个全面增强 Emacs 文本属性操作的库。它不仅仅是对原生文本属性 API（如 `put-text-property`、`get-text-property`）的简单封装，更提供了许多**原生函数所不具备的功能拓展**。
+
+灵感来自用于叠加层的 [ov.el](https://github.com/emacsorphanage/ov)，tp.el 在以下方面进行了创新：
+
+### 核心创新
+
+1. **统一的 API 参数规范**：所有函数支持多种灵活的调用方式，同时适用于字符串和缓冲区
+2. **子属性的精细操作**：支持嵌套属性的路径式访问、修改和深度合并
+3. **创新的属性层系统**：在同一文本区域上堆叠、管理多组属性，实现属性的分层控制
+4. **模式匹配批量操作**：通过字符串或正则表达式批量应用属性
+5. **增强的搜索导航**：丰富的属性搜索和遍历功能
 
 ## 功能特性
 
-- ✅ **统一对象支持**：`tp-set`、`tp-match`、`tp-regexp` 等函数同时支持字符串和缓冲区
-- ✅ **清晰语义**：`tp-reset`（替换全部）、`tp-set`（替换指定）、`tp-add`（深度合并）
-- ✅ **嵌套属性访问**：使用路径语法获取/设置/移除嵌套子属性
-- ✅ **创新图层系统**：堆叠、轮换和管理多层属性
-- ✅ **图层组**：定义可复用的相关图层集合
-- ✅ **搜索和导航**：查找并导航带属性的文本
-- ✅ **模式匹配**：将属性应用到字符串/正则匹配，支持 reset/add 变体
-- ✅ **简洁 API**：一致的命名和调用约定
+### 第一层：统一的 API 参数规范
+
+原生 Emacs API 针对字符串和缓冲区有不同的函数和参数顺序，tp.el 统一了这一切：
+
+- ✅ **四种调用约定**：所有核心函数（`tp-set`、`tp-get`、`tp-match` 等）支持四种灵活的调用方式：
+  ```elisp
+  ;; 1. 当前缓冲区
+  (tp-set START END '(face bold))
+  ;; 2. 指定缓冲区或字符串
+  (tp-set START END '(face bold) OBJECT)
+  ;; 3. 整个字符串（平铺属性）
+  (tp-set STRING 'face 'bold 'help-echo "tip")
+  ;; 4. 支持 (PATTERN STRING) 格式
+  (tp-match '("world" "Hello world") '(face bold))
+  ```
+- ✅ **统一对象支持**：同一个函数同时支持字符串和缓冲区，无需记忆不同的 API
+
+### 第二层：三种属性操作语义
+
+原生 API 只有简单的设置和获取，tp.el 提供了三种清晰的操作语义：
+
+- ✅ **`tp-reset`**：完全替换 - 清除所有现有属性，设置新属性
+- ✅ **`tp-set`**：部分替换 - 只替换指定属性，保留其他属性
+- ✅ **`tp-add`**：深度合并 - 智能合并嵌套属性，而非简单覆盖
+
+```elisp
+;; 深度合并示例
+(tp-set 1 10 '(face (:foreground "red")))
+(tp-add 1 10 '(face (:background "blue")))
+;; 结果: face 是 (:foreground "red" :background "blue")
+;; 原生 API 会完全覆盖，而 tp-add 会智能合并
+```
+
+### 第三层：子属性的精细操作
+
+**这是原生 API 完全不具备的功能**。tp.el 支持对嵌套属性进行精细的读取、修改和删除：
+
+- ✅ **路径式访问**：通过路径语法访问深层嵌套的属性值
+  ```elisp
+  ;; 获取嵌套属性
+  (tp-get str 'face :underline :style)  ; => wave
+  (tp-at 5 '(face :box :color))         ; => "blue"
+  
+  ;; 获取多个嵌套键
+  (tp-get str 'face :underline '(:color :style))
+  ;; => ((:color "green" :style wave))
+  ```
+- ✅ **子属性删除**：精确移除嵌套属性中的特定键
+  ```elisp
+  ;; 只删除 :underline 中的 :style，保留 :color
+  (tp-remove 1 10 '(face :underline (:style)))
+  ```
+- ✅ **深度合并**：`tp-add` 递归合并嵌套的 plist 结构
+- ✅ **Face 智能合并**：符号 face 自动前置到 face 列表，plist face 深度合并
+
+### 第四层：创新的属性层系统
+
+**这是 tp.el 最具创新性的功能**，原生 Emacs 完全不支持。属性层系统允许在同一文本区域上堆叠多组属性：
+
+- ✅ **属性层栈概念**：多个属性层像栈一样堆叠，只有顶层可见，下层被保留
+- ✅ **属性层定义与复用**：通过 `tp-define-layer` 定义可复用的属性层和属性层组
+- ✅ **丰富的属性层操作**：
+  - 放置：`tp-put-layer`（指定位置）、`tp-push-layer`（顶部）
+  - 删除：`tp-delete-layer`（按名称/索引）、`tp-pop-layer`（顶层）
+  - 移动：`tp-raise-layer`（上下移动）、`tp-rotate-layer`（轮换）、`tp-pin-layer`（置顶）、`tp-switch-layer`（交换）
+  - 合并：`tp-merge-layers`（合并指定层）、`tp-flatten-layers`（扁平化所有层）
+- ✅ **属性层查询**：`tp-layer-list`、`tp-layer-count`、`tp-layer-exists-p`、`tp-layer-top`
+
+```elisp
+;; 属性层使用示例
+(tp-define-layer highlight (face (:background "yellow")))
+(tp-define-layer error (face (:foreground "red")))
+
+;; 堆叠多个属性层
+(tp-push-layer 1 10 'highlight)
+(tp-push-layer 1 10 'error)  ; error 现在可见
+
+;; 轮换显示
+(tp-rotate-layer 1 10)  ; highlight 现在可见
+```
+
+### 第五层：模式匹配与批量操作
+
+原生 API 需要手动搜索和循环，tp.el 提供了便捷的模式匹配功能：
+
+- ✅ **字符串匹配**：`tp-match`、`tp-match-reset`、`tp-match-add`
+- ✅ **正则匹配**：`tp-regexp`、`tp-regexp-reset`、`tp-regexp-add`
+- ✅ **三种语义变体**：每种匹配都支持 set/reset/add 三种操作语义
+
+```elisp
+;; 高亮所有 TODO
+(tp-match "TODO" '(face warning))
+
+;; 正则匹配所有数字
+(tp-regexp "[0-9]+" '(face font-lock-number-face))
+
+;; 深度合并方式添加属性
+(tp-match-add "TODO" '(face (:underline t)))
+```
+
+### 第六层：增强的搜索与导航
+
+- ✅ **范围搜索**：`tp-search` 返回所有匹配区间的列表
+- ✅ **N次搜索**：`tp-forward`/`tp-backward` 支持向前/向后搜索N次
+- ✅ **搜索并执行**：`tp-forward-do`/`tp-backward-do` 搜索并对匹配文本执行函数
+- ✅ **批量转换**：`tp-search-map` 对所有匹配应用转换函数
+
+```elisp
+;; 搜索所有标记
+(tp-search my-string 'marker)  ; => ((0 5 t) (12 17 t))
+
+;; 将所有标记文本转为大写
+(tp-search-map #'upcase my-string 'marker)
+```
+
+### 第七层：查询与诊断
+
+- ✅ **区间查询**：`tp-intervals` 获取所有属性区间
+- ✅ **空检查**：`tp-empty-p` 检查是否有属性
+- ✅ **属性合并**：`tp-plist` 获取区域内所有属性的合并列表
 
 ## 系统要求
 
@@ -101,49 +221,49 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-empty-p`](#tp-empty-p---检查属性) | 检查对象是否没有属性 |
 | [`tp-plist`](#tp-plist---获取合并的属性) | 获取所有属性的合并列表 |
 
-#### 图层定义函数
+#### 属性层定义函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-define-layer`](#tp-define-layer---定义图层) | 定义图层或图层组 |
-| [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取图层的属性 |
-| [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取图层组中所有图层的属性 |
-| [`tp-layer-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除图层定义 |
-| [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除图层组定义 |
-| [`tp-layer-reset`](#tp-layer-reset) | 清除所有图层/图层组定义 |
+| [`tp-define-layer`](#tp-define-layer---定义属性层) | 定义属性层或属性层组 |
+| [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取属性层的属性 |
+| [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取属性层组中所有属性层的属性 |
+| [`tp-layer-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除属性层定义 |
+| [`tp-group-undefine`](#tp-layer-undefine--tp-group-undefine) | 移除属性层组定义 |
+| [`tp-layer-reset`](#tp-layer-reset) | 清除所有属性层/属性层组定义 |
 
-#### 图层放置函数
+#### 属性层放置函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-put-layer`](#tp-put-layer---在指定位置设置图层) | 在指定索引位置设置图层 |
-| [`tp-push-layer`](#tp-push-layer---推送图层到顶部) | 将图层推到堆栈顶部 |
+| [`tp-put-layer`](#tp-put-layer---在指定位置设置属性层) | 在指定索引位置设置属性层 |
+| [`tp-push-layer`](#tp-push-layer---推送属性层到顶部) | 将属性层推到堆栈顶部 |
 
-#### 图层删除函数
+#### 属性层删除函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-delete-layer`](#tp-delete-layer---按名称索引删除图层) | 按名称或索引删除图层 |
-| [`tp-pop-layer`](#tp-pop-layer---弹出顶层) | 移除顶层图层 |
+| [`tp-delete-layer`](#tp-delete-layer---按名称索引删除属性层) | 按名称或索引删除属性层 |
+| [`tp-pop-layer`](#tp-pop-layer---弹出顶层) | 移除顶层属性层 |
 
-#### 图层移动函数
+#### 属性层移动函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-raise-layer`](#tp-raise-layer---上移下移图层) | 将图层上移/下移 N 个位置 |
-| [`tp-rotate-layer`](#tp-rotate-layer---轮换图层) | 轮换图层（顶层移到底部） |
-| [`tp-pin-layer`](#tp-pin-layer---将图层置顶) | 将图层置顶（使其可见） |
-| [`tp-switch-layer`](#tp-switch-layer---交换两个图层) | 交换两个图层的位置 |
+| [`tp-raise-layer`](#tp-raise-layer---上移下移属性层) | 将属性层上移/下移 N 个位置 |
+| [`tp-rotate-layer`](#tp-rotate-layer---轮换属性层) | 轮换属性层（顶层移到底部） |
+| [`tp-pin-layer`](#tp-pin-layer---将属性层置顶) | 将属性层置顶（使其可见） |
+| [`tp-switch-layer`](#tp-switch-layer---交换两个属性层) | 交换两个属性层的位置 |
 
-#### 图层合并函数
+#### 属性层合并函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-merge-layers`](#tp-merge-layers---合并多个图层) | 将指定图层合并为新图层 |
-| [`tp-flatten-layers`](#tp-flatten-layers---扁平化所有图层) | 将所有图层扁平化为单一图层 |
+| [`tp-merge-layers`](#tp-merge-layers---合并多个属性层) | 将指定属性层合并为新属性层 |
+| [`tp-flatten-layers`](#tp-flatten-layers---扁平化所有属性层) | 将所有属性层扁平化为单一属性层 |
 
-#### 图层查询函数
+#### 属性层查询函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-layer-list`](#tp-layer-list---列出所有图层) | 列出区域中的所有图层名称 |
-| [`tp-layer-count`](#tp-layer-count) | 计算区域中的图层数量 |
-| [`tp-layer-exists-p`](#tp-layer-exists-p) | 检查区域中是否存在某图层 |
-| [`tp-layer-top`](#tp-layer-top) | 获取顶层（可见）图层的名称 |
+| [`tp-layer-list`](#tp-layer-list---列出所有属性层) | 列出区域中的所有属性层名称 |
+| [`tp-layer-count`](#tp-layer-count) | 计算区域中的属性层数量 |
+| [`tp-layer-exists-p`](#tp-layer-exists-p) | 检查区域中是否存在某属性层 |
+| [`tp-layer-top`](#tp-layer-top) | 获取顶层（可见）属性层的名称 |
 
 ---
 
@@ -797,11 +917,11 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-## 图层系统
+## 属性层系统
 
-**图层系统**是 tp.el 的创新功能，允许在同一文本区域上堆叠多组属性。只有**顶层**可见，但下层会被保留，可以通过轮换或置顶来显示。
+**属性层系统**是 tp.el 的创新功能，允许在同一文本区域上堆叠多组属性。只有**顶层**可见，但下层会被保留，可以通过轮换或置顶来显示。
 
-### 图层概念
+### 属性层概念
 
 ```
 ┌─────────────────────────────┐
@@ -813,34 +933,34 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 └─────────────────────────────┘
 ```
 
-### 图层定义
+### 属性层定义
 
-#### `tp-define-layer` - 定义图层
+#### `tp-define-layer` - 定义属性层
 
-定义单个图层或多个图层组。
+定义单个属性层或多个属性层组。
 
-**单个图层：**
+**单个属性层：**
 
 ```elisp
 (tp-define-layer layer-name
   (face (:background "cyan") line-prefix ">>"))
 ```
 
-**多个图层（图层组）：**
+**多个属性层（属性层组）：**
 
 ```elisp
 (tp-define-layer my-group
-  layer-1                                    ; 引用已存在的图层
-  (face (:background "red") line-prefix ">>")    ; 匿名图层
-  (face (:background "green" :weight bold)))     ; 另一个匿名图层
+  layer-1                                    ; 引用已存在的属性层
+  (face (:background "red") line-prefix ">>")    ; 匿名属性层
+  (face (:background "green" :weight bold)))     ; 另一个匿名属性层
 ```
 
-定义中的第一个图层是顶层（默认可见）。
+定义中的第一个属性层是顶层（默认可见）。
 
 **示例：**
 
 ```elisp
-;; 定义单个图层
+;; 定义单个属性层
 (tp-define-layer highlight
   (face (:background "yellow" :foreground "black")))
 
@@ -851,7 +971,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-define-layer info
   (face (:background "blue" :foreground "white")))
 
-;; 定义图层组
+;; 定义属性层组
 (tp-define-layer status-colors
   highlight
   error
@@ -867,7 +987,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-group-props GROUP-NAME)
 ```
 
-获取图层或图层组中所有图层的属性。
+获取属性层或属性层组中所有属性层的属性。
 
 ---
 
@@ -878,7 +998,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-group-undefine NAME)
 ```
 
-移除图层或图层组定义。
+移除属性层或属性层组定义。
 
 ---
 
@@ -888,13 +1008,13 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-layer-reset)
 ```
 
-清除所有图层和图层组定义。
+清除所有属性层和属性层组定义。
 
 ---
 
-### 图层放置
+### 属性层放置
 
-#### `tp-put-layer` - 在指定位置设置图层
+#### `tp-put-layer` - 在指定位置设置属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -904,9 +1024,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-put-layer STRING LAYER IDX)
 ```
 
-在图层堆栈的指定索引位置设置图层。
+在属性层堆栈的指定索引位置设置属性层。
 
-- `IDX = 0`：顶部（可见图层）
+- `IDX = 0`：顶部（可见属性层）
 - `IDX = -1`：底部
 - 其他值在该位置插入
 
@@ -916,19 +1036,19 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-define-layer base (face default))
 (tp-define-layer highlight (face (:background "yellow")))
 
-;; 将 base 图层放在顶部
+;; 将 base 属性层放在顶部
 (tp-put-layer 1 10 'base 0)
 
 ;; 将 highlight 放在索引 1（顶部下面）
 (tp-put-layer 1 10 'highlight 1)
 
-;; 将图层放在底部
+;; 将属性层放在底部
 (tp-put-layer 1 10 'info -1)
 ```
 
 ---
 
-#### `tp-push-layer` - 推送图层到顶部
+#### `tp-push-layer` - 推送属性层到顶部
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -938,7 +1058,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-push-layer STRING LAYER)
 ```
 
-将图层推到堆栈顶部（相当于 `tp-put-layer ... 0`）。
+将属性层推到堆栈顶部（相当于 `tp-put-layer ... 0`）。
 
 **示例：**
 
@@ -946,7 +1066,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-define-layer base (face default))
 (tp-define-layer highlight (face (:background "yellow")))
 
-;; 首先推入 base 图层
+;; 首先推入 base 属性层
 (tp-push-layer 1 10 'base)
 
 ;; 将 highlight 推到顶部（现在可见）
@@ -955,9 +1075,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-### 图层删除
+### 属性层删除
 
-#### `tp-delete-layer` - 按名称/索引删除图层
+#### `tp-delete-layer` - 按名称/索引删除属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -967,7 +1087,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-delete-layer STRING LAYER-NAME/IDX)
 ```
 
-通过名称或索引从堆栈任意位置删除图层。
+通过名称或索引从堆栈任意位置删除属性层。
 
 **示例：**
 
@@ -998,9 +1118,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-### 图层移动
+### 属性层移动
 
-#### `tp-raise-layer` - 上移/下移图层
+#### `tp-raise-layer` - 上移/下移属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -1010,7 +1130,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-raise-layer STRING IDX/LAYER-NAME N)
 ```
 
-将图层上移 N 个位置。正数 N 向顶部移动，负数向底部移动。
+将属性层上移 N 个位置。正数 N 向顶部移动，负数向底部移动。
 
 **示例：**
 
@@ -1018,13 +1138,13 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 layer1 上移 2 个位置
 (tp-raise-layer 1 10 'layer1 2)
 
-;; 将索引 2 的图层下移 1 个位置
+;; 将索引 2 的属性层下移 1 个位置
 (tp-raise-layer 1 10 2 -1)
 ```
 
 ---
 
-#### `tp-rotate-layer` - 轮换图层
+#### `tp-rotate-layer` - 轮换属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -1034,7 +1154,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-rotate-layer STRING)
 ```
 
-轮换图层 - 顶层移到底部，下一层变为可见。
+轮换属性层 - 顶层移到底部，下一层变为可见。
 
 **示例：**
 
@@ -1046,7 +1166,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-#### `tp-pin-layer` - 将图层置顶
+#### `tp-pin-layer` - 将属性层置顶
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -1056,7 +1176,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-pin-layer STRING IDX/LAYER-NAME)
 ```
 
-将特定图层移到顶部（使其可见）。
+将特定属性层移到顶部（使其可见）。
 
 **示例：**
 
@@ -1067,7 +1187,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-#### `tp-switch-layer` - 交换两个图层
+#### `tp-switch-layer` - 交换两个属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -1077,7 +1197,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
 ```
 
-交换两个图层的位置。
+交换两个属性层的位置。
 
 **示例：**
 
@@ -1088,9 +1208,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-### 图层合并
+### 属性层合并
 
-#### `tp-merge-layers` - 合并多个图层
+#### `tp-merge-layers` - 合并多个属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -1100,7 +1220,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-merge-layers STRING NEW-LAYER-NAME '(IDX1 LAYER-NAME1 IDX2 ...))
 ```
 
-将指定的图层合并为一个新图层。列表中靠前的图层优先级更高。
+将指定的属性层合并为一个新属性层。列表中靠前的属性层优先级更高。
 
 **示例：**
 
@@ -1114,7 +1234,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-#### `tp-flatten-layers` - 扁平化所有图层
+#### `tp-flatten-layers` - 扁平化所有属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
@@ -1124,29 +1244,29 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-flatten-layers STRING NAME)
 ```
 
-将所有图层扁平化为一个具有给定名称的单一图层。
+将所有属性层扁平化为一个具有给定名称的单一属性层。
 
 **示例：**
 
 ```elisp
-;; 将所有图层扁平化为 'flat-layer
+;; 将所有属性层扁平化为 'flat-layer
 (tp-flatten-layers 1 10 'flat-layer)
 
-;; 使用 nil 名称扁平化（无名图层）
+;; 使用 nil 名称扁平化（无名属性层）
 (tp-flatten-layers 1 10 nil)
 ```
 
 ---
 
-### 图层查询函数
+### 属性层查询函数
 
-#### `tp-layer-list` - 列出所有图层
+#### `tp-layer-list` - 列出所有属性层
 
 ```elisp
 (tp-layer-list START END &optional OBJECT)
 ```
 
-获取区域中所有图层名称的列表。
+获取区域中所有属性层名称的列表。
 
 **示例：**
 
@@ -1162,7 +1282,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-layer-count START END &optional OBJECT)
 ```
 
-计算区域中的图层数量。
+计算区域中的属性层数量。
 
 ---
 
@@ -1172,7 +1292,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-layer-exists-p START END NAME &optional OBJECT)
 ```
 
-检查区域中是否存在某图层。
+检查区域中是否存在某属性层。
 
 ---
 
@@ -1182,16 +1302,16 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-layer-top START END &optional OBJECT)
 ```
 
-获取顶层（可见）图层的名称。
+获取顶层（可见）属性层的名称。
 
 ---
 
 ## 实用示例
 
-### 多图层语法高亮
+### 多属性层语法高亮
 
 ```elisp
-;; 为不同高亮目的定义图层
+;; 为不同高亮目的定义属性层
 (tp-define-layer code-base
   (face font-lock-keyword-face))
 
@@ -1217,7 +1337,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ### 状态指示器
 
 ```elisp
-;; 将状态图层定义为一个组
+;; 将状态属性层定义为一个组
 (tp-define-layer status-todo (face (:foreground "gray")))
 (tp-define-layer status-progress (face (:foreground "yellow")))
 (tp-define-layer status-done (face (:foreground "green")))
