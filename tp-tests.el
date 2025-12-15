@@ -557,6 +557,16 @@
       (should match)
       (should (= (prop-match-beginning match) 7)))))
 
+(ert-deftest tp-test-forward-on-string ()
+  "Test tp-forward works on string objects."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((matches (tp-forward 'marker nil str 2)))
+      (should (= (length matches) 2))
+      (should (equal (car matches) '(0 5 t)))
+      (should (equal (cadr matches) '(12 17 t))))))
+
 (ert-deftest tp-test-forward-with-n ()
   "Test tp-forward with N parameter."
   (tp-test-with-temp-buffer
@@ -583,8 +593,34 @@
       (should match)
       (should (= (prop-match-beginning match) 1)))))
 
+(ert-deftest tp-test-backward-on-string ()
+  "Test tp-backward works on string objects."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((matches (tp-backward 'marker nil str 2)))
+      (should (= (length matches) 2))
+      ;; Backward returns matches in reverse order
+      (should (equal (car matches) '(12 17 t)))
+      (should (equal (cadr matches) '(0 5 t))))))
+
 (ert-deftest tp-test-forward-do ()
-  "Test tp-forward-do applies function to matches."
+  "Test tp-forward-do applies function to matched text."
+  (tp-test-with-temp-buffer
+    (insert "hello World test")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 17 '(marker t))
+    (goto-char 1)
+    (skip-unless (fboundp 'text-property-search-forward))
+    ;; Test that function receives text and can transform it
+    (let ((count (tp-forward-do #'upcase 'marker nil nil 2)))
+      (should (= count 2))
+      ;; Check that text was upcased
+      (should (equal (buffer-substring 1 6) "HELLO"))
+      (should (equal (buffer-substring 13 17) "TEST")))))
+
+(ert-deftest tp-test--forward-do ()
+  "Test tp--forward-do applies function to matches (internal API)."
   (tp-test-with-temp-buffer
     (insert "Hello World Test")
     (tp-set 1 6 '(marker t))
@@ -592,14 +628,29 @@
     (goto-char 1)
     (skip-unless (fboundp 'text-property-search-forward))
     (let ((result nil))
-      (tp-forward-do
+      (tp--forward-do
        (lambda (match obj)
          (push (prop-match-beginning match) result))
        'marker nil nil 2)
       (should (= (length result) 2)))))
 
 (ert-deftest tp-test-backward-do ()
-  "Test tp-backward-do applies function to matches."
+  "Test tp-backward-do applies function to matched text."
+  (tp-test-with-temp-buffer
+    (insert "hello World test")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 17 '(marker t))
+    (goto-char 18)
+    (skip-unless (fboundp 'text-property-search-backward))
+    ;; Test that function receives text and can transform it
+    (let ((count (tp-backward-do #'upcase 'marker nil nil 2)))
+      (should (= count 2))
+      ;; Check that text was upcased
+      (should (equal (buffer-substring 1 6) "HELLO"))
+      (should (equal (buffer-substring 13 17) "TEST")))))
+
+(ert-deftest tp-test--backward-do ()
+  "Test tp--backward-do applies function to matches (internal API)."
   (tp-test-with-temp-buffer
     (insert "Hello World Test")
     (tp-set 1 6 '(marker t))
@@ -607,11 +658,33 @@
     (goto-char 18)
     (skip-unless (fboundp 'text-property-search-backward))
     (let ((result nil))
-      (tp-backward-do
+      (tp--backward-do
        (lambda (match obj)
          (push (prop-match-beginning match) result))
        'marker nil nil 2)
       (should (= (length result) 2)))))
+
+(ert-deftest tp-test-forward-do-on-string ()
+  "Test tp-forward-do works on string objects."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((count (tp-forward-do #'upcase 'marker nil str 2)))
+      (should (= count 2))
+      ;; Check that text was upcased
+      (should (equal (substring str 0 5) "HELLO"))
+      (should (equal (substring str 12 17) "HELLO")))))
+
+(ert-deftest tp-test-backward-do-on-string ()
+  "Test tp-backward-do works on string objects."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((count (tp-backward-do #'upcase 'marker nil str 2)))
+      (should (= count 2))
+      ;; Check that text was upcased
+      (should (equal (substring str 0 5) "HELLO"))
+      (should (equal (substring str 12 17) "HELLO")))))
 
 (ert-deftest tp-test-search-on-string ()
   "Test tp-search finds all matching properties in a string."
@@ -645,13 +718,13 @@
       (should (equal (car matches) '(1 6 t)))
       (should (equal (cadr matches) '(13 18 t))))))
 
-(ert-deftest tp-test-search-do-on-string ()
-  "Test tp-search-do applies function to all matches in a string."
+(ert-deftest tp-test--search-do-on-string ()
+  "Test tp--search-do applies function to all matches in a string (internal API)."
   (let ((str (copy-sequence "Hello World Hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
     (let ((result nil))
-      (tp-search-do
+      (tp--search-do
        (lambda (match obj)
          (push (car match) result))
        str 'marker)
@@ -659,20 +732,43 @@
       (should (member 0 result))
       (should (member 12 result)))))
 
-(ert-deftest tp-test-search-do-in-range ()
-  "Test tp-search-do applies function to all matches in a buffer range."
+(ert-deftest tp-test--search-do-in-range ()
+  "Test tp--search-do applies function to all matches in a buffer range (internal API)."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
     (tp-set 1 6 '(marker t))
     (tp-set 13 18 '(marker t))
     (let ((result nil))
-      (tp-search-do
+      (tp--search-do
        (lambda (match obj)
          (push (car match) result))
        1 18 'marker)
       (should (= (length result) 2))
       (should (member 1 result))
       (should (member 13 result)))))
+
+(ert-deftest tp-test-search-map-on-string ()
+  "Test tp-search-map applies function to matched text in a string."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (let ((count (tp-search-map #'upcase str 'marker)))
+      (should (= count 2))
+      ;; Check that text was upcased
+      (should (equal (substring str 0 5) "HELLO"))
+      (should (equal (substring str 12 17) "HELLO")))))
+
+(ert-deftest tp-test-search-map-in-range ()
+  "Test tp-search-map applies function to matched text in a buffer range."
+  (tp-test-with-temp-buffer
+    (insert "hello World hello")
+    (tp-set 1 6 '(marker t))
+    (tp-set 13 18 '(marker t))
+    (let ((count (tp-search-map #'upcase 1 18 'marker)))
+      (should (= count 2))
+      ;; Check that text was upcased
+      (should (equal (buffer-substring 1 6) "HELLO"))
+      (should (equal (buffer-substring 13 18) "HELLO")))))
 
 ;;; ============================================================
 ;;; Utility Function Tests

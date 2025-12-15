@@ -87,12 +87,12 @@ tp.el 所有函数按类别组织的完整概览：
 |------|------|
 | [`tp-search-forward`](#tp-search-forward--tp-search-backward) | text-property-search-forward 的原始包装 |
 | [`tp-search-backward`](#tp-search-forward--tp-search-backward) | text-property-search-backward 的原始包装 |
-| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本 |
-| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本 |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向前匹配应用函数 |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向后匹配应用函数 |
+| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本（支持缓冲区和字符串） |
+| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本（支持缓冲区和字符串） |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向前匹配的文本应用函数 |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向后匹配的文本应用函数 |
 | [`tp-search`](#tp-search---搜索所有匹配) | 在范围或字符串中搜索所有匹配的属性 |
-| [`tp-search-do`](#tp-search-do---对所有匹配应用函数) | 对所有匹配的属性应用函数 |
+| [`tp-search-map`](#tp-search-map---对匹配文本应用函数) | 对所有匹配的文本应用函数 |
 
 #### 查询函数
 | 函数 | 描述 |
@@ -572,8 +572,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 - **N** 是搜索次数，默认为 1。
 - **VALUE** 是可选的匹配值。
-- **OBJECT** 可以是缓冲区；nil 默认为当前缓冲区。
-- 返回最后一次成功搜索的 prop-match 对象。
+- **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
+- 对于缓冲区，返回最后一次成功搜索的 prop-match 对象。
+- 对于字符串，返回所有匹配的 (START END VALUE) 列表。
 
 **示例：**
 
@@ -586,6 +587,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ;; 向前搜索 3 次
 (tp-forward 'marker nil nil 3)
+
+;; 在字符串中搜索
+(tp-forward 'marker nil my-string 2)
+;; => ((0 5 t) (12 17 t))
 ```
 
 ---
@@ -597,19 +602,26 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
 ```
 
-向前/向后搜索 N 次具有 PROPERTY 的文本，并对每个匹配应用 FUNCTION。
+向前/向后搜索 N 次具有 PROPERTY 的文本，并对匹配的文本应用 FUNCTION。
 
-- **FUNCTION** 接收两个参数：prop-match 对象和 OBJECT。
+- **FUNCTION** 接收匹配到的文本作为唯一参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
 - **N** 是搜索次数，默认为 1。
+- **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
 - 返回成功匹配的数量。
 
 **示例：**
 
 ```elisp
-;; 对下 3 个 marker 应用函数
+;; 将缓冲区中匹配的文本转为大写
+(tp-forward-do #'upcase 'marker nil nil 3)
+
+;; 将字符串中匹配的文本转为大写
+(tp-forward-do #'upcase 'marker nil my-string 2)
+
+;; 自定义转换
 (tp-forward-do
- (lambda (match obj)
-   (message "在 %d 处找到" (prop-match-beginning match)))
+ (lambda (text)
+   (concat "[" text "]"))
  'marker nil nil 3)
 ```
 
@@ -646,36 +658,35 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
-#### `tp-search-do` - 对所有匹配应用函数
+#### `tp-search-map` - 对匹配文本应用函数
 
 ```elisp
 ;; 缓冲区/字符串区域
-(tp-search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
+(tp-search-map FUNCTION START END PROPERTY &optional VALUE OBJECT)
 
 ;; 整个字符串
-(tp-search-do FUNCTION STRING PROPERTY &optional VALUE)
+(tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
 ```
 
-在缓冲区/字符串范围或整个字符串中对所有 PROPERTY 匹配执行 FUNCTION。
+对所有 PROPERTY 匹配的文本应用 FUNCTION。
 
-- **FUNCTION** 接收两个参数：匹配（START END VALUE 列表）和 OBJECT。
+- **FUNCTION** 接收匹配到的文本作为唯一参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
 - 返回处理的匹配数量。
 
 **示例：**
 
 ```elisp
-;; 处理缓冲区范围内的所有 marker
-(tp-search-do
- (lambda (match obj)
-   (message "在 %d-%d 处找到，值为 %s"
-            (car match) (cadr match) (caddr match)))
- 1 100 'marker)
+;; 将字符串中所有 marker 文本转为大写
+(tp-search-map #'upcase my-string 'marker)
 
-;; 处理字符串中的所有标题
-(tp-search-do
- (lambda (match obj)
-   (upcase (substring obj (car match) (cadr match))))
- my-string 'type 'heading)
+;; 将缓冲区范围内所有 marker 文本转为大写
+(tp-search-map #'upcase 1 100 'marker)
+
+;; 自定义转换
+(tp-search-map
+ (lambda (text)
+   (concat "[" text "]"))
+ my-string 'marker)
 ```
 
 ---

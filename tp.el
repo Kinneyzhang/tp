@@ -1012,76 +1012,181 @@ VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-backward'."
 
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
-OBJECT can be a buffer; nil defaults to current buffer.
+OBJECT can be a buffer or string; nil defaults to current buffer.
 
-Returns the prop-match object from the last successful search,
-or nil if not found.
+For buffers, returns the prop-match object from the last successful search.
+For strings, returns a list of (START END VALUE) for all matches found.
 
-Uses `tp-search-forward' internally."
-  (let ((count (or n 1))
-        (result nil)
-        (buf (or object (current-buffer))))
-    (with-current-buffer buf
-      (dotimes (_ count)
-        (setq result (tp-search-forward property value))))
-    result))
+Uses `tp-search-forward' for buffers and `tp-search' for strings."
+  (let ((count (or n 1)))
+    (cond
+     ;; String object - use tp-search
+     ((stringp object)
+      (let ((matches (tp-search object property value)))
+        (seq-take matches count)))
+     ;; Buffer or nil
+     (t
+      (let ((result nil)
+            (buf (or object (current-buffer))))
+        (with-current-buffer buf
+          (dotimes (_ count)
+            (setq result (tp-search-forward property value))))
+        result)))))
 
 (defun tp-backward (property &optional value object n)
   "Search backward N times for text with PROPERTY.
 
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
-OBJECT can be a buffer; nil defaults to current buffer.
+OBJECT can be a buffer or string; nil defaults to current buffer.
 
-Returns the prop-match object from the last successful search,
-or nil if not found.
+For buffers, returns the prop-match object from the last successful search.
+For strings, returns a list of (START END VALUE) for the last N matches
+in reverse order (from end to start).
 
-Uses `tp-search-backward' internally."
-  (let ((count (or n 1))
-        (result nil)
-        (buf (or object (current-buffer))))
-    (with-current-buffer buf
-      (dotimes (_ count)
-        (setq result (tp-search-backward property value))))
-    result))
+Uses `tp-search-backward' for buffers and `tp-search' for strings."
+  (let ((count (or n 1)))
+    (cond
+     ;; String object - use tp-search and reverse
+     ((stringp object)
+      (let ((matches (nreverse (tp-search object property value))))
+        (seq-take matches count)))
+     ;; Buffer or nil
+     (t
+      (let ((result nil)
+            (buf (or object (current-buffer))))
+        (with-current-buffer buf
+          (dotimes (_ count)
+            (setq result (tp-search-backward property value))))
+        result)))))
+
+(defun tp--forward-do (function property &optional value object n)
+  "Internal: Search forward N times for PROPERTY and apply FUNCTION to each match.
+
+FUNCTION receives two arguments: the prop-match object (or list for strings)
+and OBJECT.
+N is the number of searches, defaulting to 1.
+VALUE is the optional value to match.
+OBJECT can be a buffer or string; nil defaults to current buffer.
+
+Returns the number of successful matches."
+  (let ((count (or n 1)))
+    (cond
+     ;; String object
+     ((stringp object)
+      (let ((matches (seq-take (tp-search object property value) count)))
+        (dolist (match matches)
+          (funcall function match object))
+        (length matches)))
+     ;; Buffer or nil
+     (t
+      (let ((matches 0)
+            (buf (or object (current-buffer))))
+        (with-current-buffer buf
+          (dotimes (_ count)
+            (when-let ((match (tp-search-forward property value)))
+              (funcall function match buf)
+              (cl-incf matches))))
+        matches)))))
 
 (defun tp-forward-do (function property &optional value object n)
   "Search forward N times for text with PROPERTY and apply FUNCTION to each match.
 
-FUNCTION receives two arguments: the prop-match object and OBJECT.
+FUNCTION receives the matched text as its only argument.  The return value
+of FUNCTION replaces the matched text in the string or buffer.
+
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
-OBJECT can be a buffer; nil defaults to current buffer.
+OBJECT can be a buffer or string; nil defaults to current buffer.
+
+Returns the number of successful matches.
+
+Example:
+  ;; Upcase all matched text
+  (tp-forward-do #\\='upcase \\='marker nil my-string 3)"
+  (tp--forward-do
+   (lambda (match obj)
+     (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
+            (end (if (listp match) (cadr match) (prop-match-end match)))
+            (text (if (stringp obj)
+                      (substring obj start end)
+                    (buffer-substring start end)))
+            (new-text (funcall function text)))
+       (when (and new-text (not (equal new-text text)))
+         (if (stringp obj)
+             ;; For strings, we need to replace in-place
+             (progn
+               (store-substring obj start new-text))
+           ;; For buffers, delete and insert
+           (save-excursion
+             (delete-region start end)
+             (goto-char start)
+             (insert new-text))))))
+   property value object n))
+
+(defun tp--backward-do (function property &optional value object n)
+  "Internal: Search backward N times for PROPERTY and apply FUNCTION to each match.
+
+FUNCTION receives two arguments: the prop-match object (or list for strings)
+and OBJECT.
+N is the number of searches, defaulting to 1.
+VALUE is the optional value to match.
+OBJECT can be a buffer or string; nil defaults to current buffer.
 
 Returns the number of successful matches."
-  (let ((count (or n 1))
-        (matches 0)
-        (buf (or object (current-buffer))))
-    (with-current-buffer buf
-      (dotimes (_ count)
-        (when-let ((match (tp-search-forward property value)))
-          (funcall function match buf)
-          (cl-incf matches))))
-    matches))
+  (let ((count (or n 1)))
+    (cond
+     ;; String object - reverse the matches
+     ((stringp object)
+      (let ((matches (seq-take (nreverse (tp-search object property value)) count)))
+        (dolist (match matches)
+          (funcall function match object))
+        (length matches)))
+     ;; Buffer or nil
+     (t
+      (let ((matches 0)
+            (buf (or object (current-buffer))))
+        (with-current-buffer buf
+          (dotimes (_ count)
+            (when-let ((match (tp-search-backward property value)))
+              (funcall function match buf)
+              (cl-incf matches))))
+        matches)))))
 
 (defun tp-backward-do (function property &optional value object n)
   "Search backward N times for text with PROPERTY and apply FUNCTION to each match.
 
-FUNCTION receives two arguments: the prop-match object and OBJECT.
+FUNCTION receives the matched text as its only argument.  The return value
+of FUNCTION replaces the matched text in the string or buffer.
+
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
-OBJECT can be a buffer; nil defaults to current buffer.
+OBJECT can be a buffer or string; nil defaults to current buffer.
 
-Returns the number of successful matches."
-  (let ((count (or n 1))
-        (matches 0)
-        (buf (or object (current-buffer))))
-    (with-current-buffer buf
-      (dotimes (_ count)
-        (when-let ((match (tp-search-backward property value)))
-          (funcall function match buf)
-          (cl-incf matches))))
-    matches))
+Returns the number of successful matches.
+
+Example:
+  ;; Upcase all matched text
+  (tp-backward-do #\\='upcase \\='marker nil my-string 3)"
+  (tp--backward-do
+   (lambda (match obj)
+     (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
+            (end (if (listp match) (cadr match) (prop-match-end match)))
+            (text (if (stringp obj)
+                      (substring obj start end)
+                    (buffer-substring start end)))
+            (new-text (funcall function text)))
+       (when (and new-text (not (equal new-text text)))
+         (if (stringp obj)
+             ;; For strings, we need to replace in-place
+             (progn
+               (store-substring obj start new-text))
+           ;; For buffers, delete and insert
+           (save-excursion
+             (delete-region start end)
+             (goto-char start)
+             (insert new-text))))))
+   property value object n))
 
 (defun tp-search (start-or-string &optional end-or-property property-or-value value object)
   "Search for all text with PROPERTY in a buffer/string range or entire string.
@@ -1157,16 +1262,16 @@ Each element contains the start position, end position, and property value."
       (nreverse results)))
    (t (error "Invalid first argument: %S" start-or-string))))
 
-(defun tp-search-do (function start-or-string &optional end-or-property property-or-value value object)
-  "Execute FUNCTION on all matches of PROPERTY in a buffer/string range or entire string.
+(defun tp--search-do (function start-or-string &optional end-or-property property-or-value value object)
+  "Internal: Execute FUNCTION on all matches of PROPERTY.
 
 This function supports two calling conventions:
 
 1. Buffer/string region:
-   (tp-search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
+   (tp--search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
 
 2. Entire string:
-   (tp-search-do FUNCTION STRING PROPERTY &optional VALUE)
+   (tp--search-do FUNCTION STRING PROPERTY &optional VALUE)
 
 FUNCTION receives two arguments: the prop-match (list of START END VALUE) and OBJECT.
 Returns the number of matches processed."
@@ -1186,6 +1291,48 @@ Returns the number of matches processed."
     (dolist (match matches)
       (funcall function match obj))
     (length matches)))
+
+(defun tp-search-map (function start-or-string &optional end-or-property property-or-value value object)
+  "Apply FUNCTION to matched text for all matches of PROPERTY.
+
+This function supports two calling conventions:
+
+1. Buffer/string region:
+   (tp-search-map FUNCTION START END PROPERTY &optional VALUE OBJECT)
+
+2. Entire string:
+   (tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
+
+FUNCTION receives the matched text as its only argument.  The return value
+of FUNCTION replaces the matched text in the string or buffer.
+
+Returns the number of matches processed.
+
+Example:
+  ;; Upcase all matched text
+  (tp-search-map #\\='upcase my-string \\='marker)"
+  (let ((obj (cond
+              ((stringp start-or-string) start-or-string)
+              ((numberp start-or-string) (or object (current-buffer)))
+              (t nil))))
+    (tp--search-do
+     (lambda (match obj)
+       (let* ((start (car match))
+              (end (cadr match))
+              (text (if (stringp obj)
+                        (substring obj start end)
+                      (buffer-substring start end)))
+              (new-text (funcall function text)))
+         (when (and new-text (not (equal new-text text)))
+           (if (stringp obj)
+               ;; For strings, replace in-place
+               (store-substring obj start new-text)
+             ;; For buffers, delete and insert
+             (save-excursion
+               (delete-region start end)
+               (goto-char start)
+               (insert new-text))))))
+     start-or-string end-or-property property-or-value value object)))
 
 
 ;;; Query Functions

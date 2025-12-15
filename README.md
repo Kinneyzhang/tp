@@ -88,12 +88,12 @@ A complete overview of all tp.el functions organized by category:
 |----------|-------------|
 | [`tp-search-forward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-forward |
 | [`tp-search-backward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-backward |
-| [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property |
-| [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to N forward matches |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to N backward matches |
+| [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property (buffers and strings) |
+| [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property (buffers and strings) |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N forward matches |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N backward matches |
 | [`tp-search`](#tp-search---search-all-matches) | Search all matching properties in range or string |
-| [`tp-search-do`](#tp-search-do---apply-function-to-all-matches) | Apply function to all matching properties |
+| [`tp-search-map`](#tp-search-map---apply-function-to-matched-text) | Apply function to matched text for all matches |
 
 #### Query Functions
 | Function | Description |
@@ -573,8 +573,9 @@ Search forward/backward N times for text with PROPERTY.
 
 - **N** is the number of searches, defaulting to 1.
 - **VALUE** is the optional value to match.
-- **OBJECT** can be a buffer; nil defaults to current buffer.
-- Returns the prop-match object from the last successful search.
+- **OBJECT** can be a buffer or string; nil defaults to current buffer.
+- For buffers, returns the prop-match object from the last successful search.
+- For strings, returns a list of (START END VALUE) for all matches found.
 
 **Examples:**
 
@@ -587,6 +588,10 @@ Search forward/backward N times for text with PROPERTY.
 
 ;; Search forward 3 times
 (tp-forward 'marker nil nil 3)
+
+;; Search in a string
+(tp-forward 'marker nil my-string 2)
+;; => ((0 5 t) (12 17 t))
 ```
 
 ---
@@ -598,19 +603,27 @@ Search forward/backward N times for text with PROPERTY.
 (tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT N)
 ```
 
-Search forward/backward N times for text with PROPERTY and apply FUNCTION to each match.
+Search forward/backward N times for text with PROPERTY and apply FUNCTION to matched text.
 
-- **FUNCTION** receives two arguments: the prop-match object and OBJECT.
+- **FUNCTION** receives the matched text as its only argument.  The return value
+  of FUNCTION replaces the matched text in the string or buffer.
 - **N** is the number of searches, defaulting to 1.
+- **OBJECT** can be a buffer or string; nil defaults to current buffer.
 - Returns the number of successful matches.
 
 **Examples:**
 
 ```elisp
-;; Apply function to next 3 markers
+;; Upcase matched text in buffer
+(tp-forward-do #'upcase 'marker nil nil 3)
+
+;; Upcase matched text in string
+(tp-forward-do #'upcase 'marker nil my-string 2)
+
+;; Custom transformation
 (tp-forward-do
- (lambda (match obj)
-   (message "Found at %d" (prop-match-beginning match)))
+ (lambda (text)
+   (concat "[" text "]"))
  'marker nil nil 3)
 ```
 
@@ -647,36 +660,36 @@ Returns a list of (START END VALUE) for all matching regions.
 
 ---
 
-#### `tp-search-do` - Apply Function to All Matches
+#### `tp-search-map` - Apply Function to Matched Text
 
 ```elisp
 ;; Buffer/string region
-(tp-search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
+(tp-search-map FUNCTION START END PROPERTY &optional VALUE OBJECT)
 
 ;; Entire string
-(tp-search-do FUNCTION STRING PROPERTY &optional VALUE)
+(tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
 ```
 
-Execute FUNCTION on all matches of PROPERTY in a buffer/string range or entire string.
+Apply FUNCTION to matched text for all matches of PROPERTY.
 
-- **FUNCTION** receives two arguments: the match (list of START END VALUE) and OBJECT.
+- **FUNCTION** receives the matched text as its only argument.  The return value
+  of FUNCTION replaces the matched text in the string or buffer.
 - Returns the number of matches processed.
 
 **Examples:**
 
 ```elisp
-;; Process all markers in buffer range
-(tp-search-do
- (lambda (match obj)
-   (message "Found at %d-%d with value %s"
-            (car match) (cadr match) (caddr match)))
- 1 100 'marker)
+;; Upcase all markers in string
+(tp-search-map #'upcase my-string 'marker)
 
-;; Process all headings in string
-(tp-search-do
- (lambda (match obj)
-   (upcase (substring obj (car match) (cadr match))))
- my-string 'type 'heading)
+;; Upcase all markers in buffer range
+(tp-search-map #'upcase 1 100 'marker)
+
+;; Custom transformation
+(tp-search-map
+ (lambda (text)
+   (concat "[" text "]"))
+ my-string 'marker)
 ```
 
 ---
