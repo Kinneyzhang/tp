@@ -56,6 +56,104 @@ Or with `use-package`:
 
 ## API Reference
 
+### API Quick Reference
+
+A complete overview of all tp.el functions organized by category:
+
+#### Core Property Functions
+| Function | Description |
+|----------|-------------|
+| `tp-set` | Set text properties (replaces specified properties only) |
+| `tp-reset` | Replace ALL text properties |
+| `tp-add` | Add/merge properties with deep merge support |
+| `tp-set-face` | Set only the face property |
+| `tp-set-display` | Set only the display property |
+| `tp-get` | Get property value(s) from position or range |
+| `tp-get-sub` | Get nested sub-property value |
+| `tp-put-sub` | Set nested sub-property value |
+| `tp-remove-sub` | Remove nested sub-property |
+| `tp-at` | Get all properties at a position |
+| `tp-remove` | Remove a property or sub-property |
+| `tp-remove-list` | Remove multiple properties at once |
+| `tp-clear` | Clear all text properties from a region |
+
+#### Pattern Matching Functions
+| Function | Description |
+|----------|-------------|
+| `tp-match` | Set properties on string pattern matches |
+| `tp-match-reset` | Reset all properties on string matches |
+| `tp-match-add` | Add/merge properties on string matches |
+| `tp-regexp` | Set properties on regexp matches |
+| `tp-regexp-reset` | Reset all properties on regexp matches |
+| `tp-regexp-add` | Add/merge properties on regexp matches |
+
+#### Search & Navigation Functions
+| Function | Description |
+|----------|-------------|
+| `tp-forward` | Search forward for text with property |
+| `tp-backward` | Search backward for text with property |
+| `tp-next` | Get next position with text properties |
+| `tp-prev` | Get previous position with text properties |
+| `tp-goto-next` | Move point to next text with property |
+| `tp-goto-prev` | Move point to previous text with property |
+| `tp-regions-map` | Apply function to all regions with property |
+| `tp-strings-map` | Apply function to all strings with property |
+
+#### Query Functions
+| Function | Description |
+|----------|-------------|
+| `tp-in` | Find all regions with a specific property |
+| `tp-all` | Get all propertized regions |
+| `tp-intervals` | Get property intervals in a region |
+| `tp-empty-p` | Check if object has no properties |
+| `tp-plist` | Get merged plist of all properties |
+
+#### Layer Definition Functions
+| Function | Description |
+|----------|-------------|
+| `tp-define-layer` | Define a layer or layer group |
+| `tp-layer-props` | Get properties for a layer |
+| `tp-group-props` | Get properties for all layers in a group |
+| `tp-layer-undefine` | Remove layer definition |
+| `tp-group-undefine` | Remove group definition |
+| `tp-layer-reset` | Clear all layer/group definitions |
+
+#### Layer Placement Functions
+| Function | Description |
+|----------|-------------|
+| `tp-put-layer` | Set layer at specific index position |
+| `tp-push-layer` | Push layer to top of stack |
+
+#### Layer Deletion Functions
+| Function | Description |
+|----------|-------------|
+| `tp-delete-layer` | Delete layer by name or index |
+| `tp-pop-layer` | Remove top layer |
+
+#### Layer Movement Functions
+| Function | Description |
+|----------|-------------|
+| `tp-raise-layer` | Move layer up/down by N positions |
+| `tp-rotate-layer` | Cycle layers (top goes to bottom) |
+| `tp-pin-layer` | Pin a layer to top (make visible) |
+| `tp-switch-layer` | Swap positions of two layers |
+
+#### Layer Merging Functions
+| Function | Description |
+|----------|-------------|
+| `tp-merge-layers` | Merge specified layers into a new layer |
+| `tp-flatten-layers` | Flatten all layers into a single layer |
+
+#### Layer Query Functions
+| Function | Description |
+|----------|-------------|
+| `tp-layer-list` | List all layer names in region |
+| `tp-layer-count` | Count layers in region |
+| `tp-layer-exists-p` | Check if layer exists in region |
+| `tp-layer-top` | Get name of top (visible) layer |
+
+---
+
 ### Core Property Functions
 
 #### `tp-set` - Set Text Properties
