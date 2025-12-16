@@ -1003,8 +1003,6 @@ Returns the number of successful matches."
                                              (>= (car m) start-pos))
                                            all-matches))
              (matches (seq-take filtered-matches count)))
-        ;; (dolist (match matches)
-        ;;   (funcall function match object))
         (funcall function (car (last matches)) object)
         (length matches)))
      ;; Buffer or nil
@@ -1016,7 +1014,6 @@ Returns the number of successful matches."
             (when point (goto-char point))
             (dotimes (i count)
               (when-let ((match (tp-search-forward property value t)))
-                ;; (funcall function match buf)
                 (when (= i (1- count))
                   (funcall function match buf))
                 (cl-incf matches)))))
@@ -1119,8 +1116,6 @@ Returns the number of successful matches."
              (filtered-matches
               (seq-filter (lambda (m) (<= (cadr m) start-pos)) all-matches))
              (matches (seq-take (nreverse filtered-matches) count)))
-        ;; (dolist (match matches)
-        ;;   (funcall function match object))
         (funcall function (car (last matches)) object)
         (length matches)))
      ;; Buffer or nil
@@ -1132,7 +1127,6 @@ Returns the number of successful matches."
             (when point (goto-char point))
             (dotimes (i count)
               (when-let ((match (tp-search-backward property value)))
-                ;; (funcall function match buf)
                 (when (= i (1- count))
                   (funcall function match buf))
                 (cl-incf matches)))))
