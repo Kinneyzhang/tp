@@ -1023,7 +1023,7 @@ Returns the number of successful matches."
         matches)))))
 
 (defun tp-forward-do (function property &optional value object point n)
-  "Search forward N times for text with PROPERTY and apply FUNCTION to each match.
+  "Search forward N times for text with PROPERTY and apply FUNCTION only to the last match.
 
 FUNCTION receives the matched text as its first argument.  Optionally,
 FUNCTION can accept two additional arguments: START and END, representing
@@ -1032,7 +1032,8 @@ it receives (TEXT START).  If it accepts 3 or more arguments, it receives
 (TEXT START END).  The return value of FUNCTION replaces the matched text
 in the string or buffer.
 
-N is the number of searches, defaulting to 1.
+N is the number of searches, defaulting to 1. The function searches N times
+but only applies FUNCTION to the last (Nth) match found.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
 POINT is the starting position for search; for buffers nil means current point,
@@ -1046,14 +1047,15 @@ If the replacement is shorter, only that portion will be replaced.
 If the replacement is longer, it will be truncated.
 
 Example:
-  ;; Upcase all matched text
+  ;; Upcase only the last (2nd) match
   (setq my-string (copy-sequence \"hello world hello\"))
   (tp-set 0 5 \\='(marker t) my-string)
   (tp-set 12 17 \\='(marker t) my-string)
-  (tp-forward-do #\\='upcase \\='marker nil my-string nil 3)
+  (tp-forward-do #\\='upcase \\='marker nil my-string nil 2)
+  ;; => \"hello world HELLO\" - only the 2nd match is upcased
   ;; Use start and end positions
   (tp-forward-do (lambda (txt start end) (format \"[%d-%d]%s\" start end txt))
-                 \\='marker nil my-string nil 3)"
+                 \\='marker nil my-string nil 2)"
   (let ((arity (func-arity function)))
     (tp--forward-do
      (lambda (match obj)
@@ -1137,7 +1139,7 @@ Returns the number of successful matches."
         matches)))))
 
 (defun tp-backward-do (function property &optional value object point n)
-  "Search backward N times for text with PROPERTY and apply FUNCTION to each match.
+  "Search backward N times for text with PROPERTY and apply FUNCTION only to the last match.
 
 FUNCTION receives the matched text as its first argument.  Optionally,
 FUNCTION can accept two additional arguments: START and END, representing
@@ -1146,7 +1148,8 @@ it receives (TEXT START).  If it accepts 3 or more arguments, it receives
 (TEXT START END).  The return value of FUNCTION replaces the matched text
 in the string or buffer.
 
-N is the number of searches, defaulting to 1.
+N is the number of searches, defaulting to 1. The function searches N times
+but only applies FUNCTION to the last (Nth) match found.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
 POINT is the starting position for search; for buffers nil means current point,
@@ -1160,14 +1163,15 @@ If the replacement is shorter, only that portion will be replaced.
 If the replacement is longer, it will be truncated.
 
 Example:
-  ;; Upcase all matched text
+  ;; Upcase only the last (2nd) match
   (setq my-string (copy-sequence \"hello world hello\"))
   (tp-set 0 5 \\='(marker t) my-string)
   (tp-set 12 17 \\='(marker t) my-string)
-  (tp-backward-do #\\='upcase \\='marker nil my-string nil 3)
+  (tp-backward-do #\\='upcase \\='marker nil my-string nil 2)
+  ;; => \"hello world HELLO\" - only the 2nd (last) match is upcased
   ;; Use start and end positions
   (tp-backward-do (lambda (txt start end) (format \"[%d-%d]%s\" start end txt))
-                  \\='marker nil my-string nil 3)"
+                  \\='marker nil my-string nil 2)"
   (let ((arity (func-arity function)))
     (tp--backward-do
      (lambda (match obj)

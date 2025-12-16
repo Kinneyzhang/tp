@@ -884,10 +884,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
 ```
 
-向前/向后搜索 N 次具有 PROPERTY 的文本，并对匹配的文本应用 FUNCTION。
+向前/向后搜索 N 次具有 PROPERTY 的文本，**仅对最后一次匹配应用 FUNCTION**。
 
-- **FUNCTION** 接收匹配到的文本作为唯一参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
-- **N** 是搜索次数，默认为 1。
+- **FUNCTION** 接收匹配到的文本作为第一个参数。可选地，FUNCTION 可以接受两个额外的参数：START 和 END，表示匹配的起始和结束位置。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+- **N** 是搜索次数，默认为 1。该函数会搜索 N 次，但仅对找到的最后（第 N 次）匹配应用 FUNCTION。
 - **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
 - **POINT** 是搜索的起始位置；对于缓冲区 nil 表示当前位置，对于字符串 nil 表示 0（向前）或字符串末尾（向后）。
 - 返回成功匹配的数量。
@@ -895,7 +895,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 **示例：**
 
 ```elisp
-;; 将缓冲区中匹配的文本转为大写（从当前位置开始）
+;; 仅将最后一次（第 2 次）匹配的文本转为大写
 (with-temp-buffer
   (insert "hello world test")
   (tp-set 1 6 '(marker t))
@@ -903,17 +903,17 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (goto-char 1)
   (tp-forward-do #'upcase 'marker nil nil nil 2)
   (buffer-string))
-;; => "HELLO world TEST"
+;; => "hello world TEST"  ; 仅第 2 次匹配被转为大写
 
-;; 将字符串中匹配的文本转为大写（从位置 0 开始）
+;; 仅将最后一次（第 2 次）匹配的文本转为大写
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do #'upcase 'marker nil my-string nil 2)
   my-string)
-;; => "HELLO world HELLO"
+;; => "hello world HELLO"  ; 仅第 2 次匹配被转为大写
 
-;; 从特定位置开始搜索
+;; 从特定位置开始搜索（仅找到 1 次匹配并转换）
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
@@ -921,17 +921,18 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   my-string)
 ;; => "hello world HELLO"  ; 只处理位置 6 之后的匹配
 
-;; 自定义转换
+;; 使用带有 start 和 end 参数的函数
 (with-temp-buffer
   (insert "hello world test")
   (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
   (goto-char 1)
   (tp-forward-do
-   (lambda (text)
-     (concat "[" text "]"))
-   'marker nil nil nil 1)
+   (lambda (text start end)
+     (format "[%d-%d]%s" start end text))
+   'marker nil nil nil 2)
   (buffer-string))
-;; => "[hello] world test"
+;; => "hello world [13-17]test"  ; 仅最后一次匹配被转换
 ```
 
 ---

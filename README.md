@@ -885,11 +885,10 @@ Search forward/backward N times for text with PROPERTY.
 (tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
 ```
 
-Search forward/backward N times for text with PROPERTY and apply FUNCTION to matched text.
+Search forward/backward N times for text with PROPERTY and apply FUNCTION **only to the last match**.
 
-- **FUNCTION** receives the matched text as its only argument.  The return value
-  of FUNCTION replaces the matched text in the string or buffer.
-- **N** is the number of searches, defaulting to 1.
+- **FUNCTION** receives the matched text as its first argument. Optionally, FUNCTION can accept two additional arguments: START and END, representing the start and end positions of the match. The return value of FUNCTION replaces the matched text in the string or buffer.
+- **N** is the number of searches, defaulting to 1. The function searches N times but only applies FUNCTION to the last (Nth) match found.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
 - **POINT** is the starting position for search; for buffers nil means current point,
   for strings nil means 0 (forward) or end of string (backward).
@@ -898,7 +897,7 @@ Search forward/backward N times for text with PROPERTY and apply FUNCTION to mat
 **Examples:**
 
 ```elisp
-;; Upcase matched text in buffer (starting from current point)
+;; Upcase only the last (2nd) match in buffer
 (with-temp-buffer
   (insert "hello world test")
   (tp-set 1 6 '(marker t))
@@ -906,17 +905,17 @@ Search forward/backward N times for text with PROPERTY and apply FUNCTION to mat
   (goto-char 1)
   (tp-forward-do #'upcase 'marker nil nil nil 2)
   (buffer-string))
-;; => "HELLO world TEST"
+;; => "hello world TEST"  ; Only the 2nd match is upcased
 
-;; Upcase matched text in string (starting from position 0)
+;; Upcase only the last (2nd) match in string
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do #'upcase 'marker nil my-string nil 2)
   my-string)
-;; => "HELLO world HELLO"
+;; => "hello world HELLO"  ; Only the 2nd match is upcased
 
-;; Start search from specific position
+;; Start search from specific position (only 1 match found and transformed)
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
@@ -924,17 +923,18 @@ Search forward/backward N times for text with PROPERTY and apply FUNCTION to mat
   my-string)
 ;; => "hello world HELLO"  ; Only matches from position 6 onward
 
-;; Custom transformation
+;; Using function with start and end parameters
 (with-temp-buffer
   (insert "hello world test")
   (tp-set 1 6 '(marker t))
+  (tp-set 13 17 '(marker t))
   (goto-char 1)
   (tp-forward-do
-   (lambda (text)
-     (concat "[" text "]"))
-   'marker nil nil nil 1)
+   (lambda (text start end)
+     (format "[%d-%d]%s" start end text))
+   'marker nil nil nil 2)
   (buffer-string))
-;; => "[hello] world test"
+;; => "hello world [13-17]test"  ; Only the last match is transformed
 ```
 
 ---
