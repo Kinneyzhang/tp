@@ -246,6 +246,21 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-layer-count`](#tp-layer-count) | Count layers in region |
 | [`tp-layer-exists-p`](#tp-layer-exists-p) | Check if layer exists in region |
 | [`tp-layer-top`](#tp-layer-top) | Get name of top (visible) layer |
+| [`tp-region-layer-props`](#tp-region-layer-props---get-layer-properties-in-region) | Get properties for a specific layer in region |
+
+#### Property Layer Manipulation Functions
+| Function | Description |
+|----------|-------------|
+| [`tp-add-to-layers`](#tp-add-to-layers---add-properties-to-specific-layers) | Add/merge properties to specific layers by index or name |
+| [`tp-add-to-all-layers`](#tp-add-to-all-layers---add-properties-to-all-layers) | Add/merge properties to all existing layers |
+
+#### Utility Functions
+| Function | Description |
+|----------|-------------|
+| [`tp-intervals`](#tp-intervals---get-text-property-intervals) | Get all text property intervals in a region |
+| [`tp-intervals-map`](#tp-intervals-map---apply-function-to-intervals) | Apply function to all intervals in a region |
+| [`tp-plist`](#tp-plist---get-all-properties-in-region) | Get all properties present in a region |
+| [`tp-empty-p`](#tp-empty-p---check-if-object-has-properties) | Check if object has no text properties |
 
 ---
 
@@ -1727,6 +1742,204 @@ Get name of the top (visible) layer.
     (tp-push-layer 1 10 'layer2)
     (tp-layer-top 1 10)))
 ;; => layer2
+```
+
+---
+
+#### `tp-add-to-layers` - Add Properties to Specific Layers
+
+```elisp
+;; Buffer/string region
+(tp-add-to-layers IDX-OR-LAYER-NAME-LIST START END PLIST &optional OBJECT)
+
+;; Entire string
+(tp-add-to-layers IDX-OR-LAYER-NAME-LIST STRING PROP VAL ...)
+```
+
+Add or merge properties to specific layers in a region or string.
+
+- **IDX-OR-LAYER-NAME-LIST** is a list of layer indices (integers) or layer names (symbols). For indices: 0 means top layer, -1 means bottom layer.
+- Properties are deeply merged into the specified layers (nested plists are merged, not replaced).
+- OBJECT defaults to current buffer for region form.
+- Returns the modified string or nil for buffer operations.
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face (:foreground "red")))
+  (tp-define-layer layer2 (face (:foreground "blue")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; Add underline to both layers
+    (tp-add-to-layers '(0 1) 1 10 '(face (:underline t)))
+    (tp-at 5)))
+;; Both layers now have underline merged with their colors
+```
+
+---
+
+#### `tp-add-to-all-layers` - Add Properties to All Layers
+
+```elisp
+;; Buffer/string region
+(tp-add-to-all-layers START END PLIST &optional OBJECT)
+
+;; Entire string
+(tp-add-to-all-layers STRING PROP VAL ...)
+```
+
+Add or merge properties to all layers in a region or string.
+
+- Properties are deeply merged into all existing layers.
+- OBJECT defaults to current buffer for region form.
+- Returns the modified string or nil for buffer operations.
+
+**Examples:**
+
+```elisp
+(let ((str (copy-sequence "Hello World")))
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-push-layer 0 5 'layer1 str)
+  (tp-push-layer 0 5 'layer2 str)
+  ;; Add underline to all layers
+  (tp-add-to-all-layers 0 5 '(face (:underline t)) str)
+  str)
+```
+
+---
+
+#### `tp-intervals` - Get Text Property Intervals
+
+```elisp
+(tp-intervals START END &optional OBJECT)
+```
+
+Get all text property intervals from START to END in OBJECT.
+
+- Returns a list of (START END PROPERTIES) for each interval.
+- Uses `object-intervals` (requires Emacs 28.1+).
+- OBJECT can be a buffer or string; nil defaults to current buffer.
+
+**Examples:**
+
+```elisp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals 1 12))
+;; => ((0 5 (face bold)) (6 11 (face italic)))
+```
+
+---
+
+#### `tp-intervals-map` - Apply Function to Intervals
+
+```elisp
+(tp-intervals-map FUNCTION START END &optional OBJECT)
+```
+
+Apply FUNCTION to all intervals between START and END in OBJECT.
+
+- FUNCTION receives four arguments: interval-start, interval-end, top-props (visible layer properties), and below-props-lst (list of hidden layers).
+- OBJECT can be a buffer or string; nil defaults to current buffer.
+- Returns list of function results (nil values are removed).
+
+**Examples:**
+
+```elisp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals-map
+   (lambda (start end props belows)
+     (list start end (plist-get props 'face)))
+   1 12))
+;; => ((0 5 bold) (6 11 italic))
+```
+
+---
+
+#### `tp-region-layer-props` - Get Layer Properties in Region
+
+```elisp
+(tp-region-layer-props START END LAYER-NAME &optional OBJECT)
+```
+
+Return layer properties for LAYER-NAME in region from START to END.
+
+- Returns a list of (START END PROPERTIES) for matching intervals.
+- OBJECT defaults to current buffer.
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World Test")
+    (tp-push-layer 1 6 'highlight)
+    (tp-push-layer 12 16 'highlight)
+    (tp-region-layer-props 1 16 'highlight)))
+;; => ((1 6 (face (:background "yellow") tp-name highlight))
+;;     (12 16 (face (:background "yellow") tp-name highlight)))
+```
+
+---
+
+#### `tp-plist` - Get All Properties in Region
+
+```elisp
+;; Buffer/string region
+(tp-plist START END &optional OBJECT)
+
+;; Entire string
+(tp-plist STRING)
+```
+
+Get a property list of all properties present in a region or string.
+
+- Returns a plist containing all properties found in the range.
+- OBJECT defaults to current buffer for region form.
+
+**Examples:**
+
+```elisp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold help-echo "Tip"))
+  (tp-set 7 12 '(face italic))
+  (tp-plist 1 12))
+;; => (face bold help-echo "Tip" face italic)
+```
+
+---
+
+#### `tp-empty-p` - Check if Object Has Properties
+
+```elisp
+(tp-empty-p &optional OBJECT)
+```
+
+Return t if OBJECT has no text properties.
+
+- OBJECT can be a string or buffer; nil defaults to current buffer.
+- Uses `object-intervals` (requires Emacs 28.1+).
+
+**Examples:**
+
+```elisp
+(tp-empty-p "plain text")  ; => t
+(let ((str (copy-sequence "text")))
+  (tp-set str 'face 'bold)
+  (tp-empty-p str))  ; => nil
 ```
 
 ---

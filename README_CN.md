@@ -245,6 +245,21 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-layer-count`](#tp-layer-count) | 计算区域中的属性层数量 |
 | [`tp-layer-exists-p`](#tp-layer-exists-p) | 检查区域中是否存在某属性层 |
 | [`tp-layer-top`](#tp-layer-top) | 获取顶层（可见）属性层的名称 |
+| [`tp-region-layer-props`](#tp-region-layer-props---获取区域中的层属性) | 获取区域中特定层的属性 |
+
+#### 属性层操作函数
+| 函数 | 描述 |
+|------|------|
+| [`tp-add-to-layers`](#tp-add-to-layers---向特定属性层添加属性) | 通过索引或名称向特定层添加/合并属性 |
+| [`tp-add-to-all-layers`](#tp-add-to-all-layers---向所有属性层添加属性) | 向所有现有层添加/合并属性 |
+
+#### 实用工具函数
+| 函数 | 描述 |
+|------|------|
+| [`tp-intervals`](#tp-intervals---获取文本属性区间) | 获取区域中的所有文本属性区间 |
+| [`tp-intervals-map`](#tp-intervals-map---对区间应用函数) | 对区域中的所有区间应用函数 |
+| [`tp-plist`](#tp-plist---获取区域中的所有属性) | 获取区域中存在的所有属性 |
+| [`tp-empty-p`](#tp-empty-p---检查对象是否有属性) | 检查对象是否没有文本属性 |
 
 ---
 
@@ -1721,6 +1736,204 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
     (tp-push-layer 1 10 'layer2)
     (tp-layer-top 1 10)))
 ;; => layer2
+```
+
+---
+
+#### `tp-add-to-layers` - 向特定属性层添加属性
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-add-to-layers IDX-OR-LAYER-NAME-LIST START END PLIST &optional OBJECT)
+
+;; 整个字符串
+(tp-add-to-layers IDX-OR-LAYER-NAME-LIST STRING PROP VAL ...)
+```
+
+向区域或字符串中的特定属性层添加或合并属性。
+
+- **IDX-OR-LAYER-NAME-LIST** 是层索引（整数）或层名称（符号）的列表。对于索引：0 表示顶层，-1 表示底层。
+- 属性被深度合并到指定的层中（嵌套的 plist 被合并，而非替换）。
+- OBJECT 在区域形式中默认为当前缓冲区。
+- 返回修改后的字符串或 nil（对于缓冲区操作）。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face (:foreground "red")))
+  (tp-define-layer layer2 (face (:foreground "blue")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; 向两个层添加下划线
+    (tp-add-to-layers '(0 1) 1 10 '(face (:underline t)))
+    (tp-at 5)))
+;; 两个层现在都有下划线与其颜色合并
+```
+
+---
+
+#### `tp-add-to-all-layers` - 向所有属性层添加属性
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-add-to-all-layers START END PLIST &optional OBJECT)
+
+;; 整个字符串
+(tp-add-to-all-layers STRING PROP VAL ...)
+```
+
+向区域或字符串中的所有属性层添加或合并属性。
+
+- 属性被深度合并到所有现有层中。
+- OBJECT 在区域形式中默认为当前缓冲区。
+- 返回修改后的字符串或 nil（对于缓冲区操作）。
+
+**示例：**
+
+```elisp
+(let ((str (copy-sequence "Hello World")))
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-push-layer 0 5 'layer1 str)
+  (tp-push-layer 0 5 'layer2 str)
+  ;; 向所有层添加下划线
+  (tp-add-to-all-layers 0 5 '(face (:underline t)) str)
+  str)
+```
+
+---
+
+#### `tp-intervals` - 获取文本属性区间
+
+```elisp
+(tp-intervals START END &optional OBJECT)
+```
+
+从 OBJECT 中获取 START 到 END 之间的所有文本属性区间。
+
+- 返回每个区间的 (START END PROPERTIES) 列表。
+- 使用 `object-intervals`（需要 Emacs 28.1+）。
+- OBJECT 可以是缓冲区或字符串；nil 默认为当前缓冲区。
+
+**示例：**
+
+```elisp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals 1 12))
+;; => ((0 5 (face bold)) (6 11 (face italic)))
+```
+
+---
+
+#### `tp-intervals-map` - 对区间应用函数
+
+```elisp
+(tp-intervals-map FUNCTION START END &optional OBJECT)
+```
+
+对 OBJECT 中 START 到 END 之间的所有区间应用 FUNCTION。
+
+- FUNCTION 接收四个参数：interval-start、interval-end、top-props（可见层属性）和 below-props-lst（隐藏层列表）。
+- OBJECT 可以是缓冲区或字符串；nil 默认为当前缓冲区。
+- 返回函数结果列表（nil 值被移除）。
+
+**示例：**
+
+```elisp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals-map
+   (lambda (start end props belows)
+     (list start end (plist-get props 'face)))
+   1 12))
+;; => ((0 5 bold) (6 11 italic))
+```
+
+---
+
+#### `tp-region-layer-props` - 获取区域中的层属性
+
+```elisp
+(tp-region-layer-props START END LAYER-NAME &optional OBJECT)
+```
+
+返回区域 START 到 END 中 LAYER-NAME 的层属性。
+
+- 返回匹配区间的 (START END PROPERTIES) 列表。
+- OBJECT 默认为当前缓冲区。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (tp-define-layer highlight (face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World Test")
+    (tp-push-layer 1 6 'highlight)
+    (tp-push-layer 12 16 'highlight)
+    (tp-region-layer-props 1 16 'highlight)))
+;; => ((1 6 (face (:background "yellow") tp-name highlight))
+;;     (12 16 (face (:background "yellow") tp-name highlight)))
+```
+
+---
+
+#### `tp-plist` - 获取区域中的所有属性
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-plist START END &optional OBJECT)
+
+;; 整个字符串
+(tp-plist STRING)
+```
+
+获取区域或字符串中存在的所有属性的属性列表。
+
+- 返回包含范围内找到的所有属性的 plist。
+- OBJECT 在区域形式中默认为当前缓冲区。
+
+**示例：**
+
+```elisp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold help-echo "Tip"))
+  (tp-set 7 12 '(face italic))
+  (tp-plist 1 12))
+;; => (face bold help-echo "Tip" face italic)
+```
+
+---
+
+#### `tp-empty-p` - 检查对象是否有属性
+
+```elisp
+(tp-empty-p &optional OBJECT)
+```
+
+如果 OBJECT 没有文本属性，返回 t。
+
+- OBJECT 可以是字符串或缓冲区；nil 默认为当前缓冲区。
+- 使用 `object-intervals`（需要 Emacs 28.1+）。
+
+**示例：**
+
+```elisp
+(tp-empty-p "plain text")  ; => t
+(let ((str (copy-sequence "text")))
+  (tp-set str 'face 'bold)
+  (tp-empty-p str))  ; => nil
 ```
 
 ---
