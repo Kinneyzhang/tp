@@ -951,7 +951,7 @@ Uses `tp-search-forward' for buffers and `tp-search' for strings."
             (buf (or object (current-buffer))))
         (with-current-buffer buf
           (dotimes (_ count)
-            (setq result (tp-search-forward property value))))
+            (setq result (tp-search-forward property value t))))
         result)))))
 
 (defun tp-backward (property &optional value object n)
@@ -982,7 +982,7 @@ Uses `tp-search-backward' for buffers and `tp-search' for strings."
         result)))))
 
 (defun tp--forward-do (function property &optional value object point n)
-  "Internal: Search forward N times for PROPERTY and apply FUNCTION to each match.
+  "Internal: Search forward N times for PROPERTY and apply FUNCTION to the last match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
 and OBJECT.
@@ -999,10 +999,13 @@ Returns the number of successful matches."
      ((stringp object)
       (let* ((start-pos (or point 0))
              (all-matches (tp-search object property value))
-             (filtered-matches (seq-filter (lambda (m) (>= (car m) start-pos)) all-matches))
+             (filtered-matches (seq-filter (lambda (m)
+                                             (>= (car m) start-pos))
+                                           all-matches))
              (matches (seq-take filtered-matches count)))
-        (dolist (match matches)
-          (funcall function match object))
+        ;; (dolist (match matches)
+        ;;   (funcall function match object))
+        (funcall function (car (last matches)) object)
         (length matches)))
      ;; Buffer or nil
      (t
@@ -1011,9 +1014,11 @@ Returns the number of successful matches."
         (with-current-buffer buf
           (save-excursion
             (when point (goto-char point))
-            (dotimes (_ count)
-              (when-let ((match (tp-search-forward property value)))
-                (funcall function match buf)
+            (dotimes (i count)
+              (when-let ((match (tp-search-forward property value t)))
+                ;; (funcall function match buf)
+                (when (= i (1- count))
+                  (funcall function match buf))
                 (cl-incf matches)))))
         matches)))))
 
@@ -1109,10 +1114,12 @@ Returns the number of successful matches."
      ((stringp object)
       (let* ((start-pos (or point (length object)))
              (all-matches (tp-search object property value))
-             (filtered-matches (seq-filter (lambda (m) (<= (cadr m) start-pos)) all-matches))
+             (filtered-matches
+              (seq-filter (lambda (m) (<= (cadr m) start-pos)) all-matches))
              (matches (seq-take (nreverse filtered-matches) count)))
-        (dolist (match matches)
-          (funcall function match object))
+        ;; (dolist (match matches)
+        ;;   (funcall function match object))
+        (funcall function (car (last matches)) object)
         (length matches)))
      ;; Buffer or nil
      (t
@@ -1121,9 +1128,11 @@ Returns the number of successful matches."
         (with-current-buffer buf
           (save-excursion
             (when point (goto-char point))
-            (dotimes (_ count)
+            (dotimes (i count)
               (when-let ((match (tp-search-backward property value)))
-                (funcall function match buf)
+                ;; (funcall function match buf)
+                (when (= i (1- count))
+                  (funcall function match buf))
                 (cl-incf matches)))))
         matches)))))
 
@@ -1201,7 +1210,8 @@ Example:
                  (insert new-text)))))))
      property value object point n)))
 
-(defun tp-search (start-or-string &optional end-or-property property-or-value value object)
+(defun tp-search (start-or-string
+                  &optional end-or-property property-or-value value object)
   "Search for all text with PROPERTY in a buffer/string range or entire string.
 
 This function supports two calling conventions:
@@ -1231,11 +1241,16 @@ Each element contains the start position, end position, and property value."
                    (or (null value)
                        (equal prop-val value)))
               ;; Find the extent of this property
-              (let ((next-change (or (next-single-property-change pos property str len) len)))
+              (let ((next-change
+                     (or (next-single-property-change
+                          pos property str len)
+                         len)))
                 (push (list pos next-change prop-val) results)
                 (setq pos next-change))
             ;; No match, move to next change
-            (setq pos (or (next-single-property-change pos property str len) len)))))
+            (setq pos (or (next-single-property-change
+                           pos property str len)
+                          len)))))
       (nreverse results)))
    ;; Buffer/string region form: (tp-search start end property &optional value object)
    ((numberp start-or-string)
@@ -1255,10 +1270,15 @@ Each element contains the start position, end position, and property value."
               (if (and has-prop
                        (or (null value)
                            (equal prop-val value)))
-                  (let ((next-change (or (next-single-property-change pos property obj end) end)))
+                  (let ((next-change
+                         (or (next-single-property-change
+                              pos property obj end)
+                             end)))
                     (push (list pos next-change prop-val) results)
                     (setq pos next-change))
-                (setq pos (or (next-single-property-change pos property obj end) end)))))
+                (setq pos (or (next-single-property-change
+                               pos property obj end)
+                              end)))))
         ;; Buffer object
         (with-current-buffer obj
           (while (< pos end)
@@ -1268,10 +1288,15 @@ Each element contains the start position, end position, and property value."
               (if (and has-prop
                        (or (null value)
                            (equal prop-val value)))
-                  (let ((next-change (or (next-single-property-change pos property nil end) end)))
+                  (let ((next-change
+                         (or (next-single-property-change
+                              pos property nil end)
+                             end)))
                     (push (list pos next-change prop-val) results)
                     (setq pos next-change))
-                (setq pos (or (next-single-property-change pos property nil end) end)))))))
+                (setq pos (or (next-single-property-change
+                               pos property nil end)
+                              end)))))))
       (nreverse results)))
    (t (error "Invalid first argument: %S" start-or-string))))
 
