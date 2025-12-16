@@ -1099,7 +1099,7 @@ Example:
      property value object point n)))
 
 (defun tp--backward-do (function property &optional value object point n)
-  "Internal: Search backward N times for PROPERTY and apply FUNCTION to each match.
+  "Internal: Search backward N times for PROPERTY and apply FUNCTION to the last match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
 and OBJECT.
