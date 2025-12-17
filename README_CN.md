@@ -929,15 +929,18 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; => "hello world HELLO"  ; 范围 6-17 内仅有 1 个匹配
 
 ;; 使用带有 start 和 end 参数的函数
-(let ((my-string (copy-sequence "hello world hello")))
+;; 函数接收位置信息；使用 upcase 保持相同长度
+(let ((my-string (copy-sequence "hello world hello"))
+      (match-info nil))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do
    (lambda (text start end)
-     (format "[%d-%d]%s" start end text))
+     (setq match-info (list start end))
+     (upcase text))
    'marker nil my-string 2)
-  my-string)
-;; => "hello world [12-17]hello"  ; 仅最后一次匹配被转换
+  (list my-string match-info))
+;; => ("hello world HELLO" (12 17))  ; 仅最后一次匹配被转换
 
 ;; 向后搜索 - 仅将最后一次（第 2 次）匹配的文本转为大写
 (let ((my-string (copy-sequence "hello world hello")))
@@ -1032,26 +1035,26 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; => "HELLO world hello"  ; 仅范围 0-10 内的第一个匹配被处理
 
 ;; 使用 start、end 和 idx 参数的自定义转换
-(let ((my-string (copy-sequence "aaa bbb ccc")))
+;; 函数接收位置信息；使用 upcase 保持相同长度
+(let ((my-string (copy-sequence "aaa bbb ccc"))
+      (positions nil))
   (tp-set 0 3 '(marker t) my-string)
   (tp-set 4 7 '(marker t) my-string)
   (tp-set 8 11 '(marker t) my-string)
   (tp-search-map
    (lambda (text start end idx)
-     (format "%d:%s" idx text))
+     (push (list idx start end) positions)
+     (upcase text))
    'marker nil my-string)
-  my-string)
-;; => "0:aaa1:bbb2:ccc"
+  (list my-string (nreverse positions)))
+;; => ("AAA BBB CCC" ((0 0 3) (1 4 7) (2 8 11)))
 
 ;; 不使用可选参数的自定义转换
 (let ((my-string (copy-sequence "hello world")))
   (tp-set 0 5 '(marker t) my-string)
-  (tp-search-map
-   (lambda (text)
-     (concat "[" text "]"))
-   'marker nil my-string)
+  (tp-search-map #'upcase 'marker nil my-string)
   my-string)
-;; => "[hello] world"
+;; => "HELLO world"
 ```
 
 ---

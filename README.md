@@ -930,15 +930,18 @@ Search forward/backward for text with PROPERTY and apply FUNCTION **only to the 
 ;; => "hello world HELLO"  ; Only 1 match in range 6-17
 
 ;; Using function with start and end parameters
-(let ((my-string (copy-sequence "hello world hello")))
+;; The function receives position info; use upcase to keep same length
+(let ((my-string (copy-sequence "hello world hello"))
+      (match-info nil))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do
    (lambda (text start end)
-     (format "[%d-%d]%s" start end text))
+     (setq match-info (list start end))
+     (upcase text))
    'marker nil my-string 2)
-  my-string)
-;; => "hello world [12-17]hello"  ; Only the last match is transformed
+  (list my-string match-info))
+;; => ("hello world HELLO" (12 17))  ; Only the last match is transformed
 
 ;; Backward search - upcase only the last (2nd) match
 (let ((my-string (copy-sequence "hello world hello")))
@@ -1033,26 +1036,26 @@ Apply FUNCTION to all matches of PROPERTY in OBJECT.
 ;; => "HELLO world hello"  ; Only first match in range 0-10
 
 ;; Custom transformation with start, end, and index
-(let ((my-string (copy-sequence "aaa bbb ccc")))
+;; The function receives position info; use upcase to keep same length
+(let ((my-string (copy-sequence "aaa bbb ccc"))
+      (positions nil))
   (tp-set 0 3 '(marker t) my-string)
   (tp-set 4 7 '(marker t) my-string)
   (tp-set 8 11 '(marker t) my-string)
   (tp-search-map
    (lambda (text start end idx)
-     (format "%d:%s" idx text))
+     (push (list idx start end) positions)
+     (upcase text))
    'marker nil my-string)
-  my-string)
-;; => "0:aaa1:bbb2:ccc"
+  (list my-string (nreverse positions)))
+;; => ("AAA BBB CCC" ((0 0 3) (1 4 7) (2 8 11)))
 
 ;; Custom transformation without optional parameters
 (let ((my-string (copy-sequence "hello world")))
   (tp-set 0 5 '(marker t) my-string)
-  (tp-search-map
-   (lambda (text)
-     (concat "[" text "]"))
-   'marker nil my-string)
+  (tp-search-map #'upcase 'marker nil my-string)
   my-string)
-;; => "[hello] world"
+;; => "HELLO world"
 ```
 
 ---
