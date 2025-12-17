@@ -1546,6 +1546,31 @@ The layer is stored in `tp-layer-alist'."
          (push (cons ',name ',properties) tp-layer-alist))
        (assoc ',name tp-layer-alist))))
 
+(defun tp--layer-group-element-format (element)
+  "Determine the format type of ELEMENT.
+Returns 'symbol, 'format-1, 'format-2, 'format-3, or nil if invalid."
+  (cond
+   ;; Symbol - reference to existing layer
+   ((symbolp element) 'symbol)
+   ;; Format 3 - ("name" :props (plist...))
+   ((and (listp element)
+         (= (length element) 3)
+         (stringp (car element))
+         (eq (cadr element) :props)
+         (listp (caddr element)))
+    'format-3)
+   ;; Format 2 - ("name" . (plist...)) - cons cell with proper list cdr
+   ((and (consp element)
+         (stringp (car element))
+         (listp (cdr element))
+         (not (eq (cadr element) :props)))  ; Distinguish from format-3
+    'format-2)
+   ;; Format 1 - (plist...) - anonymous, must start with a symbol
+   ((and (listp element)
+         (symbolp (car element)))
+    'format-1)
+   (t nil)))
+
 (defun tp--parse-layer-group-element (group-name element idx)
   "Parse a layer group element and return (layer-name . properties).
 GROUP-NAME is the name of the layer group.
@@ -1554,33 +1579,23 @@ IDX is the index for anonymous elements.
 
 Returns a cons cell (LAYER-NAME . PROPERTIES) or a symbol if ELEMENT
 references an already-defined layer."
-  (cond
-   ;; Case: already defined layer (symbol)
-   ((symbolp element)
-    element)
-   ;; Case: Format 3 - ("name" :props (plist...))
-   ((and (listp element)
-         (stringp (car element))
-         (eq (cadr element) :props)
-         (caddr element))
-    (let* ((layer-suffix (car element))
-           (layer-name (intern (format "%s-%s" group-name layer-suffix)))
-           (props (caddr element)))
-      (cons layer-name props)))
-   ;; Case: Format 2 - ("name" . (plist...)) - cons cell
-   ((and (consp element)
-         (stringp (car element))
-         (listp (cdr element)))
-    (let* ((layer-suffix (car element))
-           (layer-name (intern (format "%s-%s" group-name layer-suffix)))
-           (props (cdr element)))
-      (cons layer-name props)))
-   ;; Case: Format 1 - (plist...) - anonymous, use index
-   ((and (listp element)
-         (not (stringp (car element))))
-    (let ((layer-name (intern (format "%s-%d" group-name idx))))
-      (cons layer-name element)))
-   (t (error "Invalid layer group element: %S" element))))
+  (let ((format (tp--layer-group-element-format element)))
+    (pcase format
+      ('symbol element)
+      ('format-3
+       (let* ((layer-suffix (car element))
+              (layer-name (intern (format "%s-%s" group-name layer-suffix)))
+              (props (caddr element)))
+         (cons layer-name props)))
+      ('format-2
+       (let* ((layer-suffix (car element))
+              (layer-name (intern (format "%s-%s" group-name layer-suffix)))
+              (props (cdr element)))
+         (cons layer-name props)))
+      ('format-1
+       (let ((layer-name (intern (format "%s-%d" group-name idx))))
+         (cons layer-name element)))
+      (_ (error "Invalid layer group element: %S" element)))))
 
 (defmacro tp-define-layer-group (name &rest elements)
   "Define a layer group named NAME containing multiple layers.
@@ -1634,7 +1649,7 @@ and the group itself is stored in `tp-layer-groups'."
                   layer-defs)
             (push layer-name layer-names)
             ;; Only increment idx for anonymous (Format 1) elements
-            (unless (and (listp element) (stringp (car element)))
+            (when (eq (tp--layer-group-element-format element) 'format-1)
               (cl-incf idx)))))))
     (setq layer-names (nreverse layer-names))
     (setq layer-defs (nreverse layer-defs))
