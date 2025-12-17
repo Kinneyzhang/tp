@@ -197,10 +197,10 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-search-backward`](#tp-search-forward--tp-search-backward) | text-property-search-backward 的原始包装 |
 | [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本（支持缓冲区和字符串） |
 | [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本（支持缓冲区和字符串） |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向前匹配的文本应用函数（支持起始位置） |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 对 N 个向后匹配的文本应用函数（支持起始位置） |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 向前搜索并对最后一个匹配应用函数（支持起始和结束范围） |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 向后搜索并对最后一个匹配应用函数（支持起始和结束范围） |
 | [`tp-search`](#tp-search---搜索所有匹配) | 在范围或字符串中搜索所有匹配的属性 |
-| [`tp-search-map`](#tp-search-map---对匹配文本应用函数) | 对所有匹配的文本应用函数 |
+| [`tp-search-map`](#tp-search-map---对匹配文本应用函数) | 对所有匹配的文本应用函数（支持起始和结束范围） |
 
 #### 属性层定义函数
 | 函数 | 描述 |
@@ -895,59 +895,57 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 #### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
-(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
 ```
 
-向前/向后搜索 N 次具有 PROPERTY 的文本，**仅对最后一次匹配应用 FUNCTION**。
+在 OBJECT 的 START 到 END 范围内，向前/向后搜索匹配 PROPERTY 属性（值为 VALUE）的部分，**仅对最后一次匹配执行 FUNCTION 函数**。
 
-- **FUNCTION** 接收匹配到的文本作为第一个参数。可选地，FUNCTION 可以接受两个额外的参数：START 和 END，表示匹配的起始和结束位置。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
-- **N** 是搜索次数，默认为 1。该函数会搜索 N 次，但仅对找到的最后（第 N 次）匹配应用 FUNCTION。
-- **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
-- **POINT** 是搜索的起始位置；对于缓冲区 nil 表示当前位置，对于字符串 nil 表示 0（向前）或字符串末尾（向后）。
+- **FUNCTION** 的参数是 `(TEXT &optional START END)`，其中 TEXT 是此次匹配到的文本，START 和 END 为开始结束的位置。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+- **PROPERTY** 是要搜索的文本属性。
+- **VALUE** 为 nil 时，表示搜索 PROPERTY 属性，不用匹配值。
+- **OBJECT** 默认是当前 buffer 或指定的字符串或指定的 buffer。
+- **TIMES** 表示向前/向后搜索几次，默认搜索一次。该函数会搜索 TIMES 次，但仅对找到的最后（第 N 次）匹配应用 FUNCTION。
+- **START** 和 **END** 默认为 OBJECT 的起始和结束位置。
 - 返回成功匹配的数量。
 
 **示例：**
 
 ```elisp
 ;; 仅将最后一次（第 2 次）匹配的文本转为大写
-(with-temp-buffer
-  (insert "hello world test")
-  (tp-set 1 6 '(marker t))
-  (tp-set 13 17 '(marker t))
-  (goto-char 1)
-  (tp-forward-do #'upcase 'marker nil nil nil 2)
-  (buffer-string))
-;; => "hello world TEST"  ; 仅第 2 次匹配被转为大写
-
-;; 仅将最后一次（第 2 次）匹配的文本转为大写
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
-  (tp-forward-do #'upcase 'marker nil my-string nil 2)
+  (tp-forward-do #'upcase 'marker nil my-string 2)
   my-string)
 ;; => "hello world HELLO"  ; 仅第 2 次匹配被转为大写
 
-;; 从特定位置开始搜索（仅找到 1 次匹配并转换）
+;; 在指定范围内搜索（仅搜索范围 6-17 内的匹配）
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
-  (tp-forward-do #'upcase 'marker nil my-string 6 2)
+  (tp-forward-do #'upcase 'marker nil my-string 2 6 17)
   my-string)
-;; => "hello world HELLO"  ; 只处理位置 6 之后的匹配
+;; => "hello world HELLO"  ; 范围 6-17 内仅有 1 个匹配
 
 ;; 使用带有 start 和 end 参数的函数
-(with-temp-buffer
-  (insert "hello world test")
-  (tp-set 1 6 '(marker t))
-  (tp-set 13 17 '(marker t))
-  (goto-char 1)
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do
    (lambda (text start end)
      (format "[%d-%d]%s" start end text))
-   'marker nil nil nil 2)
-  (buffer-string))
-;; => "hello world [13-17]test"  ; 仅最后一次匹配被转换
+   'marker nil my-string 2)
+  my-string)
+;; => "hello world [12-17]hello"  ; 仅最后一次匹配被转换
+
+;; 向后搜索 - 仅将最后一次（第 2 次）匹配的文本转为大写
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-backward-do #'upcase 'marker nil my-string 2)
+  my-string)
+;; => "HELLO world hello"  ; 向后搜索时第一个匹配（即最后找到的）被转为大写
 ```
 
 ---
@@ -998,16 +996,20 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 #### `tp-search-map` - 对匹配文本应用函数
 
 ```elisp
-;; 缓冲区/字符串区域
-(tp-search-map FUNCTION START END PROPERTY &optional VALUE OBJECT)
-
-;; 整个字符串
-(tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
+(tp-search-map FUNCTION PROPERTY &optional VALUE OBJECT START END)
 ```
 
-对所有 PROPERTY 匹配的文本应用 FUNCTION。
+在 OBJECT 的 START 到 END 范围内，匹配到 PROPERTY 属性（值是 VALUE）的部分执行 FUNCTION 函数。
 
-- **FUNCTION** 接收匹配到的文本作为第一个参数，可选地接收当前匹配的 0 基索引作为第二个参数。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+- **FUNCTION** 的参数是 `(TEXT &optional START END IDX)`，其中：
+  - TEXT 是此次匹配到的文本
+  - START 和 END 为开始结束的位置
+  - IDX 是遍历中的当前从 0 开始的索引
+  FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+- **PROPERTY** 是要搜索的文本属性。
+- **VALUE** 为 nil 时，表示搜索 PROPERTY 属性，不用匹配值。
+- **OBJECT** 默认是当前 buffer 或指定的字符串或指定的 buffer。
+- **START** 和 **END** 默认为 OBJECT 的起始和结束位置。
 - 返回处理的匹配数量。
 
 **示例：**
@@ -1017,38 +1019,37 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
-  (tp-search-map #'upcase my-string 'marker)
+  (tp-search-map #'upcase 'marker nil my-string)
   my-string)
 ;; => "HELLO world HELLO"
 
-;; 将缓冲区范围内所有 marker 文本转为大写
-(with-temp-buffer
-  (insert "hello world test")
-  (tp-set 1 6 '(marker t))
-  (tp-set 13 17 '(marker t))
-  (tp-search-map #'upcase 1 17 'marker)
-  (buffer-string))
-;; => "HELLO world TEST"
+;; 仅在指定范围内搜索
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-search-map #'upcase 'marker nil my-string 0 10)
+  my-string)
+;; => "HELLO world hello"  ; 仅范围 0-10 内的第一个匹配被处理
 
-;; 使用索引的自定义转换
+;; 使用 start、end 和 idx 参数的自定义转换
 (let ((my-string (copy-sequence "aaa bbb ccc")))
   (tp-set 0 3 '(marker t) my-string)
   (tp-set 4 7 '(marker t) my-string)
   (tp-set 8 11 '(marker t) my-string)
   (tp-search-map
-   (lambda (text idx)
+   (lambda (text start end idx)
      (format "%d:%s" idx text))
-   my-string 'marker)
+   'marker nil my-string)
   my-string)
 ;; => "0:aaa1:bbb2:ccc"
 
-;; 不使用索引的自定义转换
+;; 不使用可选参数的自定义转换
 (let ((my-string (copy-sequence "hello world")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-search-map
    (lambda (text)
      (concat "[" text "]"))
-   my-string 'marker)
+   'marker nil my-string)
   my-string)
 ;; => "[hello] world"
 ```

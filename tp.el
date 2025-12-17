@@ -981,60 +981,63 @@ Uses `tp-search-backward' for buffers and `tp-search' for strings."
             (setq result (tp-search-backward property value))))
         result)))))
 
-(defun tp--forward-do (function property &optional value object point n)
-  "Internal: Search forward N times for PROPERTY and apply FUNCTION to the last match.
+(defun tp--forward-do (function property &optional value object times start end)
+  "Internal: Search forward TIMES for PROPERTY and apply FUNCTION to the last match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
 and OBJECT.
-N is the number of searches, defaulting to 1.
+TIMES is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
-POINT is the starting position for search; for buffers nil means current point,
-for strings nil means 0.
+START and END define the search range; defaults are object start and end.
 
 Returns the number of successful matches."
-  (let ((count (or n 1)))
+  (let ((count (or times 1)))
     (cond
      ;; String object
      ((stringp object)
-      (let* ((start-pos (or point 0))
+      (let* ((start-pos (or start 0))
+             (end-pos (or end (length object)))
              (all-matches (tp-search object property value))
              (filtered-matches (seq-filter (lambda (m)
-                                             (>= (car m) start-pos))
+                                             (and (>= (car m) start-pos)
+                                                  (<= (cadr m) end-pos)))
                                            all-matches))
              (matches (seq-take filtered-matches count)))
-        (funcall function (car (last matches)) object)
+        (when matches
+          (funcall function (car (last matches)) object))
         (length matches)))
      ;; Buffer or nil
      (t
-      (let ((matches 0)
-            (buf (or object (current-buffer))))
+      (let* ((buf (or object (current-buffer)))
+             (matches 0))
         (with-current-buffer buf
-          (save-excursion
-            (when point (goto-char point))
-            (dotimes (i count)
-              (when-let ((match (tp-search-forward property value t)))
-                (when (= i (1- count))
-                  (funcall function match buf))
-                (cl-incf matches)))))
+          (let ((search-start (or start (point-min)))
+                (search-end (or end (point-max))))
+            (save-excursion
+              (goto-char search-start)
+              (dotimes (i count)
+                (when-let ((match (tp-search-forward property value t)))
+                  (when (<= (prop-match-end match) search-end)
+                    (when (= i (1- count))
+                      (funcall function match buf))
+                    (cl-incf matches)))))))
         matches)))))
 
-(defun tp-forward-do (function property &optional value object point n)
-  "Search forward N times for text with PROPERTY and apply FUNCTION only to the last match.
+(defun tp-forward-do (function property &optional value object times start end)
+  "Search forward for text with PROPERTY and apply FUNCTION to the last match.
 
-FUNCTION receives the matched text as its first argument.  Optionally,
-FUNCTION can accept two additional arguments: START and END, representing
-the start and end positions of the match.  If FUNCTION accepts 2 arguments,
-it receives (TEXT START).  If it accepts 3 or more arguments, it receives
-(TEXT START END).  The return value of FUNCTION replaces the matched text
-in the string or buffer.
+FUNCTION receives (TEXT &optional START END) where TEXT is the matched text,
+START and END are the positions of the match.  The return value of FUNCTION
+replaces the matched text in the string or buffer.
 
-N is the number of searches, defaulting to 1. The function searches N times
-but only applies FUNCTION to the last (Nth) match found.
-VALUE is the optional value to match.
+PROPERTY is the text property to search for.
+VALUE is the optional value to match; nil means search for PROPERTY without
+matching value.
 OBJECT can be a buffer or string; nil defaults to current buffer.
-POINT is the starting position for search; for buffers nil means current point,
-for strings nil means 0.
+TIMES is the number of searches, defaulting to 1.  The function searches
+TIMES times but only applies FUNCTION to the last (Nth) match found.
+START and END define the search range; defaults are object start and end.
 
 Returns the number of successful matches.
 
@@ -1048,106 +1051,115 @@ Example:
   (setq my-string (copy-sequence \"hello world hello\"))
   (tp-set 0 5 \\='(marker t) my-string)
   (tp-set 12 17 \\='(marker t) my-string)
-  (tp-forward-do #\\='upcase \\='marker nil my-string nil 2)
+  (tp-forward-do #\\='upcase \\='marker nil my-string 2)
   ;; => \"hello world HELLO\" - only the 2nd match is upcased
-  ;; Use start and end positions
+
+  ;; Use start and end positions in function
   (tp-forward-do (lambda (txt start end) (format \"[%d-%d]%s\" start end txt))
-                 \\='marker nil my-string nil 2)"
+                 \\='marker nil my-string 2)
+
+  ;; Search within a range
+  (tp-forward-do #\\='upcase \\='marker nil my-string 1 0 10)"
   (let ((arity (func-arity function)))
     (tp--forward-do
      (lambda (match obj)
-       (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
-              (end (if (listp match) (cadr match) (prop-match-end match)))
+       (let* ((m-start (if (listp match) (car match) (prop-match-beginning match)))
+              (m-end (if (listp match) (cadr match) (prop-match-end match)))
               (text (if (stringp obj)
-                        (substring obj start end)
-                      (buffer-substring start end)))
+                        (substring obj m-start m-end)
+                      (buffer-substring m-start m-end)))
               (max-arity (cdr arity))
               (can-accept-start (or (eq max-arity 'many)
                                     (and (numberp max-arity) (>= max-arity 2))))
               (can-accept-end (or (eq max-arity 'many)
                                   (and (numberp max-arity) (>= max-arity 3))))
               (new-text (cond
-                         (can-accept-end (funcall function text start end))
-                         (can-accept-start (funcall function text start))
+                         (can-accept-end (funcall function text m-start m-end))
+                         (can-accept-start (funcall function text m-start))
                          (t (funcall function text)))))
          (when (stringp new-text)
            (if (stringp obj)
                ;; For strings: copy text content and properties separately
-               (let ((len (min (length new-text) (- end start))))
+               (let ((len (min (length new-text) (- m-end m-start))))
                  ;; Copy text content
-                 (store-substring obj start new-text)
+                 (store-substring obj m-start new-text)
                  ;; Copy properties from new-text to obj
                  (let ((pos 0))
                    (while (< pos len)
                      (let* ((props (text-properties-at pos new-text))
                             (next-change (or (next-property-change pos new-text) len)))
                        (when props
-                         (set-text-properties (+ start pos)
-                                              (+ start (min next-change len))
+                         (set-text-properties (+ m-start pos)
+                                              (+ m-start (min next-change len))
                                               props
                                               obj))
                        (setq pos next-change)))))
              ;; For buffers, delete and insert
              (unless (equal new-text text)
                (save-excursion
-                 (delete-region start end)
-                 (goto-char start)
+                 (delete-region m-start m-end)
+                 (goto-char m-start)
                  (insert new-text)))))))
-     property value object point n)))
+     property value object times start end)))
 
-(defun tp--backward-do (function property &optional value object point n)
-  "Internal: Search backward N times for PROPERTY and apply FUNCTION to the last match.
+(defun tp--backward-do (function property &optional value object times start end)
+  "Internal: Search backward TIMES for PROPERTY and apply FUNCTION to the last match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
 and OBJECT.
-N is the number of searches, defaulting to 1.
+TIMES is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
-POINT is the starting position for search; for buffers nil means current point,
-for strings nil means end of string.
+START and END define the search range; defaults are object start and end.
 
 Returns the number of successful matches."
-  (let ((count (or n 1)))
+  (let ((count (or times 1)))
     (cond
      ;; String object - reverse the matches
      ((stringp object)
-      (let* ((start-pos (or point (length object)))
+      (let* ((start-pos (or start 0))
+             (end-pos (or end (length object)))
              (all-matches (tp-search object property value))
              (filtered-matches
-              (seq-filter (lambda (m) (<= (cadr m) start-pos)) all-matches))
+              (seq-filter (lambda (m)
+                            (and (>= (car m) start-pos)
+                                 (<= (cadr m) end-pos)))
+                          all-matches))
              (matches (seq-take (nreverse filtered-matches) count)))
-        (funcall function (car (last matches)) object)
+        (when matches
+          (funcall function (car (last matches)) object))
         (length matches)))
      ;; Buffer or nil
      (t
-      (let ((matches 0)
-            (buf (or object (current-buffer))))
+      (let* ((buf (or object (current-buffer)))
+             (matches 0))
         (with-current-buffer buf
-          (save-excursion
-            (when point (goto-char point))
-            (dotimes (i count)
-              (when-let ((match (tp-search-backward property value)))
-                (when (= i (1- count))
-                  (funcall function match buf))
-                (cl-incf matches)))))
+          (let ((search-start (or start (point-min)))
+                (search-end (or end (point-max))))
+            (save-excursion
+              (goto-char search-end)
+              (dotimes (i count)
+                (when-let ((match (tp-search-backward property value)))
+                  (when (>= (prop-match-beginning match) search-start)
+                    (when (= i (1- count))
+                      (funcall function match buf))
+                    (cl-incf matches)))))))
         matches)))))
 
-(defun tp-backward-do (function property &optional value object point n)
-  "Search backward N times for text with PROPERTY and apply FUNCTION only to the last match.
+(defun tp-backward-do (function property &optional value object times start end)
+  "Search backward for text with PROPERTY and apply FUNCTION to the last match.
 
-FUNCTION receives the matched text as its first argument.  Optionally,
-FUNCTION can accept two additional arguments: START and END, representing
-the start and end positions of the match.  If FUNCTION accepts 2 arguments,
-it receives (TEXT START).  If it accepts 3 or more arguments, it receives
-(TEXT START END).  The return value of FUNCTION replaces the matched text
-in the string or buffer.
+FUNCTION receives (TEXT &optional START END) where TEXT is the matched text,
+START and END are the positions of the match.  The return value of FUNCTION
+replaces the matched text in the string or buffer.
 
-N is the number of searches, defaulting to 1. The function searches N times
-but only applies FUNCTION to the last (Nth) match found.
-VALUE is the optional value to match.
+PROPERTY is the text property to search for.
+VALUE is the optional value to match; nil means search for PROPERTY without
+matching value.
 OBJECT can be a buffer or string; nil defaults to current buffer.
-POINT is the starting position for search; for buffers nil means current point,
-for strings nil means end of string.
+TIMES is the number of searches, defaulting to 1.  The function searches
+TIMES times but only applies FUNCTION to the last (Nth) match found.
+START and END define the search range; defaults are object start and end.
 
 Returns the number of successful matches.
 
@@ -1161,52 +1173,56 @@ Example:
   (setq my-string (copy-sequence \"hello world hello\"))
   (tp-set 0 5 \\='(marker t) my-string)
   (tp-set 12 17 \\='(marker t) my-string)
-  (tp-backward-do #\\='upcase \\='marker nil my-string nil 2)
-  ;; => \"hello world HELLO\" - only the 2nd (last) match is upcased
-  ;; Use start and end positions
+  (tp-backward-do #\\='upcase \\='marker nil my-string 2)
+  ;; => \"HELLO world hello\" - only the 2nd (last) match is upcased
+
+  ;; Use start and end positions in function
   (tp-backward-do (lambda (txt start end) (format \"[%d-%d]%s\" start end txt))
-                  \\='marker nil my-string nil 2)"
+                  \\='marker nil my-string 2)
+
+  ;; Search within a range
+  (tp-backward-do #\\='upcase \\='marker nil my-string 1 0 10)"
   (let ((arity (func-arity function)))
     (tp--backward-do
      (lambda (match obj)
-       (let* ((start (if (listp match) (car match) (prop-match-beginning match)))
-              (end (if (listp match) (cadr match) (prop-match-end match)))
+       (let* ((m-start (if (listp match) (car match) (prop-match-beginning match)))
+              (m-end (if (listp match) (cadr match) (prop-match-end match)))
               (text (if (stringp obj)
-                        (substring obj start end)
-                      (buffer-substring start end)))
+                        (substring obj m-start m-end)
+                      (buffer-substring m-start m-end)))
               (max-arity (cdr arity))
               (can-accept-start (or (eq max-arity 'many)
                                     (and (numberp max-arity) (>= max-arity 2))))
               (can-accept-end (or (eq max-arity 'many)
                                   (and (numberp max-arity) (>= max-arity 3))))
               (new-text (cond
-                         (can-accept-end (funcall function text start end))
-                         (can-accept-start (funcall function text start))
+                         (can-accept-end (funcall function text m-start m-end))
+                         (can-accept-start (funcall function text m-start))
                          (t (funcall function text)))))
          (when (stringp new-text)
            (if (stringp obj)
                ;; For strings: copy text content and properties separately
-               (let ((len (min (length new-text) (- end start))))
+               (let ((len (min (length new-text) (- m-end m-start))))
                  ;; Copy text content
-                 (store-substring obj start new-text)
+                 (store-substring obj m-start new-text)
                  ;; Copy properties from new-text to obj
                  (let ((pos 0))
                    (while (< pos len)
                      (let* ((props (text-properties-at pos new-text))
                             (next-change (or (next-property-change pos new-text) len)))
                        (when props
-                         (set-text-properties (+ start pos)
-                                              (+ start (min next-change len))
+                         (set-text-properties (+ m-start pos)
+                                              (+ m-start (min next-change len))
                                               props
                                               obj))
                        (setq pos next-change)))))
              ;; For buffers, delete and insert
              (unless (equal new-text text)
                (save-excursion
-                 (delete-region start end)
-                 (goto-char start)
+                 (delete-region m-start m-end)
+                 (goto-char m-start)
                  (insert new-text)))))))
-     property value object point n)))
+     property value object times start end)))
 
 (defun tp-search (start-or-string
                   &optional end-or-property property-or-value value object)
@@ -1298,56 +1314,62 @@ Each element contains the start position, end position, and property value."
       (nreverse results)))
    (t (error "Invalid first argument: %S" start-or-string))))
 
-(defun tp--search-do (function start-or-string &optional end-or-property property-or-value value object)
+(defun tp--search-do (function property &optional value object start end)
   "Internal: Execute FUNCTION on all matches of PROPERTY.
 
-This function supports two calling conventions:
-
-1. Buffer/string region:
-   (tp--search-do FUNCTION START END PROPERTY &optional VALUE OBJECT)
-
-2. Entire string:
-   (tp--search-do FUNCTION STRING PROPERTY &optional VALUE)
+Signature: (tp--search-do FUNCTION PROPERTY &optional VALUE OBJECT START END)
 
 FUNCTION receives two arguments: the prop-match (list of START END VALUE) and OBJECT.
+PROPERTY is the text property to search for.
+VALUE is the optional value to match; nil means search for PROPERTY without matching value.
+OBJECT can be a buffer or string; nil defaults to current buffer.
+START and END define the search range; defaults are object start and end.
+
 Returns the number of matches processed."
-  (let ((matches
-         (cond
-          ;; Entire string form
-          ((stringp start-or-string)
-           (tp-search start-or-string end-or-property property-or-value))
-          ;; Buffer/string region form
-          ((numberp start-or-string)
-           (tp-search start-or-string end-or-property property-or-value value object))
-          (t (error "Invalid first argument: %S" start-or-string))))
-        (obj (cond
-              ((stringp start-or-string) start-or-string)
-              ((numberp start-or-string) (or object (current-buffer)))
-              (t nil))))
-    (dolist (match matches)
+  (let* ((obj (or object (current-buffer)))
+         (all-matches (if (stringp obj)
+                          (tp-search obj property value)
+                        (let ((s (or start (point-min)))
+                              (e (or end (point-max))))
+                          (tp-search s e property value obj))))
+         (filtered-matches
+          (if (and (not (stringp obj)) start end)
+              (seq-filter (lambda (m)
+                            (and (>= (car m) start)
+                                 (<= (cadr m) end)))
+                          all-matches)
+            (if (stringp obj)
+                (let ((s (or start 0))
+                      (e (or end (length obj))))
+                  (seq-filter (lambda (m)
+                                (and (>= (car m) s)
+                                     (<= (cadr m) e)))
+                              all-matches))
+              all-matches))))
+    (dolist (match filtered-matches)
       (funcall function match obj))
-    (length matches)))
+    (length filtered-matches)))
 
-(defun tp-search-map (function start-or-string &optional end-or-property property-or-value value object)
-  "Apply FUNCTION to matched text for all matches of PROPERTY.
+(defun tp-search-map (function property &optional value object start end)
+  "Apply FUNCTION to all matches of PROPERTY in OBJECT.
 
-This function supports two calling conventions:
+Signature: (tp-search-map FUNCTION PROPERTY &optional VALUE OBJECT START END)
 
-1. Buffer/string region:
-   (tp-search-map FUNCTION START END PROPERTY &optional VALUE OBJECT)
+FUNCTION receives (TEXT &optional START END IDX) where:
+- TEXT is the matched text
+- START and END are the positions of the match
+- IDX is the 0-based index of the current match
 
-2. Entire string:
-   (tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
-
-FUNCTION receives the matched text as its first argument, and optionally
-the 0-based index of the current match as its second argument.
 FUNCTION can either:
 - Return a new/modified string to replace the matched text
 - Modify the text properties of the argument and return it
 - Return nil to skip replacement
 
-For text content changes, the return value replaces the matched text.
-For property-only changes, the properties are merged back to the original.
+PROPERTY is the text property to search for.
+VALUE is the optional value to match; nil means search for PROPERTY without
+matching value.
+OBJECT can be a buffer or string; nil defaults to current buffer.
+START and END define the search range; defaults are object start and end.
 
 Returns the number of matches processed.
 
@@ -1358,55 +1380,65 @@ If the replacement is longer, it will be truncated.
 
 Example:
   ;; Upcase all matched text
-  (tp-search-map #\\='upcase my-string \\='marker)
+  (tp-search-map #\\='upcase \\='marker nil my-string)
+
   ;; Add properties to matched text
-  (tp-search-map (lambda (txt) (tp-add txt \\='face \\='bold)) str \\='marker)
-  ;; Use index to add numbering
-  (tp-search-map (lambda (txt idx) (format \"%d: %s\" idx txt)) str \\='marker)"
-  (let ((obj (cond
-              ((stringp start-or-string) start-or-string)
-              ((numberp start-or-string) (or object (current-buffer)))
-              (t nil)))
-        (idx 0)
-        (arity (func-arity function)))
+  (tp-search-map (lambda (txt) (tp-add txt \\='face \\='bold)) \\='marker nil str)
+
+  ;; Use start, end, and index
+  (tp-search-map (lambda (txt start end idx)
+                   (format \"[%d:%d-%d]%s\" idx start end txt))
+                 \\='marker nil str)
+
+  ;; Search within a range
+  (tp-search-map #\\='upcase \\='marker nil my-string 0 10)"
+  (let* ((obj (or object (current-buffer)))
+         (idx 0)
+         (arity (func-arity function)))
     (tp--search-do
      (lambda (match obj)
-       (let* ((start (car match))
-              (end (cadr match))
+       (let* ((m-start (car match))
+              (m-end (cadr match))
               (text (if (stringp obj)
-                        (substring obj start end)
-                      (buffer-substring start end)))
+                        (substring obj m-start m-end)
+                      (buffer-substring m-start m-end)))
               (max-arity (cdr arity))
+              (can-accept-start (or (eq max-arity 'many)
+                                    (and (numberp max-arity) (>= max-arity 2))))
+              (can-accept-end (or (eq max-arity 'many)
+                                  (and (numberp max-arity) (>= max-arity 3))))
               (can-accept-idx (or (eq max-arity 'many)
-                                  (and (numberp max-arity) (>= max-arity 2))))
-              (new-text (if can-accept-idx
-                            (funcall function text idx)
-                          (funcall function text))))
+                                  (and (numberp max-arity) (>= max-arity 4))))
+              (new-text (cond
+                         (can-accept-idx (funcall function text m-start m-end idx))
+                         (can-accept-end (funcall function text m-start m-end))
+                         (can-accept-start (funcall function text m-start))
+                         (t (funcall function text)))))
          (setq idx (1+ idx))
          (when (stringp new-text)
            (if (stringp obj)
                ;; For strings: copy text content and properties separately
-               (let ((len (min (length new-text) (- end start))))
+               (let ((len (min (length new-text) (- m-end m-start))))
                  ;; Copy text content
-                 (store-substring obj start new-text)
+                 (store-substring obj m-start new-text)
                  ;; Copy properties from new-text to obj
                  (let ((pos 0))
                    (while (< pos len)
                      (let* ((props (text-properties-at pos new-text))
                             (next-change (or (next-property-change pos new-text) len)))
                        (when props
-                         (set-text-properties (+ start pos)
-                                              (+ start (min next-change len))
+                         (set-text-properties (+ m-start pos)
+                                              (+ m-start (min next-change len))
                                               props
                                               obj))
                        (setq pos next-change)))))
              ;; For buffers, delete and insert
              (unless (equal new-text text)
                (save-excursion
-                 (delete-region start end)
-                 (goto-char start)
+                 (delete-region m-start m-end)
+                 (goto-char m-start)
                  (insert new-text)))))))
-     start-or-string end-or-property property-or-value value object)))
+     property value object start end)))
 
 
 ;;; Query Functions

@@ -642,218 +642,120 @@
       (should (equal (car matches) '(12 17 t)))
       (should (equal (cadr matches) '(0 5 t))))))
 
-(ert-deftest tp-test-forward-do ()
-  "Test tp-forward-do applies function only to the last match."
-  (tp-test-with-temp-buffer
-    (insert "hello World test")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 17 '(marker t))
-    (goto-char 1)
-    (skip-unless (fboundp 'text-property-search-forward))
-    ;; Test that function is applied only to the last (2nd) match
-    (let ((count (tp-forward-do #'upcase 'marker nil nil nil 2)))
-      (should (= count 2))
-      ;; First match should NOT be upcased
-      (should (equal (buffer-substring 1 6) "hello"))
-      ;; Only the last (2nd) match should be upcased
-      (should (equal (buffer-substring 13 17) "TEST")))))
-
-(ert-deftest tp-test--forward-do ()
-  "Test tp--forward-do applies function only to the last match (internal API)."
-  (tp-test-with-temp-buffer
-    (insert "Hello World Test")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 17 '(marker t))
-    (goto-char 1)
-    (skip-unless (fboundp 'text-property-search-forward))
-    (let ((result nil))
-      (tp--forward-do
-       (lambda (match obj)
-         (push (prop-match-beginning match) result))
-       'marker nil nil nil 2)
-      ;; Only the last match should be processed
-      (should (= (length result) 1))
-      (should (= (car result) 13)))))
-
-(ert-deftest tp-test-backward-do ()
-  "Test tp-backward-do applies function only to the last match."
-  (tp-test-with-temp-buffer
-    (insert "hello World test")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 17 '(marker t))
-    (goto-char 18)
-    (skip-unless (fboundp 'text-property-search-backward))
-    ;; Test that function is applied only to the last (2nd) match
-    (let ((count (tp-backward-do #'upcase 'marker nil nil nil 2)))
-      (should (= count 2))
-      ;; Only the last (2nd) match should be upcased
-      (should (equal (buffer-substring 1 6) "HELLO"))
-      ;; First match (searched backward) should NOT be upcased
-      (should (equal (buffer-substring 13 17) "test")))))
-
-(ert-deftest tp-test--backward-do ()
-  "Test tp--backward-do applies function only to the last match (internal API)."
-  (tp-test-with-temp-buffer
-    (insert "Hello World Test")
-    (tp-set 1 6 '(marker t))
-    (tp-set 13 17 '(marker t))
-    (goto-char 18)
-    (skip-unless (fboundp 'text-property-search-backward))
-    (let ((result nil))
-      (tp--backward-do
-       (lambda (match obj)
-         (push (prop-match-beginning match) result))
-       'marker nil nil nil 2)
-      ;; Only the last match should be processed
-      (should (= (length result) 1))
-      (should (= (car result) 1)))))
+;;; tp-forward-do / tp-backward-do tests (new API)
 
 (ert-deftest tp-test-forward-do-on-string ()
-  "Test tp-forward-do applies only to the last match on string objects."
+  "Test tp-forward-do on string: applies function to the last match."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    (let ((count (tp-forward-do #'upcase 'marker nil str nil 2)))
+    ;; Search 2 times, function only applied to the last match
+    (let ((count (tp-forward-do #'upcase 'marker nil str 2)))
       (should (= count 2))
       ;; First match should NOT be upcased
       (should (equal (substring str 0 5) "hello"))
       ;; Only the last (2nd) match should be upcased
       (should (equal (substring str 12 17) "HELLO")))))
 
-(ert-deftest tp-test-backward-do-on-string ()
-  "Test tp-backward-do applies only to the last match on string objects."
+(ert-deftest tp-test-forward-do-on-string-with-range ()
+  "Test tp-forward-do on string with start/end range."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    (let ((count (tp-backward-do #'upcase 'marker nil str nil 2)))
-      (should (= count 2))
-      ;; Only the last (2nd) match should be upcased
-      (should (equal (substring str 0 5) "HELLO"))
-      ;; First match (searched backward) should NOT be upcased
-      (should (equal (substring str 12 17) "hello")))))
-
-(ert-deftest tp-test-forward-do-with-point ()
-  "Test tp-forward-do with point parameter."
-  (let ((str (copy-sequence "hello World hello")))
-    (tp-set 0 5 '(marker t) str)
-    (tp-set 12 17 '(marker t) str)
-    ;; Start from position 6 (after first match)
-    (let ((count (tp-forward-do #'upcase 'marker nil str 6 2)))
-      (should (= count 1))  ; Only one match from position 6
+    ;; Search only in range 6-17 (after first match)
+    (let ((count (tp-forward-do #'upcase 'marker nil str 2 6 17)))
+      (should (= count 1))  ; Only one match in range 6-17
       ;; First match should NOT be upcased
       (should (equal (substring str 0 5) "hello"))
       ;; Second match should be upcased
       (should (equal (substring str 12 17) "HELLO")))))
 
-(ert-deftest tp-test-backward-do-with-point ()
-  "Test tp-backward-do with point parameter."
-  (let ((str (copy-sequence "hello World hello")))
-    (tp-set 0 5 '(marker t) str)
-    (tp-set 12 17 '(marker t) str)
-    ;; Start from position 10 (before second match)
-    (let ((count (tp-backward-do #'upcase 'marker nil str 10 2)))
-      (should (= count 1))  ; Only one match before position 10
-      ;; First match should be upcased
-      (should (equal (substring str 0 5) "HELLO"))
-      ;; Second match should NOT be upcased
-      (should (equal (substring str 12 17) "hello")))))
-
-(ert-deftest tp-test-forward-do-with-start-end ()
-  "Test tp-forward-do passes optional start and end to function for last match only."
+(ert-deftest tp-test-forward-do-function-receives-start-end ()
+  "Test tp-forward-do passes start and end to function."
   (let ((str (copy-sequence "hello World hello"))
         (starts nil)
         (ends nil))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    ;; Function accepts text, start, end and returns uppercase
+    ;; Function accepts text, start, end
     (let ((count (tp-forward-do (lambda (txt start end)
                                   (push start starts)
                                   (push end ends)
                                   (upcase txt))
-                                'marker nil str nil 2)))
+                                'marker nil str 2)))
       (should (= count 2))
-      ;; Check only the last match positions were passed
+      ;; Only the last match positions were passed to function
       (should (equal starts '(12)))
       (should (equal ends '(17)))
       ;; Only the last match should be upcased
       (should (equal (substring str 0 5) "hello"))
       (should (equal (substring str 12 17) "HELLO")))))
 
-(ert-deftest tp-test-forward-do-with-start-only ()
-  "Test tp-forward-do passes start to function for last match only when function accepts 2 args."
-  (let ((str (copy-sequence "hello World hello"))
-        (starts nil))
-    (tp-set 0 5 '(marker t) str)
-    (tp-set 12 17 '(marker t) str)
-    ;; Function accepts text and start only
-    (let ((count (tp-forward-do (lambda (txt start)
-                                  (push start starts)
-                                  (upcase txt))
-                                'marker nil str nil 2)))
-      (should (= count 2))
-      ;; Check only the last match start position was passed
-      (should (equal starts '(12)))
-      ;; Only the last match should be upcased
-      (should (equal (substring str 0 5) "hello"))
-      (should (equal (substring str 12 17) "HELLO")))))
-
-(ert-deftest tp-test-forward-do-backward-compat ()
-  "Test tp-forward-do applies only to last match with single-argument functions."
+(ert-deftest tp-test-forward-do-single-arg-function ()
+  "Test tp-forward-do with single-argument function."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
     ;; Use #'upcase which only takes one argument
-    (tp-forward-do #'upcase 'marker nil str nil 2)
+    (tp-forward-do #'upcase 'marker nil str 2)
     ;; Only the last match should be upcased
     (should (equal (substring str 0 5) "hello"))
     (should (equal (substring str 12 17) "HELLO"))))
 
-(ert-deftest tp-test-backward-do-with-start-end ()
-  "Test tp-backward-do passes optional start and end to function for last match only."
+(ert-deftest tp-test-backward-do-on-string ()
+  "Test tp-backward-do on string: applies function to the last match."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    ;; Search backward 2 times, function only applied to the last match
+    (let ((count (tp-backward-do #'upcase 'marker nil str 2)))
+      (should (= count 2))
+      ;; Only the last (2nd) match should be upcased (first in order)
+      (should (equal (substring str 0 5) "HELLO"))
+      ;; First match (searched backward) should NOT be upcased
+      (should (equal (substring str 12 17) "hello")))))
+
+(ert-deftest tp-test-backward-do-on-string-with-range ()
+  "Test tp-backward-do on string with start/end range."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    ;; Search only in range 0-10 (before second match)
+    (let ((count (tp-backward-do #'upcase 'marker nil str 2 0 10)))
+      (should (= count 1))  ; Only one match in range 0-10
+      ;; First match should be upcased
+      (should (equal (substring str 0 5) "HELLO"))
+      ;; Second match should NOT be upcased
+      (should (equal (substring str 12 17) "hello")))))
+
+(ert-deftest tp-test-backward-do-function-receives-start-end ()
+  "Test tp-backward-do passes start and end to function."
   (let ((str (copy-sequence "hello World hello"))
         (starts nil)
         (ends nil))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    ;; Function accepts text, start, end and returns uppercase
+    ;; Function accepts text, start, end
     (let ((count (tp-backward-do (lambda (txt start end)
                                    (push start starts)
                                    (push end ends)
                                    (upcase txt))
-                                 'marker nil str nil 2)))
+                                 'marker nil str 2)))
       (should (= count 2))
-      ;; Check only the last match positions were passed
+      ;; Only the last match positions were passed to function
       (should (equal starts '(0)))
       (should (equal ends '(5)))
       ;; Only the last match should be upcased
       (should (equal (substring str 0 5) "HELLO"))
       (should (equal (substring str 12 17) "hello")))))
 
-(ert-deftest tp-test-backward-do-with-start-only ()
-  "Test tp-backward-do passes start to function for last match only when function accepts 2 args."
-  (let ((str (copy-sequence "hello World hello"))
-        (starts nil))
-    (tp-set 0 5 '(marker t) str)
-    (tp-set 12 17 '(marker t) str)
-    ;; Function accepts text and start only
-    (let ((count (tp-backward-do (lambda (txt start)
-                                   (push start starts)
-                                   (upcase txt))
-                                 'marker nil str nil 2)))
-      (should (= count 2))
-      ;; Check only the last match start position was passed
-      (should (equal starts '(0)))
-      ;; Only the last match should be upcased
-      (should (equal (substring str 0 5) "HELLO"))
-      (should (equal (substring str 12 17) "hello")))))
-
-(ert-deftest tp-test-backward-do-backward-compat ()
-  "Test tp-backward-do applies only to last match with single-argument functions."
+(ert-deftest tp-test-backward-do-single-arg-function ()
+  "Test tp-backward-do with single-argument function."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
     ;; Use #'upcase which only takes one argument
-    (tp-backward-do #'upcase 'marker nil str nil 2)
+    (tp-backward-do #'upcase 'marker nil str 2)
     ;; Only the last match should be upcased
     (should (equal (substring str 0 5) "HELLO"))
     (should (equal (substring str 12 17) "hello"))))
@@ -899,7 +801,7 @@
       (tp--search-do
        (lambda (match obj)
          (push (car match) result))
-       str 'marker)
+       'marker nil str)
       (should (= (length result) 2))
       (should (member 0 result))
       (should (member 12 result)))))
@@ -914,7 +816,7 @@
       (tp--search-do
        (lambda (match obj)
          (push (car match) result))
-       1 18 'marker)
+       'marker nil nil 1 18)
       (should (= (length result) 2))
       (should (member 1 result))
       (should (member 13 result)))))
@@ -924,7 +826,7 @@
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
-    (let ((count (tp-search-map #'upcase str 'marker)))
+    (let ((count (tp-search-map #'upcase 'marker nil str)))
       (should (= count 2))
       ;; Check that text was upcased
       (should (equal (substring str 0 5) "HELLO"))
@@ -936,7 +838,7 @@
     (insert "hello World hello")
     (tp-set 1 6 '(marker t))
     (tp-set 13 18 '(marker t))
-    (let ((count (tp-search-map #'upcase 1 18 'marker)))
+    (let ((count (tp-search-map #'upcase 'marker nil nil 1 18)))
       (should (= count 2))
       ;; Check that text was upcased
       (should (equal (buffer-substring 1 6) "HELLO"))
@@ -948,11 +850,11 @@
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
     ;; First upcase the text
-    (tp-search-map #'upcase str 'marker)
+    (tp-search-map #'upcase 'marker nil str)
     ;; Then add face property
     (tp-search-map (lambda (txt)
                      (tp-add txt 'face '(:background "orange")))
-                   str 'marker)
+                   'marker nil str)
     ;; Check text was upcased
     (should (equal (substring str 0 5) "HELLO"))
     (should (equal (substring str 12 17) "HELLO"))
@@ -962,40 +864,39 @@
       (should (equal (plist-get (plist-get props-0 'face) :background) "orange"))
       (should (equal (plist-get (plist-get props-12 'face) :background) "orange")))))
 
-(ert-deftest tp-test-search-map-with-idx ()
-  "Test tp-search-map passes index to function when it accepts two arguments."
+(ert-deftest tp-test-search-map-with-start-end-idx ()
+  "Test tp-search-map passes start, end, and index to function."
   (let ((str (copy-sequence "aaa bbb ccc"))
-        (indices nil))
+        (positions nil))
     (tp-set 0 3 '(marker t) str)
     (tp-set 4 7 '(marker t) str)
     (tp-set 8 11 '(marker t) str)
-    ;; Use a function that accepts idx and records the indices
-    ;; Return the uppercased text (same length) to avoid truncation issues
-    (tp-search-map (lambda (txt idx)
-                     (push idx indices)
+    ;; Use a function that accepts text, start, end, idx
+    (tp-search-map (lambda (txt start end idx)
+                     (push (list start end idx) positions)
                      (upcase txt))
-                   str 'marker)
-    ;; Check indices were passed in order (reversed due to push)
-    (should (equal (reverse indices) '(0 1 2)))
+                   'marker nil str)
+    ;; Check positions and indices were passed in order (reversed due to push)
+    (should (equal (reverse positions) '((0 3 0) (4 7 1) (8 11 2))))
     ;; Check text was transformed (uppercased)
     (should (equal (substring str 0 3) "AAA"))
     (should (equal (substring str 4 7) "BBB"))
     (should (equal (substring str 8 11) "CCC"))))
 
-(ert-deftest tp-test-search-map-with-idx-in-buffer ()
-  "Test tp-search-map passes index to function in buffer range."
+(ert-deftest tp-test-search-map-with-start-end-in-buffer ()
+  "Test tp-search-map passes start and end to function in buffer range."
   (tp-test-with-temp-buffer
     (insert "aaa bbb ccc")
     (tp-set 1 4 '(marker t))
     (tp-set 5 8 '(marker t))
     (tp-set 9 12 '(marker t))
-    (let ((indices nil))
-      (tp-search-map (lambda (txt idx)
-                       (push idx indices)
+    (let ((positions nil))
+      (tp-search-map (lambda (txt start end idx)
+                       (push (list start end idx) positions)
                        (format "[%d]" idx))
-                     1 12 'marker)
-      ;; Check indices were passed in order
-      (should (equal (reverse indices) '(0 1 2)))
+                     'marker nil nil 1 12)
+      ;; Check positions and indices were passed in order
+      (should (equal (reverse positions) '((1 4 0) (5 8 1) (9 12 2))))
       ;; Check text was replaced with index markers
       (should (string-match-p "\\[0\\]" (buffer-string)))
       (should (string-match-p "\\[1\\]" (buffer-string)))
@@ -1006,8 +907,21 @@
   (let ((str (copy-sequence "hello world")))
     (tp-set 0 5 '(marker t) str)
     ;; Use #'upcase which only takes one argument
-    (tp-search-map #'upcase str 'marker)
+    (tp-search-map #'upcase 'marker nil str)
     (should (equal (substring str 0 5) "HELLO"))))
+
+(ert-deftest tp-test-search-map-with-range ()
+  "Test tp-search-map with start and end range."
+  (let ((str (copy-sequence "hello World hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    ;; Only search in range 0-10 (first match only)
+    (let ((count (tp-search-map #'upcase 'marker nil str 0 10)))
+      (should (= count 1))
+      ;; First match should be upcased
+      (should (equal (substring str 0 5) "HELLO"))
+      ;; Second match should NOT be upcased
+      (should (equal (substring str 12 17) "hello")))))
 
 ;;; ============================================================
 ;;; Utility Function Tests

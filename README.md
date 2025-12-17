@@ -198,10 +198,10 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-search-backward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-backward |
 | [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property (buffers and strings) |
 | [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property (buffers and strings) |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N forward matches (with optional start point) |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to matched text for N backward matches (with optional start point) |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to last match in forward search (with optional start/end range) |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to last match in backward search (with optional start/end range) |
 | [`tp-search`](#tp-search---search-all-matches) | Search all matching properties in range or string |
-| [`tp-search-map`](#tp-search-map---apply-function-to-matched-text) | Apply function to matched text for all matches |
+| [`tp-search-map`](#tp-search-map---apply-function-to-matched-text) | Apply function to all matches (with optional start/end range) |
 
 #### Property Layer Definition Functions
 | Function | Description |
@@ -896,60 +896,57 @@ Search forward/backward N times for text with PROPERTY.
 #### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
-(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT POINT N)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
 ```
 
-Search forward/backward N times for text with PROPERTY and apply FUNCTION **only to the last match**.
+Search forward/backward for text with PROPERTY and apply FUNCTION **only to the last match**.
 
-- **FUNCTION** receives the matched text as its first argument. Optionally, FUNCTION can accept two additional arguments: START and END, representing the start and end positions of the match. The return value of FUNCTION replaces the matched text in the string or buffer.
-- **N** is the number of searches, defaulting to 1. The function searches N times but only applies FUNCTION to the last (Nth) match found.
+- **FUNCTION** receives `(TEXT &optional START END)` where TEXT is the matched text, START and END are the positions of the match. The return value of FUNCTION replaces the matched text in the string or buffer.
+- **PROPERTY** is the text property to search for.
+- **VALUE** is the optional value to match; nil means search for PROPERTY without matching value.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
-- **POINT** is the starting position for search; for buffers nil means current point,
-  for strings nil means 0 (forward) or end of string (backward).
+- **TIMES** is the number of searches, defaulting to 1. The function searches TIMES times but only applies FUNCTION to the last (Nth) match found.
+- **START** and **END** define the search range; defaults are object start and end.
 - Returns the number of successful matches.
 
 **Examples:**
 
 ```elisp
-;; Upcase only the last (2nd) match in buffer
-(with-temp-buffer
-  (insert "hello world test")
-  (tp-set 1 6 '(marker t))
-  (tp-set 13 17 '(marker t))
-  (goto-char 1)
-  (tp-forward-do #'upcase 'marker nil nil nil 2)
-  (buffer-string))
-;; => "hello world TEST"  ; Only the 2nd match is upcased
-
 ;; Upcase only the last (2nd) match in string
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
-  (tp-forward-do #'upcase 'marker nil my-string nil 2)
+  (tp-forward-do #'upcase 'marker nil my-string 2)
   my-string)
 ;; => "hello world HELLO"  ; Only the 2nd match is upcased
 
-;; Start search from specific position (only 1 match found and transformed)
+;; Search within a range (only matches in range 6-17)
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
-  (tp-forward-do #'upcase 'marker nil my-string 6 2)
+  (tp-forward-do #'upcase 'marker nil my-string 2 6 17)
   my-string)
-;; => "hello world HELLO"  ; Only matches from position 6 onward
+;; => "hello world HELLO"  ; Only 1 match in range 6-17
 
 ;; Using function with start and end parameters
-(with-temp-buffer
-  (insert "hello world test")
-  (tp-set 1 6 '(marker t))
-  (tp-set 13 17 '(marker t))
-  (goto-char 1)
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do
    (lambda (text start end)
      (format "[%d-%d]%s" start end text))
-   'marker nil nil nil 2)
-  (buffer-string))
-;; => "hello world [13-17]test"  ; Only the last match is transformed
+   'marker nil my-string 2)
+  my-string)
+;; => "hello world [12-17]hello"  ; Only the last match is transformed
+
+;; Backward search - upcase only the last (2nd) match
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-backward-do #'upcase 'marker nil my-string 2)
+  my-string)
+;; => "HELLO world hello"  ; The first match (last when searching backward) is upcased
 ```
 
 ---
@@ -1000,18 +997,20 @@ Returns a list of (START END VALUE) for all matching regions.
 #### `tp-search-map` - Apply Function to Matched Text
 
 ```elisp
-;; Buffer/string region
-(tp-search-map FUNCTION START END PROPERTY &optional VALUE OBJECT)
-
-;; Entire string
-(tp-search-map FUNCTION STRING PROPERTY &optional VALUE)
+(tp-search-map FUNCTION PROPERTY &optional VALUE OBJECT START END)
 ```
 
-Apply FUNCTION to matched text for all matches of PROPERTY.
+Apply FUNCTION to all matches of PROPERTY in OBJECT.
 
-- **FUNCTION** receives the matched text as its first argument, and optionally
-  the 0-based index of the current match as its second argument.  The return value
-  of FUNCTION replaces the matched text in the string or buffer.
+- **FUNCTION** receives `(TEXT &optional START END IDX)` where:
+  - TEXT is the matched text
+  - START and END are the positions of the match
+  - IDX is the 0-based index of the current match
+  The return value of FUNCTION replaces the matched text in the string or buffer.
+- **PROPERTY** is the text property to search for.
+- **VALUE** is the optional value to match; nil means search for PROPERTY without matching value.
+- **OBJECT** can be a buffer or string; nil defaults to current buffer.
+- **START** and **END** define the search range; defaults are object start and end.
 - Returns the number of matches processed.
 
 **Examples:**
@@ -1021,38 +1020,37 @@ Apply FUNCTION to matched text for all matches of PROPERTY.
 (let ((my-string (copy-sequence "hello world hello")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-set 12 17 '(marker t) my-string)
-  (tp-search-map #'upcase my-string 'marker)
+  (tp-search-map #'upcase 'marker nil my-string)
   my-string)
 ;; => "HELLO world HELLO"
 
-;; Upcase all markers in buffer range
-(with-temp-buffer
-  (insert "hello world test")
-  (tp-set 1 6 '(marker t))
-  (tp-set 13 17 '(marker t))
-  (tp-search-map #'upcase 1 17 'marker)
-  (buffer-string))
-;; => "HELLO world TEST"
+;; Search only in a range
+(let ((my-string (copy-sequence "hello world hello")))
+  (tp-set 0 5 '(marker t) my-string)
+  (tp-set 12 17 '(marker t) my-string)
+  (tp-search-map #'upcase 'marker nil my-string 0 10)
+  my-string)
+;; => "HELLO world hello"  ; Only first match in range 0-10
 
-;; Custom transformation with index
+;; Custom transformation with start, end, and index
 (let ((my-string (copy-sequence "aaa bbb ccc")))
   (tp-set 0 3 '(marker t) my-string)
   (tp-set 4 7 '(marker t) my-string)
   (tp-set 8 11 '(marker t) my-string)
   (tp-search-map
-   (lambda (text idx)
+   (lambda (text start end idx)
      (format "%d:%s" idx text))
-   my-string 'marker)
+   'marker nil my-string)
   my-string)
 ;; => "0:aaa1:bbb2:ccc"
 
-;; Custom transformation without index
+;; Custom transformation without optional parameters
 (let ((my-string (copy-sequence "hello world")))
   (tp-set 0 5 '(marker t) my-string)
   (tp-search-map
    (lambda (text)
      (concat "[" text "]"))
-   my-string 'marker)
+   'marker nil my-string)
   my-string)
 ;; => "[hello] world"
 ```
