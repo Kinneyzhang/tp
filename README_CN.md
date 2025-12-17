@@ -205,7 +205,8 @@ tp.el 所有函数按类别组织的完整概览：
 #### 属性层定义函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-define-layer`](#tp-define-layer---定义属性层) | 定义属性层或属性层组 |
+| [`tp-define-layer`](#tp-define-layer---定义单个属性层) | 定义单个属性层 |
+| [`tp-define-layer-group`](#tp-define-layer-group---定义属性层组) | 定义属性层组 |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取属性层的属性 |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取属性层组中所有属性层的属性 |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | 移除属性层定义 |
@@ -1075,32 +1076,30 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ### 属性层定义
 
-#### `tp-define-layer` - 定义属性层
+#### `tp-define-layer` - 定义单个属性层
 
-定义单个属性层或多个属性层组。
+定义单个文本属性层。支持两种格式：
 
-**单个属性层：**
+**格式一 - 直接定义文本属性：**
 
 ```elisp
 (tp-define-layer layer-name
   (face (:background "cyan") line-prefix ">>"))
 ```
 
-**多个属性层（属性层组）：**
+**格式二 - 使用 :props 关键字（为后续扩展预留）：**
 
 ```elisp
-(tp-define-layer my-group
-  layer-1                                    ; 引用已存在的属性层
-  (face (:background "red") line-prefix ">>")    ; 匿名属性层
-  (face (:background "green" :weight bold)))     ; 另一个匿名属性层
+(tp-define-layer layer-name
+  :props (face (:background "cyan") line-prefix ">>"))
 ```
 
-定义中的第一个属性层是顶层（默认可见）。
+如果同名的层已存在，新定义将覆盖旧定义。
 
 **示例：**
 
 ```elisp
-;; 定义单个属性层
+;; 使用格式一（直接 plist）定义单个属性层
 (progn
   (setq tp-layer-alist nil)  ; 重置以确保干净的示例
   (tp-define-layer highlight
@@ -1108,27 +1107,102 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-layer-props 'highlight))
 ;; => (face (:background "yellow" :foreground "black") tp-name highlight)
 
+;; 使用格式二（:props 关键字）定义属性层
 (progn
   (tp-define-layer error
-    (face (:background "red" :foreground "white")
-     help-echo "错误!"))
+    :props (face (:background "red" :foreground "white")
+            help-echo "错误!"))
   (tp-layer-props 'error))
 ;; => (face (:background "red" :foreground "white") help-echo "错误!" tp-name error)
 
+;; 重新定义已存在的属性层（覆盖旧定义）
 (progn
+  (tp-define-layer test-layer (face bold))
+  (tp-define-layer test-layer (face italic))  ; 覆盖
+  (tp-layer-props 'test-layer))
+;; => (face italic tp-name test-layer)
+```
+
+---
+
+#### `tp-define-layer-group` - 定义属性层组
+
+定义包含多个属性层的层组。每个元素支持三种格式：
+
+**格式一 - 匿名层（命名为 GROUP-NAME-0, GROUP-NAME-1 等）：**
+
+```elisp
+(tp-define-layer-group tp-test-moons
+  (display "🌑" face (:height 1.0))
+  (display "🌘" face (:height 1.5))
+  (display "🌗" face (:height 2.0)))
+;; 创建层: tp-test-moons-0, tp-test-moons-1, tp-test-moons-2
+```
+
+**格式二 - 使用 cons-cell 命名层（命名为 GROUP-NAME-suffix）：**
+
+```elisp
+(tp-define-layer-group tp-test-moons
+  ("新月" . (display "🌑" face (:height 1.0)))
+  ("残月" . (display "🌘" face (:height 1.5)))
+  ("下弦月" . (display "🌗" face (:height 2.0))))
+;; 创建层: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
+```
+
+**格式三 - 使用 :props 关键字命名层（命名为 GROUP-NAME-suffix）：**
+
+```elisp
+(tp-define-layer-group tp-test-moons
+  ("新月" :props (display "🌑" face (:height 1.0)))
+  ("残月" :props (display "🌘" face (:height 1.5)))
+  ("下弦月" :props (display "🌗" face (:height 2.0))))
+;; 创建层: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
+```
+
+你也可以在层组中引用已定义的层：
+
+```elisp
+(tp-define-layer existing-layer (face bold))
+(tp-define-layer-group my-group
+  existing-layer                                ; 引用已存在的属性层
+  (face (:background "red") line-prefix ">>")   ; 匿名属性层
+  ("named" . (face italic)))                    ; 命名属性层
+```
+
+如果同名的层组已存在，新定义将覆盖旧定义。
+定义中的第一个属性层是顶层（默认可见）。
+
+**示例：**
+
+```elisp
+;; 先定义状态层，然后将它们组合成层组
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer highlight
+    (face (:background "yellow" :foreground "black")))
+  (tp-define-layer error
+    (face (:background "red" :foreground "white")))
   (tp-define-layer info
     (face (:background "blue" :foreground "white")))
-  (tp-layer-props 'info))
-;; => (face (:background "blue" :foreground "white") tp-name info)
-
-;; 定义属性层组
-(progn
-  (tp-define-layer status-colors
+  (tp-define-layer-group status-colors
     highlight
     error
     info)
   (length (tp-group-props 'status-colors)))
 ;; => 3
+
+;; 使用命名层定义层组
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer-group moon-phases
+    ("new" . (display "🌑"))
+    ("waxing-crescent" . (display "🌒"))
+    ("first-quarter" . (display "🌓"))
+    ("full" . (display "🌕")))
+  (tp-layer-props 'moon-phases-full))
+;; => (display "🌕" tp-name moon-phases-full)
 ```
 
 ---
@@ -1158,7 +1232,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (setq tp-layer-groups nil)
   (tp-define-layer layer1 (face bold))
   (tp-define-layer layer2 (face italic))
-  (tp-define-layer my-group layer1 layer2)
+  (tp-define-layer-group my-group layer1 layer2)
   (length (tp-group-props 'my-group)))
 ;; => 2
 ```
@@ -1985,7 +2059,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-define-layer status-todo (face (:foreground "gray")))
   (tp-define-layer status-progress (face (:foreground "yellow")))
   (tp-define-layer status-done (face (:foreground "green")))
-  (tp-define-layer task-status status-todo status-progress status-done)
+  (tp-define-layer-group task-status status-todo status-progress status-done)
   ;; 检查组是否已定义
   (length (tp-group-props 'task-status)))
 ;; => 3

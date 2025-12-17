@@ -220,12 +220,20 @@
 ;;; ============================================================
 
 (ert-deftest tp-test-define-layer ()
-  "Test tp-define-layer creates a layer."
+  "Test tp-define-layer creates a layer (Format 1 - direct plist)."
   (tp-test-with-temp-buffer
     (tp-define-layer test-layer (face bold help-echo "test"))
     (should (assoc 'test-layer tp-layer-alist))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face bold help-echo "test")))))
+
+(ert-deftest tp-test-define-layer-with-props ()
+  "Test tp-define-layer with :props keyword (Format 2)."
+  (tp-test-with-temp-buffer
+    (tp-define-layer test-layer :props (face italic help-echo "props"))
+    (should (assoc 'test-layer tp-layer-alist))
+    (should (equal (cdr (assoc 'test-layer tp-layer-alist))
+                   '(face italic help-echo "props")))))
 
 (ert-deftest tp-test-define-layer-updates-existing ()
   "Test tp-define-layer updates existing layer."
@@ -234,6 +242,14 @@
     (tp-define-layer test-layer (face italic))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face italic)))))
+
+(ert-deftest tp-test-define-layer-updates-existing-with-props ()
+  "Test tp-define-layer with :props updates existing layer."
+  (tp-test-with-temp-buffer
+    (tp-define-layer test-layer (face bold))
+    (tp-define-layer test-layer :props (face underline))
+    (should (equal (cdr (assoc 'test-layer tp-layer-alist))
+                   '(face underline)))))
 
 (ert-deftest tp-test-layer-props ()
   "Test tp-layer-props returns properties with tp-name."
@@ -257,14 +273,14 @@
    (should-not (assoc 'test-layer tp-layer-alist))))
 
 ;;; ============================================================
-;;; Layer Group Tests (using tp-define-layer with multiple layers)
+;;; Layer Group Tests (using tp-define-layer-group)
 ;;; ============================================================
 
-(ert-deftest tp-test-define-layer-multiple ()
-  "Test tp-define-layer creates a layer group with multiple layers."
+(ert-deftest tp-test-define-layer-group-anonymous ()
+  "Test tp-define-layer-group creates a layer group with anonymous layers."
   (tp-test-with-temp-buffer
     (tp-define-layer layer1 (face bold))
-    (tp-define-layer my-group
+    (tp-define-layer-group my-group
       layer1
       (face italic)
       (face underline))
@@ -272,14 +288,64 @@
     ;; Check all layers are present in the group
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
       (should (= (length layers) 3))
-      (should (memq 'layer1 layers)))))
+      (should (memq 'layer1 layers))
+      ;; Anonymous layers should be named my-group-0 and my-group-1
+      (should (memq 'my-group-0 layers))
+      (should (memq 'my-group-1 layers)))))
+
+(ert-deftest tp-test-define-layer-group-named-cons ()
+  "Test tp-define-layer-group with named cons-cell format."
+  (tp-test-with-temp-buffer
+    (tp-define-layer-group my-group
+      ("first" . (face bold))
+      ("second" . (face italic)))
+    (should (assoc 'my-group tp-layer-groups))
+    (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
+      (should (= (length layers) 2))
+      (should (memq 'my-group-first layers))
+      (should (memq 'my-group-second layers)))
+    ;; Check that layers are properly defined
+    (should (equal (cdr (assoc 'my-group-first tp-layer-alist)) '(face bold)))
+    (should (equal (cdr (assoc 'my-group-second tp-layer-alist)) '(face italic)))))
+
+(ert-deftest tp-test-define-layer-group-named-props ()
+  "Test tp-define-layer-group with :props format."
+  (tp-test-with-temp-buffer
+    (tp-define-layer-group my-group
+      ("first" :props (face bold))
+      ("second" :props (face italic)))
+    (should (assoc 'my-group tp-layer-groups))
+    (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
+      (should (= (length layers) 2))
+      (should (memq 'my-group-first layers))
+      (should (memq 'my-group-second layers)))
+    ;; Check that layers are properly defined
+    (should (equal (cdr (assoc 'my-group-first tp-layer-alist)) '(face bold)))
+    (should (equal (cdr (assoc 'my-group-second tp-layer-alist)) '(face italic)))))
+
+(ert-deftest tp-test-define-layer-group-mixed ()
+  "Test tp-define-layer-group with mixed formats."
+  (tp-test-with-temp-buffer
+    (tp-define-layer existing-layer (face underline))
+    (tp-define-layer-group my-group
+      existing-layer
+      (face bold)
+      ("named" . (face italic))
+      ("with-props" :props (face strike-through)))
+    (should (assoc 'my-group tp-layer-groups))
+    (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
+      (should (= (length layers) 4))
+      (should (memq 'existing-layer layers))
+      (should (memq 'my-group-0 layers))
+      (should (memq 'my-group-named layers))
+      (should (memq 'my-group-with-props layers)))))
 
 (ert-deftest tp-test-group-props ()
   "Test tp-group-props returns all layer properties."
   (tp-test-with-temp-buffer
     (tp-define-layer layer1 (face bold))
     (tp-define-layer layer2 (face italic))
-    (tp-define-layer my-group layer1 layer2)
+    (tp-define-layer-group my-group layer1 layer2)
     (let ((props-list (tp-group-props 'my-group)))
       (should (= (length props-list) 2))
       ;; Check that both layers are present
@@ -291,17 +357,27 @@
   "Test tp-undefine-group removes group definition."
   (tp-test-with-temp-buffer
    (tp-define-layer layer1 (face bold))
-   (tp-define-layer my-group layer1)
+   (tp-define-layer-group my-group layer1)
    (should (assoc 'my-group tp-layer-groups))
    (tp-undefine-group 'my-group)
    (should-not (assoc 'my-group tp-layer-groups))))
+
+(ert-deftest tp-test-layer-group-updates-existing ()
+  "Test tp-define-layer-group updates existing group."
+  (tp-test-with-temp-buffer
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer-group my-group layer1)
+    (should (= (length (cdr (assoc 'my-group tp-layer-groups))) 1))
+    (tp-define-layer-group my-group layer1 layer2)
+    (should (= (length (cdr (assoc 'my-group tp-layer-groups))) 2))))
 
 (ert-deftest tp-test-layer-reset ()
   "Test tp-layer-reset clears all definitions."
   (tp-test-with-temp-buffer
     (tp-define-layer layer1 (face bold))
     (tp-define-layer layer2 (face italic))
-    (tp-define-layer group1 layer1 layer2)
+    (tp-define-layer-group group1 layer1 layer2)
     (should tp-layer-alist)
     (should tp-layer-groups)
     (tp-layer-reset)

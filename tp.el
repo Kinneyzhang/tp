@@ -1511,71 +1511,139 @@ Returns a plist of all properties in the region or string."
 
 ;;; Layer Definition Functions
 
-(defmacro tp-define-layer (name &rest layers)
-  "Define a text property layer or layer group named NAME.
+(defmacro tp-define-layer (name &rest args)
+  "Define a single text property layer named NAME.
 
-Single layer:
-  (tp-define-layer layer-1 \\='(face (:background \"cyan\") line-prefix \">>\"))
+This macro supports two formats:
 
-Multiple layers (first defined layer is the top layer):
-  (tp-define-layer layers-2
-    \\='layer-1
-    \\='(face (:background \"red\") line-prefix \">>\")
-    \\='(face (:background \"green\" :weight bold) line-prefix \"::\"))
+Format 1 - Direct plist:
+  (tp-define-layer layer-name
+    (display \"🌑\" face (:height 1.0)))
 
-LAYERS can be:
-- A single plist for a single layer definition
-- Multiple items where each can be:
-  - A symbol referencing another defined layer
-  - A plist defining an anonymous sub-layer
+Format 2 - With :props keyword (for future extensibility):
+  (tp-define-layer layer-name
+    :props (display \"🌑\" face (:height 1.0)))
 
-For multiple layers, they are stored as a group in `tp-layer-groups'.
-The first layer in the definition is the top layer."
+If a layer with the same NAME already exists, it will be overwritten
+with the new definition.
+
+The layer is stored in `tp-layer-alist'."
   (declare (indent defun))
-  ;; Determine if this is a single layer (one plist argument) or multiple layers
-  (let ((first-layer (car layers)))
-    (let ((is-single-layer
-           (and (= (length layers) 1)
-                first-layer
-                (listp first-layer)
-                ;; A plist has an even number of elements (key-value pairs)
-                (cl-evenp (length first-layer))
-                ;; The first element is a property name (symbol, not nil)
-                (symbolp (car first-layer)))))
-      (if is-single-layer
-          ;; Single layer: (tp-define-layer name '(plist...))
-          (let ((properties first-layer))
-            `(progn
-               (if (assoc ',name tp-layer-alist)
-                   (setf (cdr (assoc ',name tp-layer-alist)) ',properties)
-                 (push (cons ',name ',properties) tp-layer-alist))
-               (assoc ',name tp-layer-alist)))
-      ;; Multiple layers: (tp-define-layer name 'layer1 '(plist1) '(plist2) ...)
-      (let ((layer-names nil)
-            (idx 0)
-            (layer-defs nil))
-        (dolist (layer layers)
-          (cond
-           ;; Reference to existing layer
-           ((symbolp layer)
-            (push layer layer-names))
-           ;; Plist layer - create with auto-generated name
-           ((listp layer)
-            (let ((sub-name (intern (format "%s-layer-%d" name idx))))
-              (push `(if (assoc ',sub-name tp-layer-alist)
-                         (setf (cdr (assoc ',sub-name tp-layer-alist)) ',layer)
-                       (push (cons ',sub-name ',layer) tp-layer-alist))
-                    layer-defs)
-              (push sub-name layer-names)
-              (cl-incf idx)))))
-        (setq layer-names (nreverse layer-names))
-        (setq layer-defs (nreverse layer-defs))
-        `(progn
-           ,@layer-defs
-           (if (assoc ',name tp-layer-groups)
-               (setf (cdr (assoc ',name tp-layer-groups)) ',layer-names)
-             (push (cons ',name ',layer-names) tp-layer-groups))
-           (assoc ',name tp-layer-groups)))))))
+  (let ((properties
+         (cond
+          ;; Format 2: :props (plist)
+          ((and (eq (car args) :props)
+                (cadr args))
+           (cadr args))
+          ;; Format 1: (plist)
+          ((and (= (length args) 1)
+                (listp (car args)))
+           (car args))
+          (t (error "Invalid tp-define-layer format for %s" name)))))
+    `(progn
+       (if (assoc ',name tp-layer-alist)
+           (setf (cdr (assoc ',name tp-layer-alist)) ',properties)
+         (push (cons ',name ',properties) tp-layer-alist))
+       (assoc ',name tp-layer-alist))))
+
+(defun tp--parse-layer-group-element (group-name element idx)
+  "Parse a layer group element and return (layer-name . properties).
+GROUP-NAME is the name of the layer group.
+ELEMENT is the element to parse (can be anonymous plist, cons-cell, or :props form).
+IDX is the index for anonymous elements.
+
+Returns a cons cell (LAYER-NAME . PROPERTIES) or a symbol if ELEMENT
+references an already-defined layer."
+  (cond
+   ;; Case: already defined layer (symbol)
+   ((symbolp element)
+    element)
+   ;; Case: Format 3 - ("name" :props (plist...))
+   ((and (listp element)
+         (stringp (car element))
+         (eq (cadr element) :props)
+         (caddr element))
+    (let* ((layer-suffix (car element))
+           (layer-name (intern (format "%s-%s" group-name layer-suffix)))
+           (props (caddr element)))
+      (cons layer-name props)))
+   ;; Case: Format 2 - ("name" . (plist...)) - cons cell
+   ((and (consp element)
+         (stringp (car element))
+         (listp (cdr element)))
+    (let* ((layer-suffix (car element))
+           (layer-name (intern (format "%s-%s" group-name layer-suffix)))
+           (props (cdr element)))
+      (cons layer-name props)))
+   ;; Case: Format 1 - (plist...) - anonymous, use index
+   ((and (listp element)
+         (not (stringp (car element))))
+    (let ((layer-name (intern (format "%s-%d" group-name idx))))
+      (cons layer-name element)))
+   (t (error "Invalid layer group element: %S" element))))
+
+(defmacro tp-define-layer-group (name &rest elements)
+  "Define a layer group named NAME containing multiple layers.
+
+This macro supports three formats for each element:
+
+Format 1 - Anonymous layers (named as NAME-0, NAME-1, etc.):
+  (tp-define-layer-group group-name
+    (display \"🌑\" face (:height 1.0))
+    (display \"🌘\" face (:height 1.5))
+    (display \"🌗\" face (:height 2.0)))
+
+Format 2 - Named layers with cons-cell (named as NAME-suffix):
+  (tp-define-layer-group group-name
+    (\"新月\" . (display \"🌑\" face (:height 1.0)))
+    (\"残月\" . (display \"🌘\" face (:height 1.5)))
+    (\"下弦月\" . (display \"🌗\" face (:height 2.0))))
+
+Format 3 - Named layers with :props keyword (named as NAME-suffix):
+  (tp-define-layer-group group-name
+    (\"新月\" :props (display \"🌑\" face (:height 1.0)))
+    (\"残月\" :props (display \"🌘\" face (:height 1.5)))
+    (\"下弦月\" :props (display \"🌗\" face (:height 2.0))))
+
+You can also reference already-defined layers by their symbol name:
+  (tp-define-layer-group group-name
+    existing-layer-1
+    existing-layer-2
+    (display \"🌗\" face (:height 2.0)))
+
+If a layer group with the same NAME already exists, it will be overwritten.
+Individual layers created by the group are stored in `tp-layer-alist',
+and the group itself is stored in `tp-layer-groups'."
+  (declare (indent defun))
+  (let ((layer-names nil)
+        (layer-defs nil)
+        (idx 0))
+    (dolist (element elements)
+      (let ((parsed (tp--parse-layer-group-element name element idx)))
+        (cond
+         ;; Reference to existing layer (symbol)
+         ((symbolp parsed)
+          (push parsed layer-names))
+         ;; New layer definition (cons cell of name . props)
+         ((consp parsed)
+          (let ((layer-name (car parsed))
+                (props (cdr parsed)))
+            (push `(if (assoc ',layer-name tp-layer-alist)
+                       (setf (cdr (assoc ',layer-name tp-layer-alist)) ',props)
+                     (push (cons ',layer-name ',props) tp-layer-alist))
+                  layer-defs)
+            (push layer-name layer-names)
+            ;; Only increment idx for anonymous (Format 1) elements
+            (unless (and (listp element) (stringp (car element)))
+              (cl-incf idx)))))))
+    (setq layer-names (nreverse layer-names))
+    (setq layer-defs (nreverse layer-defs))
+    `(progn
+       ,@layer-defs
+       (if (assoc ',name tp-layer-groups)
+           (setf (cdr (assoc ',name tp-layer-groups)) ',layer-names)
+         (push (cons ',name ',layer-names) tp-layer-groups))
+       (assoc ',name tp-layer-groups))))
 
 (defun tp-layer-props (layer-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.

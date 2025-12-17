@@ -206,7 +206,8 @@ A complete overview of all tp.el functions organized by category:
 #### Property Layer Definition Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-define-layer`](#tp-define-layer---define-layers) | Define a layer or layer group |
+| [`tp-define-layer`](#tp-define-layer---define-single-layer) | Define a single layer |
+| [`tp-define-layer-group`](#tp-define-layer-group---define-layer-group) | Define a group of layers |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | Remove layer definition |
@@ -1078,32 +1079,30 @@ The **property layer system** is tp.el's innovative feature that allows stacking
 
 ### Property Layer Definition
 
-#### `tp-define-layer` - Define Layer(s)
+#### `tp-define-layer` - Define Single Layer
 
-Define a single layer or a group of multiple layers.
+Define a single text property layer. Supports two formats:
 
-**Single Layer:**
+**Format 1 - Direct plist:**
 
 ```elisp
 (tp-define-layer layer-name
   (face (:background "cyan") line-prefix ">>"))
 ```
 
-**Multiple Layers (Layer Group):**
+**Format 2 - With :props keyword (for future extensibility):**
 
 ```elisp
-(tp-define-layer my-group
-  layer-1                                    ; Reference existing layer
-  (face (:background "red") line-prefix ">>")    ; Anonymous layer
-  (face (:background "green" :weight bold)))     ; Another anonymous layer
+(tp-define-layer layer-name
+  :props (face (:background "cyan") line-prefix ">>"))
 ```
 
-The first layer in the definition is the top layer (visible by default).
+If a layer with the same name already exists, it will be overwritten with the new definition.
 
 **Examples:**
 
 ```elisp
-;; Define individual layers
+;; Define individual layers using Format 1 (direct plist)
 (progn
   (setq tp-layer-alist nil)  ; Reset for clean example
   (tp-define-layer highlight
@@ -1111,27 +1110,102 @@ The first layer in the definition is the top layer (visible by default).
   (tp-layer-props 'highlight))
 ;; => (face (:background "yellow" :foreground "black") tp-name highlight)
 
+;; Define a layer using Format 2 (:props keyword)
 (progn
   (tp-define-layer error
-    (face (:background "red" :foreground "white")
-     help-echo "Error!"))
+    :props (face (:background "red" :foreground "white")
+            help-echo "Error!"))
   (tp-layer-props 'error))
 ;; => (face (:background "red" :foreground "white") help-echo "Error!" tp-name error)
 
+;; Redefine an existing layer (overwrites the old definition)
 (progn
+  (tp-define-layer test-layer (face bold))
+  (tp-define-layer test-layer (face italic))  ; Overwrites
+  (tp-layer-props 'test-layer))
+;; => (face italic tp-name test-layer)
+```
+
+---
+
+#### `tp-define-layer-group` - Define Layer Group
+
+Define a group of multiple layers. Supports three formats for each element:
+
+**Format 1 - Anonymous layers (named as GROUP-NAME-0, GROUP-NAME-1, etc.):**
+
+```elisp
+(tp-define-layer-group tp-test-moons
+  (display "🌑" face (:height 1.0))
+  (display "🌘" face (:height 1.5))
+  (display "🌗" face (:height 2.0)))
+;; Creates layers: tp-test-moons-0, tp-test-moons-1, tp-test-moons-2
+```
+
+**Format 2 - Named layers with cons-cell (named as GROUP-NAME-suffix):**
+
+```elisp
+(tp-define-layer-group tp-test-moons
+  ("新月" . (display "🌑" face (:height 1.0)))
+  ("残月" . (display "🌘" face (:height 1.5)))
+  ("下弦月" . (display "🌗" face (:height 2.0))))
+;; Creates layers: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
+```
+
+**Format 3 - Named layers with :props keyword (named as GROUP-NAME-suffix):**
+
+```elisp
+(tp-define-layer-group tp-test-moons
+  ("新月" :props (display "🌑" face (:height 1.0)))
+  ("残月" :props (display "🌘" face (:height 1.5)))
+  ("下弦月" :props (display "🌗" face (:height 2.0))))
+;; Creates layers: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
+```
+
+You can also reference already-defined layers in a group:
+
+```elisp
+(tp-define-layer existing-layer (face bold))
+(tp-define-layer-group my-group
+  existing-layer                                ; Reference existing layer
+  (face (:background "red") line-prefix ">>")   ; Anonymous layer
+  ("named" . (face italic)))                    ; Named layer
+```
+
+If a layer group with the same name already exists, it will be overwritten.
+The first layer in the definition is the top layer (visible by default).
+
+**Examples:**
+
+```elisp
+;; Define status layers, then group them
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer highlight
+    (face (:background "yellow" :foreground "black")))
+  (tp-define-layer error
+    (face (:background "red" :foreground "white")))
   (tp-define-layer info
     (face (:background "blue" :foreground "white")))
-  (tp-layer-props 'info))
-;; => (face (:background "blue" :foreground "white") tp-name info)
-
-;; Define a layer group
-(progn
-  (tp-define-layer status-colors
+  (tp-define-layer-group status-colors
     highlight
     error
     info)
   (length (tp-group-props 'status-colors)))
 ;; => 3
+
+;; Define a layer group with named layers
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (tp-define-layer-group moon-phases
+    ("new" . (display "🌑"))
+    ("waxing-crescent" . (display "🌒"))
+    ("first-quarter" . (display "🌓"))
+    ("full" . (display "🌕")))
+  (tp-layer-props 'moon-phases-full))
+;; => (display "🌕" tp-name moon-phases-full)
 ```
 
 ---
@@ -1161,7 +1235,7 @@ Get properties for a layer or all layers in a group.
   (setq tp-layer-groups nil)
   (tp-define-layer layer1 (face bold))
   (tp-define-layer layer2 (face italic))
-  (tp-define-layer my-group layer1 layer2)
+  (tp-define-layer-group my-group layer1 layer2)
   (length (tp-group-props 'my-group)))
 ;; => 2
 ```
@@ -1988,7 +2062,7 @@ Return t if OBJECT has no text properties.
   (tp-define-layer status-todo (face (:foreground "gray")))
   (tp-define-layer status-progress (face (:foreground "yellow")))
   (tp-define-layer status-done (face (:foreground "green")))
-  (tp-define-layer task-status status-todo status-progress status-done)
+  (tp-define-layer-group task-status status-todo status-progress status-done)
   ;; Check group is defined
   (length (tp-group-props 'task-status)))
 ;; => 3
