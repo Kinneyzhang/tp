@@ -4,6 +4,7 @@
 
 ;; Version: 0.1.0
 ;; Keywords: convenience text-properties
+;; Author: Geekinney (kinneyzhang666@gmail.com)
 ;; Package-Requires: ((emacs "28.1") (dash "2.19.1"))
 
 ;; This program is free software; you can redistribute it and/or
@@ -1952,7 +1953,8 @@ Calling conventions:
      (lambda (i-start i-end top belows)
        (let ((current-stack (tp--layer-stack-to-list top belows)))
          (when (> (length current-stack) 1)
-           (let ((new-stack (append (cdr current-stack) (list (car current-stack)))))
+           (let ((new-stack (append (cdr current-stack)
+                                    (list (car current-stack)))))
              (set-text-properties
               (+ start i-start) (+ start i-end)
               (tp--build-layer-props new-stack)
