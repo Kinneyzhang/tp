@@ -1546,6 +1546,8 @@ The layer is stored in `tp-layer-alist'."
          (push (cons ',name ',properties) tp-layer-alist))
        (assoc ',name tp-layer-alist))))
 
+(defalias 'define-tp 'tp-define-layer)
+
 (defun tp--layer-group-element-format (element)
   "Determine the format type of ELEMENT.
 Returns 'symbol, 'format-1, 'format-2, 'format-3, or nil if invalid."
@@ -1659,6 +1661,8 @@ and the group itself is stored in `tp-layer-groups'."
            (setf (cdr (assoc ',name tp-layer-groups)) ',layer-names)
          (push (cons ',name ',layer-names) tp-layer-groups))
        (assoc ',name tp-layer-groups))))
+
+(defalias 'define-tp-group 'tp-define-layer-group)
 
 (defun tp-layer-props (layer-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.
