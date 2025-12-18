@@ -1974,6 +1974,7 @@ Calling conventions:
 FROM-ID can be an integer index or a layer name symbol.
 TO-IDX must be an integer index.
 Both indices refer to positions before the move and can be negative (counting from end).
+TO-IDX is clamped to valid range (0 to stack length - 1) if out of bounds.
 Returns the new stack, or nil if FROM-ID is invalid."
   (let* ((len (length stack))
          ;; Resolve from-id to actual index
@@ -1998,6 +1999,7 @@ Returns the new stack, or nil if FROM-ID is invalid."
 FROM-ID can be an integer index or a layer name symbol.
 Positive N moves the layer up (toward top/visible).
 Negative N moves the layer down (toward bottom).
+The resulting position is clamped to valid range (0 to stack length - 1).
 Returns the new stack, or nil if FROM-ID is invalid."
   (let* ((found (tp--get-layer-by-idx-or-name stack from-id))
          (actual-from (when found (car found))))
