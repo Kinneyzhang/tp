@@ -229,6 +229,7 @@ A complete overview of all tp.el functions organized by category:
 #### Property Layer Movement Functions
 | Function | Description |
 |----------|-------------|
+| [`tp-move-layer`](#tp-move-layer---move-layer-to-position) | Move a layer from one position to another |
 | [`tp-raise-layer`](#tp-raise-layer---move-layer-updown) | Move layer up/down by N positions |
 | [`tp-rotate-layer`](#tp-rotate-layer---cycle-layers) | Cycle layers (top goes to bottom) |
 | [`tp-pin-layer`](#tp-pin-layer---pin-layer-to-top) | Pin a layer to top (make visible) |
@@ -1485,6 +1486,73 @@ Remove the top layer (equivalent to `tp-delete-layer ... 0`).
 ---
 
 ### Property Layer Movement
+
+#### `tp-move-layer` - Move Layer to Position
+
+```elisp
+;; Buffer/string region
+(tp-move-layer START END FROM-ID TO-IDX OBJECT)
+
+;; Entire string
+(tp-move-layer STRING FROM-ID TO-IDX)
+```
+
+Move a layer from one position to another in the layer stack.
+
+- `FROM-ID` identifies the layer to move: an integer index or a layer name symbol
+- `TO-IDX` is the target position (integer index)
+- Index 0 means top (visible), -1 means bottom
+- Both indices refer to positions before the move
+
+This is the generic layer movement function used internally by `tp-raise-layer`, `tp-rotate-layer`, `tp-pin-layer`, and `tp-switch-layer`.
+
+**Examples:**
+
+```elisp
+;; Move layer at index 2 to index 0 (top)
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-define-layer layer3 (face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; Stack: layer3 (0), layer2 (1), layer1 (2)
+    (tp-move-layer 1 10 2 0)
+    (tp-layer-top 1 10)))
+;; => layer1
+
+;; Move layer by name to bottom
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; Stack: layer2 (top), layer1 (bottom)
+    (tp-move-layer 1 10 'layer2 -1)
+    (tp-layer-top 1 10)))
+;; => layer1
+
+;; Move on string
+(let ((str (copy-sequence "Hello")))
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-push-layer str 'layer1)
+  (tp-push-layer str 'layer2)
+  ;; layer2 is on top
+  (tp-move-layer str 'layer1 0)
+  (tp-at 0 'tp-name str))
+;; => layer1
+```
+
+---
 
 #### `tp-raise-layer` - Move Layer Up/Down
 

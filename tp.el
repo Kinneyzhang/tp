@@ -1969,6 +1969,112 @@ Calling conventions:
    ((numberp start-or-string)
     (tp-delete-layer start-or-string end-or-object 0 object))))
 
+(defun tp--move-layer-in-stack (stack from-id to-idx)
+  "Move layer at FROM-ID to TO-IDX position in STACK.
+FROM-ID can be an integer index or a layer name symbol.
+TO-IDX must be an integer index.
+Both indices refer to positions before the move and can be negative (counting from end).
+Returns the new stack, or nil if FROM-ID is invalid."
+  (let* ((len (length stack))
+         ;; Resolve from-id to actual index
+         (found (tp--get-layer-by-idx-or-name stack from-id))
+         (actual-from (when found (car found)))
+         ;; Normalize to-idx
+         (actual-to (if (< to-idx 0)
+                        (+ len to-idx)
+                      to-idx)))
+    ;; Only proceed if from-id is valid
+    (when actual-from
+      (let* ((layer-props (cdr found))
+             (stack-without (-remove-at actual-from stack))
+             ;; Clamp to-idx to valid range for insertion
+             (clamped-to (max 0 (min actual-to (length stack-without)))))
+        (append (seq-take stack-without clamped-to)
+                (list layer-props)
+                (seq-drop stack-without clamped-to))))))
+
+(defun tp--raise-layer-in-stack (stack from-id n)
+  "Raise layer at FROM-ID by N positions in STACK.
+FROM-ID can be an integer index or a layer name symbol.
+Positive N moves the layer up (toward top/visible).
+Negative N moves the layer down (toward bottom).
+Returns the new stack, or nil if FROM-ID is invalid."
+  (let* ((found (tp--get-layer-by-idx-or-name stack from-id))
+         (actual-from (when found (car found))))
+    (when actual-from
+      (let* ((len (length stack))
+             ;; Calculate new position: subtracting N because lower index = higher in stack
+             (new-idx (max 0 (min (1- len) (- actual-from n)))))
+        (tp--move-layer-in-stack stack actual-from new-idx)))))
+
+(defun tp--switch-layers-in-stack (stack id1 id2)
+  "Swap layers at ID1 and ID2 positions in STACK.
+ID1 and ID2 can be integer indices or layer name symbols.
+Returns the new stack, or nil if either ID is invalid."
+  (let* ((found1 (tp--get-layer-by-idx-or-name stack id1))
+         (found2 (tp--get-layer-by-idx-or-name stack id2)))
+    (when (and found1 found2)
+      (let* ((idx1 (car found1))
+             (idx2 (car found2))
+             (props1 (cdr found1))
+             (props2 (cdr found2))
+             (new-stack (copy-sequence stack)))
+        (setf (nth idx1 new-stack) props2)
+        (setf (nth idx2 new-stack) props1)
+        new-stack))))
+
+(defun tp-move-layer (start-or-string &optional end-or-from from-or-to to-or-object object)
+  "Move a layer from one position to another in the layer stack.
+
+Calling conventions:
+1. Buffer/string region:
+   (tp-move-layer START END FROM-ID TO-IDX OBJECT)
+
+2. Entire string:
+   (tp-move-layer STRING FROM-ID TO-IDX)
+
+FROM-ID identifies the layer to move:
+- An integer index (0 = top, 1 = second from top, -1 = bottom, etc.)
+- A layer name symbol
+
+TO-IDX is the target position (integer index):
+- 0 means top (visible)
+- Positive integers count from top
+- -1 means bottom
+- Negative integers count from bottom
+
+Both indices refer to positions before the move.
+The layer at FROM-ID is removed and inserted at TO-IDX position.
+OBJECT defaults to current buffer for region form."
+  (let (start end from-id to-idx obj)
+    (cond
+     ;; Entire string form: (tp-move-layer string from-id to-idx)
+     ((stringp start-or-string)
+      (setq obj start-or-string
+            start 0
+            end (length start-or-string)
+            from-id end-or-from
+            to-idx from-or-to))
+     ;; Region form: (tp-move-layer start end from-id to-idx object)
+     ((numberp start-or-string)
+      (setq start start-or-string
+            end end-or-from
+            from-id from-or-to
+            to-idx to-or-object
+            obj object)))
+
+    (tp-intervals-map
+     (lambda (i-start i-end top belows)
+       (let* ((current-stack (tp--layer-stack-to-list top belows))
+              (new-stack (tp--move-layer-in-stack current-stack from-id to-idx)))
+         (when new-stack
+           (set-text-properties
+            (+ start i-start) (+ start i-end)
+            (tp--build-layer-props new-stack)
+            obj))))
+     start end obj)
+    nil))
+
 (defun tp-raise-layer (start-or-string &optional end-or-idx idx-or-n n-or-object object)
   "Raise a layer by N positions in the stack.
 
@@ -1980,7 +2086,9 @@ Calling conventions:
    (tp-raise-layer STRING IDX/LAYER-NAME N)
 
 Positive N moves the layer up (toward top/visible).
-Negative N moves the layer down (toward bottom)."
+Negative N moves the layer down (toward bottom).
+
+Uses `tp--raise-layer-in-stack' internally, which is built on `tp--move-layer-in-stack'."
   (let (start end layer-id n obj)
     (cond
      ((stringp start-or-string)
@@ -1999,20 +2107,12 @@ Negative N moves the layer down (toward bottom)."
     (tp-intervals-map
      (lambda (i-start i-end top belows)
        (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (found (tp--get-layer-by-idx-or-name current-stack layer-id)))
-         (when found
-           (let* ((old-idx (car found))
-                  (layer-props (cdr found))
-                  (new-idx (max 0 (min (- (length current-stack) 1)
-                                       (- old-idx n))))
-                  (stack-without (-remove-at old-idx current-stack))
-                  (new-stack (append (seq-take stack-without new-idx)
-                                     (list layer-props)
-                                     (seq-drop stack-without new-idx))))
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))))
+              (new-stack (tp--raise-layer-in-stack current-stack layer-id n)))
+         (when new-stack
+           (set-text-properties
+            (+ start i-start) (+ start i-end)
+            (tp--build-layer-props new-stack)
+            obj))))
      start end obj)
     nil))
 
@@ -2024,30 +2124,14 @@ Calling conventions:
    (tp-rotate-layer START END OBJECT)
    
 2. Entire string:
-   (tp-rotate-layer STRING)"
-  (let (start end obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-object
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let ((current-stack (tp--layer-stack-to-list top belows)))
-         (when (> (length current-stack) 1)
-           (let ((new-stack (append (cdr current-stack)
-                                    (list (car current-stack)))))
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))))
-     start end obj)
-    nil))
+   (tp-rotate-layer STRING)
+
+Uses `tp-move-layer' internally to move layer at index 0 to index -1."
+  (cond
+   ((stringp start-or-string)
+    (tp-move-layer start-or-string 0 -1))
+   ((numberp start-or-string)
+    (tp-move-layer start-or-string end-or-object 0 -1 object))))
 
 (defun tp-pin-layer (start-or-string &optional end-or-idx idx-or-object object)
   "Pin a layer to the top (make it visible).
@@ -2057,34 +2141,14 @@ Calling conventions:
    (tp-pin-layer START END IDX/LAYER-NAME OBJECT)
    
 2. Entire string:
-   (tp-pin-layer STRING IDX/LAYER-NAME)"
-  (let (start end layer-id obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            layer-id end-or-idx))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-idx
-            layer-id idx-or-object
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (found (tp--get-layer-by-idx-or-name current-stack layer-id)))
-         (when (and found (> (car found) 0))
-           (let* ((layer-props (cdr found))
-                  (stack-without (-remove-at (car found) current-stack))
-                  (new-stack (cons layer-props stack-without)))
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))))
-     start end obj)
-    nil))
+   (tp-pin-layer STRING IDX/LAYER-NAME)
+
+Uses `tp-move-layer' internally to move the specified layer to index 0 (top)."
+  (cond
+   ((stringp start-or-string)
+    (tp-move-layer start-or-string end-or-idx 0))
+   ((numberp start-or-string)
+    (tp-move-layer start-or-string end-or-idx idx-or-object 0 object))))
 
 (defun tp-switch-layer (start-or-string &optional end-or-id1 id1-or-id2 id2-or-object object)
   "Switch between two layers by name or index.
@@ -2094,7 +2158,9 @@ Calling conventions:
    (tp-switch-layer START END IDX1/NAME1 IDX2/NAME2 OBJECT)
    
 2. Entire string:
-   (tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)"
+   (tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
+
+Uses `tp--switch-layers-in-stack' internally."
   (let (start end id1 id2 obj)
     (cond
      ((stringp start-or-string)
@@ -2113,21 +2179,12 @@ Calling conventions:
     (tp-intervals-map
      (lambda (i-start i-end top belows)
        (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (found1 (tp--get-layer-by-idx-or-name current-stack id1))
-              (found2 (tp--get-layer-by-idx-or-name current-stack id2)))
-         (when (and found1 found2)
-           (let* ((idx1 (car found1))
-                  (idx2 (car found2))
-                  (props1 (cdr found1))
-                  (props2 (cdr found2))
-                  ;; Swap the layers
-                  (new-stack (copy-sequence current-stack)))
-             (setf (nth idx1 new-stack) props2)
-             (setf (nth idx2 new-stack) props1)
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))))
+              (new-stack (tp--switch-layers-in-stack current-stack id1 id2)))
+         (when new-stack
+           (set-text-properties
+            (+ start i-start) (+ start i-end)
+            (tp--build-layer-props new-stack)
+            obj))))
      start end obj)
     nil))
 

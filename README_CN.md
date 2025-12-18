@@ -228,6 +228,7 @@ tp.el 所有函数按类别组织的完整概览：
 #### 属性层移动函数
 | 函数 | 描述 |
 |------|------|
+| [`tp-move-layer`](#tp-move-layer---移动属性层到指定位置) | 将属性层从一个位置移动到另一个位置 |
 | [`tp-raise-layer`](#tp-raise-layer---上移下移属性层) | 将属性层上移/下移 N 个位置 |
 | [`tp-rotate-layer`](#tp-rotate-layer---轮换属性层) | 轮换属性层（顶层移到底部） |
 | [`tp-pin-layer`](#tp-pin-layer---将属性层置顶) | 将属性层置顶（使其可见） |
@@ -1482,6 +1483,73 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ---
 
 ### 属性层移动
+
+#### `tp-move-layer` - 移动属性层到指定位置
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-move-layer START END FROM-ID TO-IDX OBJECT)
+
+;; 整个字符串
+(tp-move-layer STRING FROM-ID TO-IDX)
+```
+
+将属性层从一个位置移动到另一个位置。
+
+- `FROM-ID` 标识要移动的层：可以是整数索引或层名称符号
+- `TO-IDX` 是目标位置（整数索引）
+- 索引 0 表示顶层（可见），-1 表示底层
+- 两个索引都是指移动之前的位置
+
+这是通用的属性层移动函数，`tp-raise-layer`、`tp-rotate-layer`、`tp-pin-layer` 和 `tp-switch-layer` 内部都使用它来实现。
+
+**示例：**
+
+```elisp
+;; 将索引 2 的层移动到索引 0（顶部）
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-define-layer layer3 (face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; 堆栈: layer3 (0), layer2 (1), layer1 (2)
+    (tp-move-layer 1 10 2 0)
+    (tp-layer-top 1 10)))
+;; => layer1
+
+;; 按名称移动层到底部
+(progn
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    ;; 堆栈: layer2 (顶), layer1 (底)
+    (tp-move-layer 1 10 'layer2 -1)
+    (tp-layer-top 1 10)))
+;; => layer1
+
+;; 在字符串上移动
+(let ((str (copy-sequence "Hello")))
+  (tp-layer-reset)
+  (tp-define-layer layer1 (face bold))
+  (tp-define-layer layer2 (face italic))
+  (tp-push-layer str 'layer1)
+  (tp-push-layer str 'layer2)
+  ;; layer2 在顶部
+  (tp-move-layer str 'layer1 0)
+  (tp-at 0 'tp-name str))
+;; => layer1
+```
+
+---
 
 #### `tp-raise-layer` - 上移/下移属性层
 

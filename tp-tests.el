@@ -521,6 +521,73 @@
     ;; layer1 should now be on top
     (should (eq (tp-layer-top 1 6) 'layer1))))
 
+(ert-deftest tp-test-move-layer-by-index ()
+  "Test tp-move-layer moves layer by index."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; Stack: layer3 (0), layer2 (1), layer1 (2)
+    (should (eq (tp-layer-top 1 6) 'layer3))
+    ;; Move layer at index 2 (layer1) to index 0 (top)
+    (tp-move-layer 1 6 2 0)
+    ;; layer1 should now be on top
+    (should (eq (tp-layer-top 1 6) 'layer1))))
+
+(ert-deftest tp-test-move-layer-by-name ()
+  "Test tp-move-layer moves layer by name."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; Stack: layer3 (0), layer2 (1), layer1 (2)
+    (should (eq (tp-layer-top 1 6) 'layer3))
+    ;; Move layer1 to index 0 (top)
+    (tp-move-layer 1 6 'layer1 0)
+    ;; layer1 should now be on top
+    (should (eq (tp-layer-top 1 6) 'layer1))))
+
+(ert-deftest tp-test-move-layer-negative-index ()
+  "Test tp-move-layer with negative indices."
+  (tp-test-with-temp-buffer
+    (insert "Hello")
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-define-layer layer3 (face underline))
+    (tp-push-layer 1 6 'layer1)
+    (tp-push-layer 1 6 'layer2)
+    (tp-push-layer 1 6 'layer3)
+    ;; Stack: layer3 (0/-3), layer2 (1/-2), layer1 (2/-1)
+    (should (eq (tp-layer-top 1 6) 'layer3))
+    ;; Move top layer (0) to bottom (-1)
+    (tp-move-layer 1 6 0 -1)
+    ;; layer2 should now be on top
+    (should (eq (tp-layer-top 1 6) 'layer2))))
+
+(ert-deftest tp-test-move-layer-on-string ()
+  "Test tp-move-layer works on strings."
+  (let ((str (copy-sequence "Hello")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer layer1 (face bold))
+    (tp-define-layer layer2 (face italic))
+    (tp-push-layer str 'layer1)
+    (tp-push-layer str 'layer2)
+    ;; layer2 is on top
+    (should (eq (tp-at 0 'tp-name str) 'layer2))
+    ;; Move layer1 to top
+    (tp-move-layer str 'layer1 0)
+    ;; layer1 should now be on top
+    (should (eq (tp-at 0 'tp-name str) 'layer1))))
+
 (ert-deftest tp-test-put-layer-at-idx ()
   "Test tp-put-layer inserts layer at specified index."
   (tp-test-with-temp-buffer
