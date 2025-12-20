@@ -2072,7 +2072,7 @@ The layer is stored in `tp-layer-alist'."
     (if (or all-reactive-syms data compute)
         ;; Has reactive features - register dependencies and resolve at runtime
         `(progn
-           ;; Clean up old dependencies first (for re-definition)
+           ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
            (tp--unregister-reactive-deps ',name)
            ;; Ensure all reactive variables are defined
            (tp--ensure-reactive-variables ',all-vars-to-define)
@@ -2098,7 +2098,7 @@ The layer is stored in `tp-layer-alist'."
            (assoc ',name tp-layer-alist))
       ;; No reactive symbols - use static properties
       `(progn
-         ;; Clean up old dependencies first (for re-definition from reactive to non-reactive)
+         ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
          (tp--unregister-reactive-deps ',name)
          (tp--set-layer-props ',name ',properties)
          ;; Update any text regions that already have this layer applied
@@ -2265,7 +2265,7 @@ and the group itself is stored in `tp-layer-groups'."
             (if (or all-reactive-syms data compute)
                 ;; Has reactive features - register dependencies and resolve at runtime
                 (push `(progn
-                         ;; Clean up old dependencies first (for re-definition)
+                         ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
                          (tp--unregister-reactive-deps ',layer-name)
                          ;; Ensure all reactive variables are defined
                          (tp--ensure-reactive-variables ',all-vars-to-define)
@@ -2290,7 +2290,7 @@ and the group itself is stored in `tp-layer-groups'."
                       layer-defs)
               ;; No reactive symbols - use static properties
               (push `(progn
-                       ;; Clean up old dependencies first (for re-definition)
+                       ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
                        (tp--unregister-reactive-deps ',layer-name)
                        (tp--set-layer-props ',layer-name ',props)
                        ;; Update any text regions that already have this layer applied
@@ -2305,7 +2305,7 @@ and the group itself is stored in `tp-layer-groups'."
             (if reactive-syms
                 ;; Has reactive symbols - register dependencies and resolve at runtime
                 (push `(progn
-                         ;; Clean up old dependencies first (for re-definition)
+                         ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
                          (tp--unregister-reactive-deps ',layer-name)
                          (tp--ensure-reactive-variables
                           ',(mapcar #'tp--reactive-var-symbol reactive-syms))
@@ -2318,7 +2318,7 @@ and the group itself is stored in `tp-layer-groups'."
                       layer-defs)
               ;; No reactive symbols - use static properties
               (push `(progn
-                       ;; Clean up old dependencies first (for re-definition)
+                       ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
                        (tp--unregister-reactive-deps ',layer-name)
                        (tp--set-layer-props ',layer-name ',props)
                        ;; Update any text regions that already have this layer applied

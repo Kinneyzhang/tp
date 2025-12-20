@@ -2845,8 +2845,11 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
 (ert-deftest tp-test-redefine-layer-updates-watchers ()
   "Test that re-defining a layer updates :watch correctly."
   (tp-test-with-temp-buffer
+    ;; Use defvar to create dynamically-bound variables that watcher callbacks can access
     (defvar tp-test-watch-log-old nil "Log for old watcher.")
     (defvar tp-test-watch-log-new nil "Log for new watcher.")
+    (setq tp-test-watch-log-old nil)
+    (setq tp-test-watch-log-new nil)
     (unwind-protect
         (progn
           ;; First definition with old watcher
@@ -2968,8 +2971,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
             :props (face (:background $tp-test-applied-color))
             :data ((tp-test-applied-color . "blue")))
           ;; The text should now have the new color
-          ;; Note: This happens because re-definition updates the variable,
-          ;; which triggers the reactive update mechanism
+          ;; This happens because tp-define-layer calls tp--update-layer-regions
+          ;; at the end to update all text regions with the new properties
           (should (equal (plist-get (get-text-property 1 'face) :background) "blue")))
       ;; Cleanup
       (ignore-errors (makunbound 'tp-test-applied-color)))))
