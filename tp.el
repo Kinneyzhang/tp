@@ -234,7 +234,8 @@ Only 'set' operations trigger updates because:
           ;; Call user-defined watch callbacks for this layer
           (tp--invoke-layer-watchers layer-name symbol newval oldval)
           ;; Update computed properties for this layer
-          (let ((updated-override (tp--update-layer-computed layer-name override-alist)))
+          (let ((updated-override
+                 (tp--update-layer-computed layer-name override-alist)))
             (when reactive-props
               ;; Resolve the reactive props with the new value override
               (let ((resolved-props (tp--resolve-reactive-symbols
@@ -244,7 +245,8 @@ Only 'set' operations trigger updates because:
                   (when current-props
                     ;; Merge the resolved reactive props into the current layer props
                     (cl-loop for (key val) on resolved-props by #'cddr
-                             do (setq current-props (plist-put current-props key val)))
+                             do (setq current-props
+                                      (plist-put current-props key val)))
                     (tp--set-layer-props layer-name current-props))))))
           ;; Update text regions with this layer
           ;; If WHERE is a buffer (setq-local), only update that buffer
