@@ -2242,5 +2242,99 @@ Returns list of (START END VALUE) intervals."
       (should (equal (plist-get (plist-get face :underline) :style) 'wave)))
     (should (equal (tp-at 1 'help-echo) "complex"))))
 
+;;; ============================================================
+;;; Anonymous Layer and Reactive Text Property Tests
+;;; ============================================================
+
+(ert-deftest tp-test-set-anonymous-layer-gets-tp-name ()
+  "Test that tp-set with anonymous plist gets a tp-name."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(face bold))
+    ;; Anonymous layer should have a generated tp-name
+    (should (tp-at 1 'tp-name))
+    ;; The tp-name should be a symbol starting with tp-anon-
+    (should (string-prefix-p "tp-anon-" (symbol-name (tp-at 1 'tp-name))))))
+
+(ert-deftest tp-test-set-anonymous-reactive-layer ()
+  "Test that tp-set with anonymous reactive plist works."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-anon-color nil "Test variable for anonymous reactive layer.")
+    (setq tp-test-anon-color "red")
+    (unwind-protect
+        (progn
+          (insert "Hello World")
+          ;; Set with anonymous reactive plist
+          (tp-set 1 6 '(face (:foreground $tp-test-anon-color)))
+          ;; Should have resolved the reactive variable
+          (let ((face (tp-at 1 'face)))
+            (should (equal (plist-get face :foreground) "red")))
+          ;; Should have a generated tp-name
+          (should (tp-at 1 'tp-name))
+          ;; The reactive variable should be registered in dependencies
+          (should (assoc 'tp-test-anon-color tp-reactive-deps))
+          ;; Change the variable - should update the text
+          (setq tp-test-anon-color "blue")
+          (let ((face (tp-at 1 'face)))
+            (should (equal (plist-get face :foreground) "blue"))))
+      ;; Cleanup
+      (makunbound 'tp-test-anon-color))))
+
+(ert-deftest tp-test-set-anonymous-layer-preserves-existing-tp-name ()
+  "Test that tp-set with anonymous plist preserves existing tp-name."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    ;; First set with a layer name
+    (tp-define-layer my-existing-layer (face bold))
+    (tp-set 1 6 'my-existing-layer)
+    (should (eq (tp-at 1 'tp-name) 'my-existing-layer))
+    ;; Now set with anonymous plist that already has tp-name
+    (tp-set 1 6 '(face italic tp-name my-custom-name))
+    (should (eq (tp-at 1 'tp-name) 'my-custom-name))))
+
+(ert-deftest tp-test-match-set-anonymous-reactive-layer ()
+  "Test that tp-match-set with anonymous reactive plist works."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-match-color nil "Test variable for match reactive layer.")
+    (setq tp-test-match-color "green")
+    (unwind-protect
+        (progn
+          (insert "Hello World Hello")
+          ;; Set with anonymous reactive plist
+          (tp-match-set "Hello" '(face (:foreground $tp-test-match-color)))
+          ;; Should have resolved the reactive variable
+          (let ((face (tp-at 1 'face)))
+            (should (equal (plist-get face :foreground) "green")))
+          ;; Should have a generated tp-name
+          (should (tp-at 1 'tp-name))
+          ;; Change the variable - should update the text
+          (setq tp-test-match-color "yellow")
+          (let ((face (tp-at 1 'face)))
+            (should (equal (plist-get face :foreground) "yellow"))))
+      ;; Cleanup
+      (makunbound 'tp-test-match-color))))
+
+(ert-deftest tp-test-regexp-set-anonymous-reactive-layer ()
+  "Test that tp-regexp-set with anonymous reactive plist works."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-regexp-color nil "Test variable for regexp reactive layer.")
+    (setq tp-test-regexp-color "purple")
+    (unwind-protect
+        (progn
+          (insert "abc 123 def 456")
+          ;; Set with anonymous reactive plist
+          (tp-regexp-set "[0-9]+" '(face (:foreground $tp-test-regexp-color)))
+          ;; Should have resolved the reactive variable
+          (let ((face (tp-at 5 'face)))
+            (should (equal (plist-get face :foreground) "purple")))
+          ;; Should have a generated tp-name
+          (should (tp-at 5 'tp-name))
+          ;; Change the variable - should update the text
+          (setq tp-test-regexp-color "orange")
+          (let ((face (tp-at 5 'face)))
+            (should (equal (plist-get face :foreground) "orange"))))
+      ;; Cleanup
+      (makunbound 'tp-test-regexp-color))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

@@ -61,6 +61,17 @@ only (face (:foreground $color)) is stored, not the help-echo.")
 (defvar tp-reactive-enabled t
   "Non-nil means reactive text property updates are enabled.")
 
+(defvar tp--anonymous-layer-counter 0
+  "Counter for generating unique anonymous layer names.")
+
+(defun tp--generate-anonymous-layer-name ()
+  "Generate a unique symbol for anonymous layers.
+Uses a combination of timestamp and counter to ensure uniqueness."
+  (setq tp--anonymous-layer-counter (1+ tp--anonymous-layer-counter))
+  (intern (format "tp-anon-%s-%d"
+                  (format-time-string "%s%N")
+                  tp--anonymous-layer-counter)))
+
 
 ;;; Reactive Text Properties Functions
 
@@ -250,8 +261,12 @@ Supports four calling conventions:
 3. String region: (START END PROPS STRING)
 4. Entire string: (STRING PROP VAL ...)
 
-PROPS can also be a symbol representing a layer or group name defined
-by `define-tp' or `define-tp-group', which will be resolved to its properties."
+PROPS can be:
+- A symbol representing a layer or group name defined by `define-tp' or `define-tp-group'
+- A plist of properties (anonymous layers get a generated tp-name)
+
+For anonymous plists with reactive variables ($...), a unique tp-name is generated
+and reactive dependencies are registered automatically."
   (let (object start finish props)
     (cond
      ;; First arg is a string - apply to entire string
@@ -275,10 +290,6 @@ by `define-tp' or `define-tp-group', which will be resolved to its properties."
         (setq object nil
               props props-or-val)))
      (t (error "Invalid first argument: %S" start-or-string)))
-    ;; Resolve layer/group name to properties if props is a symbol.
-    ;; This allows passing layer names like 'my-layer instead of property lists.
-    (when (symbolp props)
-      (setq props (or (tp--resolve-props props) props)))
     ;; Unwrap double-wrapped properties: when called as (tp-set 1 6 '(face bold)),
     ;; props is already the plist.  But when called internally or from certain
     ;; contexts, props might be wrapped in an extra list like '((face bold)).
@@ -286,6 +297,11 @@ by `define-tp' or `define-tp-group', which will be resolved to its properties."
     ;; a list (not just a symbol like 'face).
     (when (and (listp props) (listp (car-safe props)))
       (setq props (car props)))
+    ;; Resolve props: handles layer/group names and anonymous reactive plists.
+    ;; For symbols: resolves to layer/group properties with tp-name/tp-layers.
+    ;; For plists: adds tp-name and handles reactive variables.
+    (when props
+      (setq props (or (tp--resolve-props props) props)))
     (list object start finish props)))
 
 (defun tp-set (start-or-string &optional end-or-prop props-or-val &rest rest)
@@ -1956,19 +1972,43 @@ Appends 'tp-name property to identify the layer."
   "Resolve PROPS to a property list with layer metadata.
 PROPS can be:
 - A symbol (layer name from `tp-layer-alist' or group name from `tp-layer-groups')
-- A plist (returned as-is)
+- A plist (handles anonymous layers with reactive variables)
 
 If PROPS is a symbol:
 - First checks `tp-layer-alist' and returns the layer properties WITH `tp-name'
 - Then checks `tp-layer-groups' and returns properties WITH `tp-layers'
+
+If PROPS is a plist:
+- If it contains reactive variables ($...), generates a UUID for `tp-name',
+  registers reactive dependencies, and returns the resolved props with `tp-name'.
+  If the plist already has a `tp-name', uses that instead of generating a new one.
+- If no reactive variables, adds a `tp-name' for the anonymous layer.
 
 Returns nil if PROPS is a symbol but no matching layer/group is found.
 
 For layer names, includes `tp-name' property for reactive text property support.
 For group names, includes `tp-layers' property with the full layer stack."
   (cond
-   ;; Already a plist - return as-is
-   ((listp props) props)
+   ;; Already a plist - check for reactive variables and add tp-name
+   ((listp props)
+    (let* ((existing-tp-name (plist-get props 'tp-name))
+           (reactive-syms (tp--collect-reactive-symbols props)))
+      (if reactive-syms
+          ;; Has reactive symbols - need to handle as anonymous reactive layer
+          (let* ((layer-name (or existing-tp-name (tp--generate-anonymous-layer-name)))
+                 ;; Resolve reactive symbols to get current values
+                 (resolved-props (tp--resolve-reactive-symbols props)))
+            ;; Register this anonymous layer in tp-layer-alist with original template
+            (tp--set-layer-props layer-name (tp--resolve-reactive-symbols props))
+            ;; Register reactive dependencies with the original template props
+            (tp--register-reactive-deps layer-name reactive-syms props)
+            ;; Return resolved props with tp-name
+            (append resolved-props (list 'tp-name layer-name)))
+        ;; No reactive symbols - just add tp-name if not present
+        (if existing-tp-name
+            props
+          (let ((layer-name (tp--generate-anonymous-layer-name)))
+            (append props (list 'tp-name layer-name)))))))
    ;; Symbol - check if it's a layer or group name
    ((symbolp props)
     (cond
@@ -1985,12 +2025,12 @@ For group names, includes `tp-layers' property with the full layer stack."
    (t nil)))
 
 (defun tp--ensure-props (plist)
-  "Ensure PLIST is a property list, resolving layer names if needed.
+  "Ensure PLIST is a property list, resolving layer names and handling reactive vars.
 If PLIST is a symbol, resolve it via `tp--resolve-props'.
+If PLIST is a plist, also process it via `tp--resolve-props' to handle
+anonymous reactive layers.
 If resolution fails, return PLIST unchanged (for backward compatibility)."
-  (if (symbolp plist)
-      (or (tp--resolve-props plist) plist)
-    plist))
+  (or (tp--resolve-props plist) plist))
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
