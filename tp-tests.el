@@ -27,6 +27,7 @@
   `(with-temp-buffer
      (setq tp-layer-alist nil)
      (setq tp-layer-groups nil)
+     (tp-reactive-reset)
      ,@body))
 
 ;;; ============================================================
@@ -2426,17 +2427,11 @@ Returns list of (START END VALUE) intervals."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer test-dc-layer
-            :props (face (:foreground $tp-test-dc-color) help-echo $tp-test-dc-full-name)
-            :data (tp-test-dc-first tp-test-dc-last)
-            :compute ((tp-test-dc-full-name
-                       (lambda ()
-                         (concat tp-test-dc-first " " tp-test-dc-last)))))
-          ;; Set data values
+          ;; Set data values first
           (setq tp-test-dc-color "blue")
           (setq tp-test-dc-first "Jane")
           (setq tp-test-dc-last "Smith")
-          ;; Re-eval to trigger the compute
+          ;; Define layer with :data and :compute
           (tp-define-layer test-dc-layer
             :props (face (:foreground $tp-test-dc-color) help-echo $tp-test-dc-full-name)
             :data (tp-test-dc-first tp-test-dc-last)
@@ -2450,10 +2445,10 @@ Returns list of (START END VALUE) intervals."
           ;; Check the computed value
           (should (equal tp-test-dc-full-name "Jane Smith")))
       ;; Cleanup
-      (makunbound 'tp-test-dc-color)
-      (makunbound 'tp-test-dc-first)
-      (makunbound 'tp-test-dc-last)
-      (makunbound 'tp-test-dc-full-name))))
+      (ignore-errors (makunbound 'tp-test-dc-color))
+      (ignore-errors (makunbound 'tp-test-dc-first))
+      (ignore-errors (makunbound 'tp-test-dc-last))
+      (ignore-errors (makunbound 'tp-test-dc-full-name)))))
 
 (ert-deftest tp-test-define-layer-watch-requires-props ()
   "Test that :watch requires :props to be explicitly specified."
@@ -2628,6 +2623,36 @@ Returns list of (START END VALUE) intervals."
           (should (equal (plist-get (get-text-property 1 'face) :foreground) "red")))
       ;; Cleanup
       (makunbound 'tp-test-local-color))))
+
+(ert-deftest tp-test-data-setq-local-triggers-compute ()
+  "Test that setq-local on :data variables triggers computed value updates."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; Define layer with :data and :compute
+          (tp-define-layer test-data-compute-layer
+            :props (help-echo $tp-test-dc-full)
+            :data (tp-test-dc-first tp-test-dc-last)
+            :compute ((tp-test-dc-full
+                       (lambda ()
+                         (concat tp-test-dc-first " " tp-test-dc-last)))))
+          ;; Apply layer to text
+          (insert "Hello World")
+          (tp-set 1 6 'test-data-compute-layer)
+          ;; Initial computed value should be " " (concat nil nil = " ")
+          (should (equal (get-text-property 1 'help-echo) " "))
+          ;; Use setq-local to set first name
+          (setq-local tp-test-dc-first "Kinney")
+          ;; Computed should be "Kinney " now
+          (should (equal (get-text-property 1 'help-echo) "Kinney "))
+          ;; Use setq-local to set last name
+          (setq-local tp-test-dc-last "Zhang")
+          ;; Computed should be "Kinney Zhang" now
+          (should (equal (get-text-property 1 'help-echo) "Kinney Zhang")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-dc-first))
+      (ignore-errors (makunbound 'tp-test-dc-last))
+      (ignore-errors (makunbound 'tp-test-dc-full)))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

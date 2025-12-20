@@ -161,15 +161,15 @@ override the current variable values (used during watcher callbacks)."
           (tp--resolve-reactive-symbols (cdr form) override-alist)))
    (t form)))
 
-(defun tp--register-reactive-deps (layer-name reactive-symbols template-props)
+(defun tp--register-reactive-deps (layer-name reactive-symbols props)
   "Register REACTIVE-SYMBOLS as dependencies for LAYER-NAME.
-TEMPLATE-PROPS is the original property specification with reactive symbols.
+PROPS is the original property specification with reactive symbols.
 Only the reactive portions of the properties are stored for each variable."
   ;; Register each reactive symbol's dependency with only its relevant properties
   (dolist (rsym reactive-symbols)
     (let* ((var-sym (tp--reactive-var-symbol rsym))
            ;; Extract only the properties that use this specific reactive variable
-           (reactive-props (tp--extract-reactive-props template-props rsym))
+           (reactive-props (tp--extract-reactive-props props rsym))
            (existing (assoc var-sym tp-reactive-deps)))
       (if existing
           ;; Update or add this layer to existing dependencies
@@ -228,23 +228,23 @@ Only 'set' operations trigger updates because:
         (let* ((layer-name (car dep))
                ;; Get the reactive props stored directly in the dependency
                (reactive-props (cdr dep)))
-          (when reactive-props
-            ;; Call user-defined watch callbacks for this layer
-            (tp--invoke-layer-watchers layer-name symbol newval oldval)
-            ;; Update computed properties for this layer
-            (tp--update-layer-computed layer-name override-alist)
-            ;; Resolve the reactive props with the new value override
-            (let ((resolved-props (tp--resolve-reactive-symbols
-                                   reactive-props override-alist)))
-              ;; Update only the reactive properties in the layer definition
-              (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
-                (when current-props
-                  ;; Merge the resolved reactive props into the current layer props
-                  (cl-loop for (key val) on resolved-props by #'cddr
-                           do (setq current-props (plist-put current-props key val)))
-                  (tp--set-layer-props layer-name current-props)))
-              ;; Update all text regions with this layer
-              (tp--update-layer-regions layer-name))))))))
+          ;; Call user-defined watch callbacks for this layer
+          (tp--invoke-layer-watchers layer-name symbol newval oldval)
+          ;; Update computed properties for this layer
+          (let ((updated-override (tp--update-layer-computed layer-name override-alist)))
+            (when reactive-props
+              ;; Resolve the reactive props with the new value override
+              (let ((resolved-props (tp--resolve-reactive-symbols
+                                     reactive-props updated-override)))
+                ;; Update only the reactive properties in the layer definition
+                (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
+                  (when current-props
+                    ;; Merge the resolved reactive props into the current layer props
+                    (cl-loop for (key val) on resolved-props by #'cddr
+                             do (setq current-props (plist-put current-props key val)))
+                    (tp--set-layer-props layer-name current-props))))))
+          ;; Update all text regions with this layer
+          (tp--update-layer-regions layer-name))))))
 
 (defun tp--invoke-layer-watchers (layer-name symbol newval oldval)
   "Invoke all registered watcher callbacks for LAYER-NAME watching SYMBOL.
@@ -267,9 +267,14 @@ Returns an updated override-alist with the new computed values."
     (dolist (comp computed)
       (let* ((var-sym (car comp))
              (compute-fn (cdr comp))
+             ;; Temporarily bind variables to their new values from override-alist
+             ;; before calling the compute function
              (computed-val
               (condition-case err
-                  (funcall compute-fn)
+                  (cl-progv
+                      (mapcar #'car override-alist)
+                      (mapcar #'cdr override-alist)
+                    (funcall compute-fn))
                 (error
                  (message "tp: compute error for %s.%s: %s"
                           layer-name var-sym err)
@@ -278,7 +283,25 @@ Returns an updated override-alist with the new computed values."
           ;; Update the global variable
           (set var-sym computed-val)
           ;; Add to override-alist for property resolution
-          (push (cons var-sym computed-val) override-alist)))))
+          (push (cons var-sym computed-val) override-alist)
+          ;; Also update the layer properties if the computed var is used in props
+          (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
+            (when current-props
+              ;; Collect all reactive props for this layer from tp-reactive-deps
+              (let ((all-reactive-props nil))
+                (dolist (dep tp-reactive-deps)
+                  (let ((layer-entry (assoc layer-name (cdr dep))))
+                    (when (and layer-entry (cdr layer-entry))
+                      ;; Merge the reactive props
+                      (cl-loop for (key val) on (cdr layer-entry) by #'cddr
+                               do (setq all-reactive-props
+                                        (plist-put all-reactive-props key val))))))
+                (when all-reactive-props
+                  (let ((resolved-props (tp--resolve-reactive-symbols all-reactive-props override-alist)))
+                    (when resolved-props
+                      (cl-loop for (key val) on resolved-props by #'cddr
+                               do (setq current-props (plist-put current-props key val)))
+                      (tp--set-layer-props layer-name current-props)))))))))))
   override-alist)
 
 (defun tp--register-layer-watchers (layer-name watchers)
@@ -330,11 +353,23 @@ Sets the global variables to their computed values."
 
 (defun tp--register-layer-data (layer-name data-vars)
   "Register DATA-VARS for LAYER-NAME.
-DATA-VARS is a list of variable symbols defined via :data."
+DATA-VARS is a list of variable symbols defined via :data.
+Also adds variable watchers so changes to data vars trigger computed updates."
   (when data-vars
     (if (assoc layer-name tp-layer-data)
         (setf (cdr (assoc layer-name tp-layer-data)) data-vars)
-      (push (cons layer-name data-vars) tp-layer-data))))
+      (push (cons layer-name data-vars) tp-layer-data))
+    ;; Add watchers for data variables
+    (dolist (var-sym data-vars)
+      (let ((existing (assoc var-sym tp-reactive-deps)))
+        (if existing
+            ;; Add this layer to existing dependencies (with nil props since data vars don't have direct props)
+            (let ((layer-entry (assoc layer-name (cdr existing))))
+              (unless layer-entry
+                (push (cons layer-name nil) (cdr existing))))
+          ;; Create new dependency entry and add watcher
+          (push (cons var-sym (list (cons layer-name nil))) tp-reactive-deps)
+          (add-variable-watcher var-sym #'tp--reactive-variable-watcher))))))
 
 (defun tp--unregister-layer-data (layer-name)
   "Unregister data variables for LAYER-NAME."
@@ -2293,7 +2328,7 @@ For group names, includes `tp-layers' property with the full layer stack."
                  (resolved-props (tp--resolve-reactive-symbols props)))
             ;; Register this anonymous layer in tp-layer-alist with resolved props
             (tp--set-layer-props layer-name resolved-props)
-            ;; Register reactive dependencies with the original template props
+            ;; Register reactive dependencies with the original props
             (tp--register-reactive-deps layer-name reactive-syms props)
             ;; Return resolved props with tp-name
             (append resolved-props (list 'tp-name layer-name)))
