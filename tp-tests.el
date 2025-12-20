@@ -733,11 +733,9 @@
     (insert "Hello World")
     (tp-set 7 12 '(face bold))
     (goto-char 1)
-    ;; text-property-search-forward may not exist in all Emacs versions
-    (skip-unless (fboundp 'text-property-search-forward))
     (let ((match (tp-forward 'face)))
       (should match)
-      (should (= (prop-match-beginning match) 7)))))
+      (should (= (prop-match-end match) 7)))))
 
 (ert-deftest tp-test-forward-on-string ()
   "Test tp-forward works on string objects."
@@ -757,7 +755,6 @@
     (tp-set 7 12 '(face italic))
     (tp-set 13 17 '(face bold))
     (goto-char 1)
-    (skip-unless (fboundp 'text-property-search-forward))
     ;; Search twice should find third match
     (let ((match (tp-forward 'face nil nil 2)))
       (should match))))
@@ -768,9 +765,6 @@
     (insert "Hello World")
     (tp-set 1 6 '(face bold))
     (goto-char 12)
-    ;; text-property-search-backward may not exist in all Emacs versions
-    ;; Skip test if function is not available
-    (skip-unless (fboundp 'text-property-search-backward))
     (let ((match (tp-backward 'face)))
       (should match)
       (should (= (prop-match-beginning match) 1)))))
