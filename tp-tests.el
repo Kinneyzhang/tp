@@ -2654,5 +2654,31 @@ Returns list of (START END VALUE) intervals."
       (ignore-errors (makunbound 'tp-test-dc-last))
       (ignore-errors (makunbound 'tp-test-dc-full)))))
 
+(ert-deftest tp-test-data-with-initial-values ()
+  "Test that :data supports initial values with cons cell format."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; Define layer with :data having initial values
+          (tp-define-layer test-data-init-layer
+            :props (face (:foreground $tp-test-init-color) help-echo $tp-test-init-name)
+            :data ((tp-test-init-color . "blue")
+                   (tp-test-init-name . "Initial Name")
+                   tp-test-init-other))
+          ;; Check initial values
+          (should (equal tp-test-init-color "blue"))
+          (should (equal tp-test-init-name "Initial Name"))
+          (should (equal tp-test-init-other nil))
+          ;; Apply layer to text
+          (insert "Hello World")
+          (tp-set 1 6 'test-data-init-layer)
+          ;; Check text properties have initial values
+          (should (equal (plist-get (get-text-property 1 'face) :foreground) "blue"))
+          (should (equal (get-text-property 1 'help-echo) "Initial Name")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-init-color))
+      (ignore-errors (makunbound 'tp-test-init-name))
+      (ignore-errors (makunbound 'tp-test-init-other)))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

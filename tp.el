@@ -351,25 +351,34 @@ Sets the global variables to their computed values."
       (when val
         (set var-sym val)))))
 
+(defun tp--data-var-symbol (data-entry)
+  "Extract the variable symbol from DATA-ENTRY.
+DATA-ENTRY can be a symbol or a cons cell (SYMBOL . INITIAL-VALUE)."
+  (if (consp data-entry)
+      (car data-entry)
+    data-entry))
+
 (defun tp--register-layer-data (layer-name data-vars)
   "Register DATA-VARS for LAYER-NAME.
-DATA-VARS is a list of variable symbols defined via :data.
+DATA-VARS is a list of variable symbols or cons cells (SYMBOL . INITIAL-VALUE).
 Also adds variable watchers so changes to data vars trigger computed updates."
   (when data-vars
-    (if (assoc layer-name tp-layer-data)
-        (setf (cdr (assoc layer-name tp-layer-data)) data-vars)
-      (push (cons layer-name data-vars) tp-layer-data))
-    ;; Add watchers for data variables
-    (dolist (var-sym data-vars)
-      (let ((existing (assoc var-sym tp-reactive-deps)))
-        (if existing
-            ;; Add this layer to existing dependencies (with nil props since data vars don't have direct props)
-            (let ((layer-entry (assoc layer-name (cdr existing))))
-              (unless layer-entry
-                (push (cons layer-name nil) (cdr existing))))
-          ;; Create new dependency entry and add watcher
-          (push (cons var-sym (list (cons layer-name nil))) tp-reactive-deps)
-          (add-variable-watcher var-sym #'tp--reactive-variable-watcher))))))
+    ;; Extract just the symbols for storage
+    (let ((var-symbols (mapcar #'tp--data-var-symbol data-vars)))
+      (if (assoc layer-name tp-layer-data)
+          (setf (cdr (assoc layer-name tp-layer-data)) var-symbols)
+        (push (cons layer-name var-symbols) tp-layer-data))
+      ;; Add watchers for data variables
+      (dolist (var-sym var-symbols)
+        (let ((existing (assoc var-sym tp-reactive-deps)))
+          (if existing
+              ;; Add this layer to existing dependencies (with nil props since data vars don't have direct props)
+              (let ((layer-entry (assoc layer-name (cdr existing))))
+                (unless layer-entry
+                  (push (cons layer-name nil) (cdr existing))))
+            ;; Create new dependency entry and add watcher
+            (push (cons var-sym (list (cons layer-name nil))) tp-reactive-deps)
+            (add-variable-watcher var-sym #'tp--reactive-variable-watcher)))))))
 
 (defun tp--unregister-layer-data (layer-name)
   "Unregister data variables for LAYER-NAME."
@@ -377,13 +386,17 @@ Also adds variable watchers so changes to data vars trigger computed updates."
 
 (defun tp--ensure-reactive-variables (var-symbols)
   "Ensure all VAR-SYMBOLS are defined as global variables.
-If a variable is not bound, define it with nil as initial value."
+VAR-SYMBOLS can be a list of symbols or cons cells (SYMBOL . INITIAL-VALUE).
+If a variable is not bound, define it with the initial value (nil if not specified)."
   (dolist (sym var-symbols)
-    (let ((var-sym (if (tp--reactive-symbol-p sym)
-                       (tp--reactive-var-symbol sym)
-                     sym)))
+    (let* ((is-cons (and (consp sym) (not (tp--reactive-symbol-p sym))))
+           (var-sym (cond
+                     (is-cons (car sym))
+                     ((tp--reactive-symbol-p sym) (tp--reactive-var-symbol sym))
+                     (t sym)))
+           (initial-val (if is-cons (cdr sym) nil)))
       (unless (boundp var-sym)
-        (set var-sym nil)))))
+        (set var-sym initial-val)))))
 
 (defun tp--update-layer-regions (layer-name)
   "Update all text regions that have LAYER-NAME applied.
@@ -2022,10 +2035,15 @@ The layer is stored in `tp-layer-alist'."
          (computed-vars (when compute (mapcar #'car compute)))
          ;; All variables that need to be reactive
          (all-reactive-syms (delete-dups (append reactive-syms)))
-         ;; All variables to ensure are defined (including data)
+         ;; Variables from :props that need to be defined (without initial values)
+         (props-vars (mapcar #'tp--reactive-var-symbol reactive-syms))
+         ;; All variables to ensure are defined:
+         ;; - :data entries (may have initial values as cons cells)
+         ;; - :props reactive symbols (no initial values)
+         ;; - :compute variable names (no initial values)
          (all-vars-to-define (delete-dups
-                              (append (mapcar #'tp--reactive-var-symbol reactive-syms)
-                                      data
+                              (append data
+                                      props-vars
                                       computed-vars))))
     (if (or all-reactive-syms data compute)
         ;; Has reactive features - register dependencies and resolve at runtime
@@ -2206,9 +2224,10 @@ and the group itself is stored in `tp-layer-groups'."
                  (reactive-syms (tp--collect-reactive-symbols props))
                  (computed-vars (when compute (mapcar #'car compute)))
                  (all-reactive-syms (delete-dups reactive-syms))
+                 (props-vars (mapcar #'tp--reactive-var-symbol reactive-syms))
                  (all-vars-to-define (delete-dups
-                                      (append (mapcar #'tp--reactive-var-symbol reactive-syms)
-                                              data
+                                      (append data
+                                              props-vars
                                               computed-vars))))
             (if (or all-reactive-syms data compute)
                 ;; Has reactive features - register dependencies and resolve at runtime
