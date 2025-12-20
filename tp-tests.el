@@ -2609,5 +2609,25 @@ Returns list of (START END VALUE) intervals."
       (makunbound 'tp-test-auto-var1)
       (makunbound 'tp-test-auto-var2))))
 
+(ert-deftest tp-test-setq-local-triggers-update ()
+  "Test that setq-local triggers reactive updates correctly."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; Define layer with auto-created variable (nil initial value)
+          (tp-define-layer test-local-layer
+            :props (face (:foreground $tp-test-local-color)))
+          ;; Apply layer to text
+          (insert "Hello World")
+          (tp-set 1 6 'test-local-layer)
+          ;; Initial value should be nil
+          (should (equal (plist-get (get-text-property 1 'face) :foreground) nil))
+          ;; Use setq-local to set the value
+          (setq-local tp-test-local-color "red")
+          ;; Text property should be updated
+          (should (equal (plist-get (get-text-property 1 'face) :foreground) "red")))
+      ;; Cleanup
+      (makunbound 'tp-test-local-color))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
