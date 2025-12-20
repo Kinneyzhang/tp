@@ -1953,37 +1953,33 @@ Appends 'tp-name property to identify the layer."
             layers)))
 
 (defun tp--resolve-props (props)
-  "Resolve PROPS to a property list.
+  "Resolve PROPS to a property list with layer metadata.
 PROPS can be:
 - A symbol (layer name from `tp-layer-alist' or group name from `tp-layer-groups')
 - A plist (returned as-is)
 
 If PROPS is a symbol:
-- First checks `tp-layer-alist' and returns the layer properties
-- Then checks `tp-layer-groups' and returns the first layer's properties
+- First checks `tp-layer-alist' and returns the layer properties WITH `tp-name'
+- Then checks `tp-layer-groups' and returns properties WITH `tp-layers'
 
-Returns nil if PROPS is a symbol but no matching layer/group is found,
-or if the group's first layer doesn't exist in `tp-layer-alist'.
+Returns nil if PROPS is a symbol but no matching layer/group is found.
 
-Unlike `tp-layer-props', this does NOT add the `tp-name' property,
-making it suitable for use with basic property-setting APIs like
-`tp-set', `tp-add', `tp-match-set', etc."
+For layer names, includes `tp-name' property for reactive text property support.
+For group names, includes `tp-layers' property with the full layer stack."
   (cond
    ;; Already a plist - return as-is
    ((listp props) props)
    ;; Symbol - check if it's a layer or group name
    ((symbolp props)
     (cond
-     ;; Check layer first
+     ;; Check layer first - use tp-layer-props which adds tp-name
      ((assoc props tp-layer-alist)
-      (cdr (assoc props tp-layer-alist)))
-     ;; Check group (use first layer's properties)
+      (tp-layer-props props))
+     ;; Check group - build layer stack with tp-layers
      ((assoc props tp-layer-groups)
-      (when-let* ((layers (cdr (assoc props tp-layer-groups)))
-                  (first-layer (car layers))
-                  ;; Ensure the first layer exists in tp-layer-alist
-                  (layer-entry (assoc first-layer tp-layer-alist)))
-        (cdr layer-entry)))
+      (when-let ((layer-props-list (tp-group-props props)))
+        ;; Build the layer stack: first layer on top, rest in tp-layers
+        (tp--build-layer-props layer-props-list)))
      ;; Not found - return nil (let caller decide how to handle)
      (t nil)))
    (t nil)))

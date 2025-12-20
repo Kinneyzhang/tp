@@ -2054,7 +2054,9 @@ Returns list of (START END VALUE) intervals."
     ;; Use layer name instead of plist
     (tp-set 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'bold))
-    (should (equal (tp-at 1 'help-echo) "tip"))))
+    (should (equal (tp-at 1 'help-echo) "tip"))
+    ;; tp-name should be preserved for reactive text property support
+    (should (eq (tp-at 1 'tp-name) 'my-style))))
 
 (ert-deftest tp-test-set-with-layer-name-on-string ()
   "Test tp-set accepts a layer name on string."
@@ -2063,7 +2065,9 @@ Returns list of (START END VALUE) intervals."
     (setq tp-layer-groups nil)
     (tp-define-layer my-style (face italic))
     (tp-set 0 5 'my-style str)
-    (should (eq (get-text-property 0 'face str) 'italic))))
+    (should (eq (get-text-property 0 'face str) 'italic))
+    ;; tp-name should be preserved for reactive text property support
+    (should (eq (get-text-property 0 'tp-name str) 'my-style))))
 
 (ert-deftest tp-test-reset-with-layer-name ()
   "Test tp-reset accepts a layer name defined by define-tp."
@@ -2074,7 +2078,9 @@ Returns list of (START END VALUE) intervals."
     ;; Use layer name - should completely replace
     (tp-reset 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'underline))
-    (should (null (tp-at 1 'mouse-face)))))
+    (should (null (tp-at 1 'mouse-face)))
+    ;; tp-name should be preserved
+    (should (eq (tp-at 1 'tp-name) 'my-style))))
 
 (ert-deftest tp-test-add-with-layer-name ()
   "Test tp-add accepts a layer name defined by define-tp."
@@ -2085,7 +2091,9 @@ Returns list of (START END VALUE) intervals."
     ;; Use layer name - should preserve existing properties
     (tp-add 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'bold))
-    (should (equal (tp-at 1 'help-echo) "existing"))))
+    (should (equal (tp-at 1 'help-echo) "existing"))
+    ;; tp-name should be preserved
+    (should (eq (tp-at 1 'tp-name) 'my-style))))
 
 (ert-deftest tp-test-match-set-with-layer-name ()
   "Test tp-match-set accepts a layer name."
@@ -2095,7 +2103,9 @@ Returns list of (START END VALUE) intervals."
     (tp-match-set "Hello" 'match-style)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "matched"))
-    (should (eq (tp-at 13 'face) 'bold))))
+    (should (eq (tp-at 13 'face) 'bold))
+    ;; tp-name should be preserved
+    (should (eq (tp-at 1 'tp-name) 'match-style))))
 
 (ert-deftest tp-test-match-set-with-layer-name-on-string ()
   "Test tp-match-set accepts a layer name on string."
@@ -2105,7 +2115,9 @@ Returns list of (START END VALUE) intervals."
     (tp-define-layer match-style (face italic))
     (tp-match-set "Hello" 'match-style str)
     (should (eq (get-text-property 0 'face str) 'italic))
-    (should (eq (get-text-property 12 'face str) 'italic))))
+    (should (eq (get-text-property 12 'face str) 'italic))
+    ;; tp-name should be preserved
+    (should (eq (get-text-property 0 'tp-name str) 'match-style))))
 
 (ert-deftest tp-test-match-reset-with-layer-name ()
   "Test tp-match-reset accepts a layer name."
@@ -2165,7 +2177,9 @@ Returns list of (START END VALUE) intervals."
     (tp-define-layer number-style (face bold))
     (tp-regexp-add "[0-9]+" 'number-style)
     (should (eq (tp-at 5 'face) 'bold))
-    (should (equal (tp-at 5 'help-echo) "original"))))
+    (should (equal (tp-at 5 'help-echo) "original"))
+    ;; tp-name should be preserved
+    (should (eq (tp-at 5 'tp-name) 'number-style))))
 
 (ert-deftest tp-test-set-with-group-name ()
   "Test tp-set accepts a group name defined by define-tp-group."
@@ -2173,10 +2187,30 @@ Returns list of (START END VALUE) intervals."
     (insert "Hello World")
     (tp-define-layer-group my-group
       ("style" . (face bold help-echo "grouped")))
-    ;; Use group name - should use first layer's properties
+    ;; Use group name - should include tp-name for top layer
     (tp-set 1 6 'my-group)
     (should (eq (tp-at 1 'face) 'bold))
-    (should (equal (tp-at 1 'help-echo) "grouped"))))
+    (should (equal (tp-at 1 'help-echo) "grouped"))
+    ;; tp-name should be preserved for the top layer
+    (should (eq (tp-at 1 'tp-name) 'my-group-style))))
+
+(ert-deftest tp-test-set-with-group-name-multiple-layers ()
+  "Test tp-set with group containing multiple layers preserves tp-layers."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-define-layer-group my-group
+      ("first" . (face bold))
+      ("second" . (face italic)))
+    ;; Use group name - should include tp-layers for multiple layers
+    (tp-set 1 6 'my-group)
+    ;; First layer is on top
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (eq (tp-at 1 'tp-name) 'my-group-first))
+    ;; tp-layers should contain the second layer
+    (let ((layers (tp-at 1 'tp-layers)))
+      (should layers)
+      (should (= (length layers) 1))
+      (should (eq (plist-get (car layers) 'tp-name) 'my-group-second)))))
 
 (ert-deftest tp-test-match-set-with-group-name ()
   "Test tp-match-set accepts a group name."
@@ -2186,7 +2220,9 @@ Returns list of (START END VALUE) intervals."
       ("style" . (face italic)))
     (tp-match-set "Hello" 'my-group)
     (should (eq (tp-at 1 'face) 'italic))
-    (should (eq (tp-at 13 'face) 'italic))))
+    (should (eq (tp-at 13 'face) 'italic))
+    ;; tp-name should be preserved
+    (should (eq (tp-at 1 'tp-name) 'my-group-style))))
 
 (ert-deftest tp-test-resolve-props-returns-nil-for-unknown ()
   "Test tp--resolve-props returns nil for unknown layer name."
