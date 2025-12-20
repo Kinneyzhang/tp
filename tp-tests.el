@@ -1844,5 +1844,182 @@ Returns list of (START END VALUE) intervals."
       (should (stringp result))
       (should (eq result str)))))
 
+;;; ============================================================
+;;; Reactive Text Properties Tests
+;;; ============================================================
+
+(ert-deftest tp-test-reactive-symbol-p ()
+  "Test tp--reactive-symbol-p detects $-prefixed symbols."
+  (should (tp--reactive-symbol-p '$foo))
+  (should (tp--reactive-symbol-p '$my-color))
+  (should-not (tp--reactive-symbol-p 'foo))
+  (should-not (tp--reactive-symbol-p "string"))
+  (should-not (tp--reactive-symbol-p 42)))
+
+(ert-deftest tp-test-reactive-var-symbol ()
+  "Test tp--reactive-var-symbol converts $foo to foo."
+  (should (eq (tp--reactive-var-symbol '$foo) 'foo))
+  (should (eq (tp--reactive-var-symbol '$my-color) 'my-color))
+  (should (null (tp--reactive-var-symbol 'foo)))
+  (should (null (tp--reactive-var-symbol "string"))))
+
+(ert-deftest tp-test-collect-reactive-symbols ()
+  "Test tp--collect-reactive-symbols finds all $-prefixed symbols."
+  (should (equal (tp--collect-reactive-symbols '$foo) '($foo)))
+  (should (equal (tp--collect-reactive-symbols '(face (:foreground $color)))
+                 '($color)))
+  (should (equal (tp--collect-reactive-symbols '(face (:foreground $color :background $bg)))
+                 '($color $bg)))
+  (should (null (tp--collect-reactive-symbols '(face bold)))))
+
+(ert-deftest tp-test-resolve-reactive-symbols ()
+  "Test tp--resolve-reactive-symbols replaces $foo with variable values."
+  ;; Use defvar to create dynamically-bound variables
+  (defvar tp-test-my-color "red" "Test color variable.")
+  (defvar tp-test-my-bg "blue" "Test background variable.")
+  (unwind-protect
+      (progn
+        (should (equal (tp--resolve-reactive-symbols '$tp-test-my-color) "red"))
+        (should (equal (tp--resolve-reactive-symbols '(face (:foreground $tp-test-my-color)))
+                       '(face (:foreground "red"))))
+        (should (equal (tp--resolve-reactive-symbols '(face (:foreground $tp-test-my-color :background $tp-test-my-bg)))
+                       '(face (:foreground "red" :background "blue")))))
+    ;; Cleanup
+    (makunbound 'tp-test-my-color)
+    (makunbound 'tp-test-my-bg)))
+
+(ert-deftest tp-test-define-layer-with-reactive ()
+  "Test tp-define-layer with reactive variables."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-var-color "red" "Test color variable.")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-reactive-layer
+            (face (:foreground $tp-test-var-color)))
+          ;; Check the layer is defined with resolved value
+          (let ((props (cdr (assoc 'test-reactive-layer tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
+          ;; Check the template is stored
+          (should (assoc 'test-reactive-layer tp-layer-templates))
+          ;; Check the dependency is registered
+          (should (assoc 'tp-test-var-color tp-reactive-deps)))
+      ;; Cleanup
+      (makunbound 'tp-test-var-color))))
+
+(ert-deftest tp-test-reactive-update-on-variable-change ()
+  "Test that changing a reactive variable updates the layer."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-reactive-color nil "Test variable for reactive properties.")
+    (setq tp-test-reactive-color "red")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-reactive-update
+            (face (:foreground $tp-test-reactive-color)))
+          ;; Verify initial value
+          (let ((props (cdr (assoc 'test-reactive-update tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
+          ;; Change the variable
+          (setq tp-test-reactive-color "blue")
+          ;; Verify the layer definition is updated
+          (let ((props (cdr (assoc 'test-reactive-update tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "blue"))))
+      ;; Cleanup
+      (makunbound 'tp-test-reactive-color))))
+
+(ert-deftest tp-test-reactive-update-text-regions ()
+  "Test that changing a reactive variable updates applied text regions."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-region-color nil "Test variable for reactive regions.")
+    (setq tp-test-region-color "red")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-reactive-region
+            (face (:foreground $tp-test-region-color)))
+          (insert "Hello World")
+          ;; Apply the layer to text
+          (tp-push-layer 1 6 'test-reactive-region)
+          ;; Verify initial properties
+          (should (equal (plist-get (tp-at 1 'face) :foreground) "red"))
+          ;; Change the variable
+          (setq tp-test-region-color "green")
+          ;; Verify the text is updated
+          (should (equal (plist-get (tp-at 1 'face) :foreground) "green")))
+      ;; Cleanup
+      (makunbound 'tp-test-region-color))))
+
+(ert-deftest tp-test-reactive-reset ()
+  "Test tp-reactive-reset clears all reactive dependencies."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-reset-color nil "Test variable for reactive reset.")
+    (setq tp-test-reset-color "red")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-reactive-reset
+            (face (:foreground $tp-test-reset-color)))
+          (should tp-reactive-deps)
+          (should tp-layer-templates)
+          (tp-reactive-reset)
+          (should-not tp-reactive-deps)
+          (should-not tp-layer-templates))
+      ;; Cleanup
+      (makunbound 'tp-test-reset-color))))
+
+(ert-deftest tp-test-layer-reset-clears-reactive ()
+  "Test tp-layer-reset also clears reactive dependencies."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-reset2-color nil "Test variable for layer reset.")
+    (setq tp-test-reset2-color "red")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-reactive-reset2
+            (face (:foreground $tp-test-reset2-color)))
+          (should tp-reactive-deps)
+          (tp-layer-reset)
+          (should-not tp-reactive-deps)
+          (should-not tp-layer-templates))
+      ;; Cleanup
+      (makunbound 'tp-test-reset2-color))))
+
+(ert-deftest tp-test-define-layer-group-with-reactive ()
+  "Test tp-define-layer-group with reactive variables."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-group-color nil "Test variable for layer group.")
+    (setq tp-test-group-color "red")
+    (unwind-protect
+        (progn
+          (tp-define-layer-group test-reactive-group
+            ("first" :props (face (:foreground $tp-test-group-color)))
+            ("second" :props (face (:foreground "blue"))))
+          ;; Check the reactive layer is defined with resolved value
+          (let ((props (cdr (assoc 'test-reactive-group-first tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
+          ;; Check the non-reactive layer is defined
+          (let ((props (cdr (assoc 'test-reactive-group-second tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "blue")))
+          ;; Check the template is stored for reactive layer
+          (should (assoc 'test-reactive-group-first tp-layer-templates))
+          ;; Non-reactive layer should not have template
+          (should-not (assoc 'test-reactive-group-second tp-layer-templates)))
+      ;; Cleanup
+      (makunbound 'tp-test-group-color))))
+
+(ert-deftest tp-test-undefine-layer-clears-reactive ()
+  "Test tp-undefine-layer clears reactive dependencies for that layer."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-undef-color nil "Test variable for undefine.")
+    (setq tp-test-undef-color "red")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-undef-reactive
+            (face (:foreground $tp-test-undef-color)))
+          (should (assoc 'test-undef-reactive tp-layer-templates))
+          (should (assoc 'tp-test-undef-color tp-reactive-deps))
+          (tp-undefine-layer 'test-undef-reactive)
+          (should-not (assoc 'test-undef-reactive tp-layer-templates))
+          ;; Dependency should be cleaned up if no other layers use it
+          (should-not (cdr (assoc 'tp-test-undef-color tp-reactive-deps))))
+      ;; Cleanup
+      (makunbound 'tp-test-undef-color))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

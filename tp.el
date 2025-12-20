@@ -49,6 +49,152 @@ Stores individual layer definitions.")
   "Alist where each element is (GROUP-NAME . (LAYER-NAME1 LAYER-NAME2 ...)).
 Stores layer group definitions, where each group contains multiple layer names.")
 
+;;; Reactive Text Properties Variables
+
+(defvar tp-reactive-deps nil
+  "Alist mapping reactive variables to their dependent layers.
+Each element is (VARIABLE-SYMBOL . ((LAYER-NAME . PROPERTY-SPEC) ...)).
+PROPERTY-SPEC is the original property specification containing the variable.")
+
+(defvar tp-layer-templates nil
+  "Alist mapping layer names to their template property specifications.
+Each element is (LAYER-NAME . TEMPLATE-PLIST).
+TEMPLATE-PLIST contains symbols starting with $ that need to be resolved.")
+
+(defvar tp-reactive-enabled t
+  "Non-nil means reactive text property updates are enabled.")
+
+
+;;; Reactive Text Properties Functions
+
+(defun tp--reactive-symbol-p (sym)
+  "Return non-nil if SYM is a reactive variable symbol (starts with $)."
+  (and (symbolp sym)
+       (string-prefix-p "$" (symbol-name sym))))
+
+(defun tp--reactive-var-symbol (sym)
+  "Convert a reactive symbol SYM (e.g., $foo) to its variable symbol (e.g., foo).
+Returns nil if SYM is not a reactive symbol."
+  (when (tp--reactive-symbol-p sym)
+    (intern (substring (symbol-name sym) 1))))
+
+(defun tp--collect-reactive-symbols (form)
+  "Recursively collect all reactive symbols ($-prefixed) from FORM.
+Returns a list of reactive symbols found."
+  (cond
+   ((tp--reactive-symbol-p form)
+    (list form))
+   ((consp form)
+    (append (tp--collect-reactive-symbols (car form))
+            (tp--collect-reactive-symbols (cdr form))))
+   (t nil)))
+
+(defun tp--resolve-reactive-symbols (form &optional override-alist)
+  "Recursively resolve all reactive symbols in FORM to their values.
+Reactive symbols ($foo) are replaced with the value of the variable foo.
+OVERRIDE-ALIST is an optional alist of (SYMBOL . VALUE) pairs that
+override the current variable values (used during watcher callbacks)."
+  (cond
+   ((tp--reactive-symbol-p form)
+    (let* ((var-sym (tp--reactive-var-symbol form))
+           (override (assoc var-sym override-alist)))
+      (if override
+          (cdr override)
+        (if (boundp var-sym)
+            (symbol-value var-sym)
+          nil))))
+   ((consp form)
+    (cons (tp--resolve-reactive-symbols (car form) override-alist)
+          (tp--resolve-reactive-symbols (cdr form) override-alist)))
+   (t form)))
+
+(defun tp--register-reactive-deps (layer-name reactive-symbols template-props)
+  "Register REACTIVE-SYMBOLS as dependencies for LAYER-NAME.
+TEMPLATE-PROPS is the original property specification with reactive symbols."
+  ;; Store the template for this layer
+  (if (assoc layer-name tp-layer-templates)
+      (setf (cdr (assoc layer-name tp-layer-templates)) template-props)
+    (push (cons layer-name template-props) tp-layer-templates))
+  ;; Register each reactive symbol's dependency
+  (dolist (rsym reactive-symbols)
+    (let* ((var-sym (tp--reactive-var-symbol rsym))
+           (existing (assoc var-sym tp-reactive-deps)))
+      (if existing
+          ;; Add this layer to existing dependencies if not already there
+          (unless (assoc layer-name (cdr existing))
+            (push (cons layer-name template-props) (cdr existing)))
+        ;; Create new dependency entry and add watcher
+        (push (cons var-sym (list (cons layer-name template-props))) tp-reactive-deps)
+        ;; Add variable watcher for this variable
+        (add-variable-watcher var-sym #'tp--reactive-variable-watcher)))))
+
+(defun tp--unregister-reactive-deps (layer-name)
+  "Unregister all reactive dependencies for LAYER-NAME."
+  ;; Remove from templates
+  (setq tp-layer-templates (assq-delete-all layer-name tp-layer-templates))
+  ;; Remove from dependencies
+  (dolist (dep tp-reactive-deps)
+    (let ((var-sym (car dep)))
+      (setf (cdr dep) (assq-delete-all layer-name (cdr dep)))
+      ;; If no more dependencies, remove the watcher
+      (when (null (cdr dep))
+        (remove-variable-watcher var-sym #'tp--reactive-variable-watcher))))
+  ;; Clean up empty dependency entries
+  (setq tp-reactive-deps (cl-remove-if (lambda (dep) (null (cdr dep))) tp-reactive-deps)))
+
+(defun tp--reactive-variable-watcher (symbol newval operation _where)
+  "Watcher function called when a reactive variable changes.
+SYMBOL is the variable that changed.
+NEWVAL is the new value being set.
+OPERATION is the type of operation (set, let, unlet, makunbound, defvaralias).
+Updates all layers that depend on this variable."
+  (when (and tp-reactive-enabled
+             (eq operation 'set))  ; Only react to set operations
+    (let ((deps (cdr (assoc symbol tp-reactive-deps)))
+          ;; Create override alist with the new value
+          ;; (watcher is called before the variable is actually updated)
+          (override-alist (list (cons symbol newval))))
+      (dolist (dep deps)
+        (let* ((layer-name (car dep))
+               (template (cdr (assoc layer-name tp-layer-templates))))
+          (when template
+            ;; Resolve the template with the new value override
+            (let ((resolved-props (tp--resolve-reactive-symbols template override-alist)))
+              ;; Update the layer definition using the helper function
+              (tp--set-layer-props layer-name resolved-props)
+              ;; Update all text regions with this layer
+              (tp--update-layer-regions layer-name))))))))
+
+(defun tp--update-layer-regions (layer-name)
+  "Update all text regions that have LAYER-NAME applied.
+Re-applies the layer properties using tp--search-do and tp-add."
+  (let ((props (tp-layer-props layer-name)))
+    (when props
+      ;; Update in all buffers
+      (dolist (buf (buffer-list))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf
+            ;; Use tp--search-do to find all regions with this layer
+            ;; and apply updated properties directly to the buffer region
+            (tp--search-do
+             (lambda (match _obj)
+               (let ((m-start (car match))
+                     (m-end (cadr match)))
+                 ;; Apply the new properties directly to the buffer region
+                 (tp-add m-start m-end props)))
+             'tp-name layer-name)))))))
+
+(defun tp-reactive-reset ()
+  "Reset all reactive text property watchers and dependencies."
+  (interactive)
+  ;; Remove all watchers
+  (dolist (dep tp-reactive-deps)
+    (let ((var-sym (car dep)))
+      (remove-variable-watcher var-sym #'tp--reactive-variable-watcher)))
+  ;; Clear registries
+  (setq tp-reactive-deps nil)
+  (setq tp-layer-templates nil))
+
 
 ;;; Core Property Functions
 
@@ -1524,27 +1670,45 @@ Format 2 - With :props keyword (for future extensibility):
   (tp-define-layer layer-name
     :props (display \"🌑\" face (:height 1.0)))
 
+Reactive Variables:
+  If any symbol in the property specification starts with $, it is
+  treated as a reactive variable. When that variable's value changes,
+  all text regions with this layer will be automatically updated.
+
+  Example:
+    (defvar my-color \"red\")
+    (tp-define-layer my-layer
+      (face (:foreground $my-color)))
+    ;; Changing my-color will automatically update text with my-layer
+
 If a layer with the same NAME already exists, it will be overwritten
 with the new definition.
 
 The layer is stored in `tp-layer-alist'."
   (declare (indent defun))
-  (let ((properties
-         (cond
-          ;; Format 2: :props (plist)
-          ((and (eq (car args) :props)
-                (cadr args))
-           (cadr args))
-          ;; Format 1: (plist)
-          ((and (= (length args) 1)
-                (listp (car args)))
-           (car args))
-          (t (error "Invalid tp-define-layer format for %s" name)))))
-    `(progn
-       (if (assoc ',name tp-layer-alist)
-           (setf (cdr (assoc ',name tp-layer-alist)) ',properties)
-         (push (cons ',name ',properties) tp-layer-alist))
-       (assoc ',name tp-layer-alist))))
+  (let* ((properties
+          (cond
+           ;; Format 2: :props (plist)
+           ((and (eq (car args) :props)
+                 (cadr args))
+            (cadr args))
+           ;; Format 1: (plist)
+           ((and (= (length args) 1)
+                 (listp (car args)))
+            (car args))
+           (t (error "Invalid tp-define-layer format for %s" name))))
+         (reactive-syms (tp--collect-reactive-symbols properties)))
+    (if reactive-syms
+        ;; Has reactive symbols - register dependencies and resolve at runtime
+        `(progn
+           (tp--register-reactive-deps ',name ',reactive-syms ',properties)
+           (let ((resolved-props (tp--resolve-reactive-symbols ',properties)))
+             (tp--set-layer-props ',name resolved-props))
+           (assoc ',name tp-layer-alist))
+      ;; No reactive symbols - use static properties
+      `(progn
+         (tp--set-layer-props ',name ',properties)
+         (assoc ',name tp-layer-alist)))))
 
 (defalias 'define-tp 'tp-define-layer)
 
@@ -1622,6 +1786,11 @@ Format 3 - Named layers with :props keyword (named as NAME-suffix):
     (\"残月\" :props (display \"🌘\" face (:height 1.5)))
     (\"下弦月\" :props (display \"🌗\" face (:height 2.0))))
 
+Reactive Variables:
+  If any symbol in the property specification starts with $, it is
+  treated as a reactive variable. When that variable's value changes,
+  all text regions with that layer will be automatically updated.
+
 You can also reference already-defined layers by their symbol name:
   (tp-define-layer-group group-name
     existing-layer-1
@@ -1643,12 +1812,19 @@ and the group itself is stored in `tp-layer-groups'."
           (push parsed layer-names))
          ;; New layer definition (cons cell of name . props)
          ((consp parsed)
-          (let ((layer-name (car parsed))
-                (props (cdr parsed)))
-            (push `(if (assoc ',layer-name tp-layer-alist)
-                       (setf (cdr (assoc ',layer-name tp-layer-alist)) ',props)
-                     (push (cons ',layer-name ',props) tp-layer-alist))
-                  layer-defs)
+          (let* ((layer-name (car parsed))
+                 (props (cdr parsed))
+                 (reactive-syms (tp--collect-reactive-symbols props)))
+            (if reactive-syms
+                ;; Has reactive symbols - register dependencies and resolve at runtime
+                (push `(progn
+                         (tp--register-reactive-deps ',layer-name ',reactive-syms ',props)
+                         (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
+                           (tp--set-layer-props ',layer-name resolved-props)))
+                      layer-defs)
+              ;; No reactive symbols - use static properties
+              (push `(tp--set-layer-props ',layer-name ',props)
+                    layer-defs))
             (push layer-name layer-names)
             ;; Only increment idx for anonymous (Format 1) elements
             (when (eq (tp--layer-group-element-format element) 'format-1)
@@ -1657,12 +1833,26 @@ and the group itself is stored in `tp-layer-groups'."
     (setq layer-defs (nreverse layer-defs))
     `(progn
        ,@layer-defs
-       (if (assoc ',name tp-layer-groups)
-           (setf (cdr (assoc ',name tp-layer-groups)) ',layer-names)
-         (push (cons ',name ',layer-names) tp-layer-groups))
+       (tp--set-group-layers ',name ',layer-names)
        (assoc ',name tp-layer-groups))))
 
 (defalias 'define-tp-group 'tp-define-layer-group)
+
+(defun tp--set-layer-props (layer-name properties)
+  "Set PROPERTIES for layer LAYER-NAME in `tp-layer-alist'.
+If the layer already exists, updates its properties; otherwise creates it.
+This is an internal function used by layer definition macros and reactive updates."
+  (if (assoc layer-name tp-layer-alist)
+      (setf (cdr (assoc layer-name tp-layer-alist)) properties)
+    (push (cons layer-name properties) tp-layer-alist)))
+
+(defun tp--set-group-layers (group-name layer-names)
+  "Set LAYER-NAMES for group GROUP-NAME in `tp-layer-groups'.
+If the group already exists, updates its layer list; otherwise creates it.
+This is an internal function used by group definition macros."
+  (if (assoc group-name tp-layer-groups)
+      (setf (cdr (assoc group-name tp-layer-groups)) layer-names)
+    (push (cons group-name layer-names) tp-layer-groups)))
 
 (defun tp-layer-props (layer-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.
@@ -1679,13 +1869,17 @@ Appends 'tp-name property to identify the layer."
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
-Clears both `tp-layer-alist' and `tp-layer-groups'."
+Clears both `tp-layer-alist' and `tp-layer-groups'.
+Also resets all reactive text property watchers and dependencies."
   (interactive)
+  (tp-reactive-reset)
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil))
 
 (defun tp-undefine-layer (name)
-  "Remove layer NAME from `tp-layer-alist'."
+  "Remove layer NAME from `tp-layer-alist'.
+Also unregisters any reactive dependencies for this layer."
+  (tp--unregister-reactive-deps name)
   (setq tp-layer-alist (assq-delete-all name tp-layer-alist)))
 
 (defun tp-undefine-group (name)
