@@ -396,7 +396,9 @@ Also adds variable watchers so changes to data vars trigger computed updates."
 (defun tp--ensure-reactive-variables (var-symbols)
   "Ensure all VAR-SYMBOLS are defined as global variables.
 VAR-SYMBOLS can be a list of symbols or cons cells (SYMBOL . INITIAL-VALUE).
-If a variable is not bound, define it with the initial value (nil if not specified)."
+If a variable is not bound, define it with the initial value (nil if not specified).
+If a variable has an explicit initial value (cons cell), always update it to allow
+re-definition to change initial values."
   (dolist (sym var-symbols)
     (let* ((is-cons (and (consp sym) (not (tp--reactive-symbol-p sym))))
            (var-sym (cond
@@ -405,8 +407,12 @@ If a variable is not bound, define it with the initial value (nil if not specifi
                       (tp--reactive-var-symbol sym))
                      (t sym)))
            (initial-val (if is-cons (cdr sym) nil)))
-      (unless (boundp var-sym)
-        (set var-sym initial-val)))))
+      (if is-cons
+          ;; For explicit initial values, always update (allows re-definition)
+          (set var-sym initial-val)
+        ;; For implicit initial values, only set if not already bound
+        (unless (boundp var-sym)
+          (set var-sym initial-val))))))
 
 (defun tp--update-layer-regions (layer-name &optional where)
   "Update text regions that have LAYER-NAME applied.
@@ -2066,6 +2072,8 @@ The layer is stored in `tp-layer-alist'."
     (if (or all-reactive-syms data compute)
         ;; Has reactive features - register dependencies and resolve at runtime
         `(progn
+           ;; Clean up old dependencies first (for re-definition)
+           (tp--unregister-reactive-deps ',name)
            ;; Ensure all reactive variables are defined
            (tp--ensure-reactive-variables ',all-vars-to-define)
            ;; Register data variables
@@ -2084,10 +2092,17 @@ The layer is stored in `tp-layer-alist'."
            ;; Set layer properties with resolved values
            (let ((resolved-props (tp--resolve-reactive-symbols ',properties)))
              (tp--set-layer-props ',name resolved-props))
+           ;; Update any text regions that already have this layer applied
+           ;; This ensures re-definition immediately updates applied text
+           (tp--update-layer-regions ',name)
            (assoc ',name tp-layer-alist))
       ;; No reactive symbols - use static properties
       `(progn
+         ;; Clean up old dependencies first (for re-definition from reactive to non-reactive)
+         (tp--unregister-reactive-deps ',name)
          (tp--set-layer-props ',name ',properties)
+         ;; Update any text regions that already have this layer applied
+         (tp--update-layer-regions ',name)
          (assoc ',name tp-layer-alist)))))
 
 (defalias 'define-tp 'tp-define-layer)
@@ -2250,6 +2265,8 @@ and the group itself is stored in `tp-layer-groups'."
             (if (or all-reactive-syms data compute)
                 ;; Has reactive features - register dependencies and resolve at runtime
                 (push `(progn
+                         ;; Clean up old dependencies first (for re-definition)
+                         (tp--unregister-reactive-deps ',layer-name)
                          ;; Ensure all reactive variables are defined
                          (tp--ensure-reactive-variables ',all-vars-to-define)
                          ;; Register data variables
@@ -2267,10 +2284,17 @@ and the group itself is stored in `tp-layer-groups'."
                              `((tp--register-layer-watchers ',layer-name ',watch)))
                          ;; Set layer properties with resolved values
                          (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
-                           (tp--set-layer-props ',layer-name resolved-props)))
+                           (tp--set-layer-props ',layer-name resolved-props))
+                         ;; Update any text regions that already have this layer applied
+                         (tp--update-layer-regions ',layer-name))
                       layer-defs)
               ;; No reactive symbols - use static properties
-              (push `(tp--set-layer-props ',layer-name ',props)
+              (push `(progn
+                       ;; Clean up old dependencies first (for re-definition)
+                       (tp--unregister-reactive-deps ',layer-name)
+                       (tp--set-layer-props ',layer-name ',props)
+                       ;; Update any text regions that already have this layer applied
+                       (tp--update-layer-regions ',layer-name))
                     layer-defs))
             (push layer-name layer-names)))
          ;; Simple format (cons cell of name . props)
@@ -2281,15 +2305,24 @@ and the group itself is stored in `tp-layer-groups'."
             (if reactive-syms
                 ;; Has reactive symbols - register dependencies and resolve at runtime
                 (push `(progn
+                         ;; Clean up old dependencies first (for re-definition)
+                         (tp--unregister-reactive-deps ',layer-name)
                          (tp--ensure-reactive-variables
                           ',(mapcar #'tp--reactive-var-symbol reactive-syms))
                          (tp--register-reactive-deps
                           ',layer-name ',reactive-syms ',props)
                          (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
-                           (tp--set-layer-props ',layer-name resolved-props)))
+                           (tp--set-layer-props ',layer-name resolved-props))
+                         ;; Update any text regions that already have this layer applied
+                         (tp--update-layer-regions ',layer-name))
                       layer-defs)
               ;; No reactive symbols - use static properties
-              (push `(tp--set-layer-props ',layer-name ',props)
+              (push `(progn
+                       ;; Clean up old dependencies first (for re-definition)
+                       (tp--unregister-reactive-deps ',layer-name)
+                       (tp--set-layer-props ',layer-name ',props)
+                       ;; Update any text regions that already have this layer applied
+                       (tp--update-layer-regions ',layer-name))
                     layer-defs))
             (push layer-name layer-names)
             ;; Only increment idx for anonymous (Format 1) elements
