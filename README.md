@@ -10,6 +10,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#api-reference">API Reference</a> •
   <a href="#the-property-layer-system">Property Layer System</a> •
+  <a href="#reactive-text-properties">Reactive Text Properties</a> •
   <a href="README_CN.md">中文文档</a>
 </p>
 
@@ -24,8 +25,9 @@
 1. **Unified API Parameter Conventions**: All functions support multiple flexible calling patterns, working seamlessly with both strings and buffers
 2. **Fine-grained Sub-property Operations**: Support path-style access, modification, and deep merging of nested properties
 3. **Innovative Property Layer System**: Stack and manage multiple sets of properties on the same text region with layered control
-4. **Pattern Matching Batch Operations**: Batch apply properties via string or regular expression matching
-5. **Enhanced Search & Navigation**: Rich property search and traversal functionality
+4. **🆕 Reactive Text Properties**: Automatically update text properties when variable values change - a groundbreaking feature inspired by modern reactive UI frameworks
+5. **Pattern Matching Batch Operations**: Batch apply properties via string or regular expression matching
+6. **Enhanced Search & Navigation**: Rich property search and traversal functionality
 
 ## Features
 
@@ -127,6 +129,38 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 (tp-match-add "TODO" '(face (:underline t)))
 ```
 
+### 🆕 Reactive Text Properties
+
+**This is tp.el's most innovative new feature** - reactive text properties automatically update when variable values change. Inspired by modern reactive UI frameworks like Vue.js, this feature brings reactive programming to Emacs text properties:
+
+- ✅ **Reactive Variables**: Use `$`-prefixed symbols (like `$my-color`) in property definitions - they automatically resolve to variable values
+- ✅ **Automatic Updates**: When a reactive variable changes, all text regions using that variable are automatically updated
+- ✅ **:data for Additional State**: Define additional reactive variables that aren't directly used in properties but can trigger updates
+- ✅ **:compute for Derived Values**: Create computed properties that derive their values from other reactive variables (like Vue's computed properties)
+- ✅ **:watch for Side Effects**: Execute callbacks when reactive variables change (like Vue's watch)
+
+```elisp
+;; Define a layer with reactive properties
+(defvar my-color "red")  ;; Reactive variable
+
+(tp-define-layer my-highlight
+  :props (face (:foreground $my-color)))
+
+;; Apply the layer
+(tp-push-layer 1 10 'my-highlight)
+
+;; Later, just change the variable - text updates automatically!
+(setq my-color "blue")  ;; All text with my-highlight layer updates to blue!
+
+;; Advanced example with :data, :compute, and :watch
+(tp-define-layer full-name-layer
+  :props (help-echo $full-name face (:foreground $name-color))
+  :data ((first-name . "John") (last-name . "Doe"))  ;; With initial values
+  :compute ((full-name (lambda () (concat first-name " " last-name))))
+  :watch ((first-name (lambda (new old layer)
+                        (message "Name changed from %s to %s" old new)))))
+```
+
 ### Enhanced Search & Navigation
 
 - ✅ **Range Search**: `tp-search` returns a list of all matching intervals
@@ -206,13 +240,14 @@ A complete overview of all tp.el functions organized by category:
 #### Property Layer Definition Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-define-layer`](#tp-define-layer---define-single-layer) | Define a single layer |
-| [`tp-define-layer-group`](#tp-define-layer-group---define-layer-group) | Define a group of layers |
+| [`tp-define-layer`](#tp-define-layer---define-single-layer) | Define a single layer with optional reactive features (:props, :data, :watch, :compute) |
+| [`tp-define-layer-group`](#tp-define-layer-group---define-layer-group) | Define a group of layers with optional reactive features |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | Remove layer definition |
 | [`tp-undefine-group`](#tp-undefine-layer--tp-undefine-group) | Remove group definition |
 | [`tp-layer-reset`](#tp-layer-reset) | Clear all layer/group definitions |
+| [`tp-reactive-reset`](#tp-reactive-reset) | Clear all reactive dependencies and watchers |
 
 #### Property Layer Placement Functions
 | Function | Description |
@@ -1082,21 +1117,46 @@ The **property layer system** is tp.el's innovative feature that allows stacking
 
 #### `tp-define-layer` - Define Single Layer
 
-Define a single text property layer. Supports two formats:
+Define a single text property layer. Supports multiple formats:
 
-**Format 1 - Direct plist:**
+**Format 1 - Direct plist (legacy, no reactive features):**
 
 ```elisp
 (tp-define-layer layer-name
   (face (:background "cyan") line-prefix ">>"))
 ```
 
-**Format 2 - With :props keyword (for future extensibility):**
+**Format 2 - With :props keyword:**
 
 ```elisp
 (tp-define-layer layer-name
   :props (face (:background "cyan") line-prefix ">>"))
 ```
+
+**Format 3 - With :props, :data, :watch, and/or :compute (Vue 3 style reactivity):**
+
+```elisp
+(tp-define-layer layer-name
+  ;; props: $-prefixed symbols are reactive variables; auto-defined if not bound
+  :props (face (:foreground $my-color) help-echo $full-name)
+  ;; data: additional reactive variables not used in props; can include initial values
+  :data ((first-name . "John") (last-name . "Doe"))
+  ;; compute: list of (VAR-NAME FUNCTION) - compute reactive variable values
+  :compute ((full-name (lambda () (concat first-name " " last-name))))
+  ;; watch: list of (VAR-NAME CALLBACK) - side effects when vars change
+  :watch ((my-color (lambda (new old layer)
+                      (message "Color changed from %s to %s" old new)))))
+```
+
+**Reactive Variables:**
+
+If any symbol in `:props` starts with `$`, it is treated as a reactive variable. Variables in `:data` are also reactive. All reactive variables are automatically defined as global variables if they are not already bound.
+
+- **:data** - A list of variable symbols (or cons cells `(SYMBOL . INITIAL-VALUE)`) for additional reactive state not in `:props`.
+- **:compute** - A list of `(VAR-SYMBOL COMPUTE-FN)` pairs. COMPUTE-FN is evaluated to compute the value of VAR-SYMBOL. Can reference other reactive variables.
+- **:watch** - A list of `(VAR-SYMBOL CALLBACK)` pairs. CALLBACK is called when VAR-SYMBOL changes, receiving `(NEW-VALUE OLD-VALUE LAYER-NAME)`.
+
+**Note:** When using `:watch`, `:compute`, or `:data`, you MUST use `:props` to specify the text properties explicitly.
 
 If a layer with the same name already exists, it will be overwritten with the new definition.
 
@@ -1119,6 +1179,21 @@ If a layer with the same name already exists, it will be overwritten with the ne
   (tp-layer-props 'error))
 ;; => (face (:background "red" :foreground "white") help-echo "Error!" tp-name error)
 
+;; Define a reactive layer (Format 3)
+(progn
+  (tp-layer-reset)
+  (defvar theme-color "blue")
+  (tp-define-layer themed-layer
+    :props (face (:foreground $theme-color)))
+  ;; Apply the layer
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'themed-layer)
+    ;; Later, change the variable - text updates automatically!
+    (setq theme-color "red")
+    (tp-at 1 'face)))
+;; => (:foreground "red")
+
 ;; Redefine an existing layer (overwrites the old definition)
 (progn
   (tp-define-layer test-layer (face bold))
@@ -1131,7 +1206,7 @@ If a layer with the same name already exists, it will be overwritten with the ne
 
 #### `tp-define-layer-group` - Define Layer Group
 
-Define a group of multiple layers. Supports three formats for each element:
+Define a group of multiple layers. Supports four formats for each element:
 
 **Format 1 - Anonymous layers (named as GROUP-NAME-0, GROUP-NAME-1, etc.):**
 
@@ -1161,6 +1236,17 @@ Define a group of multiple layers. Supports three formats for each element:
   ("残月" :props (display "🌘" face (:height 1.5)))
   ("下弦月" :props (display "🌗" face (:height 2.0))))
 ;; Creates layers: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
+```
+
+**Format 4 - Named layers with :props, :data, :watch, and/or :compute (Vue 3 style reactivity):**
+
+```elisp
+(tp-define-layer-group reactive-group
+  ("reactive" :props (face (:foreground $my-color) help-echo $full-name)
+              :data ((first-name . "John") (last-name . "Doe"))
+              :compute ((full-name (lambda () (concat first-name " " last-name))))
+              :watch ((my-color (lambda (new old layer) (message "Changed!"))))))
+;; Creates layer: reactive-group-reactive with full reactive support
 ```
 
 You can also reference already-defined layers in a group:
@@ -2161,6 +2247,229 @@ Return t if OBJECT has no text properties.
                   (lambda (s e)
                     (tp-delete-layer s e 'temp-highlight))
                   start end))
+```
+
+---
+
+## Reactive Text Properties
+
+**Reactive Text Properties** is tp.el's groundbreaking innovation that brings reactive programming paradigms to Emacs text properties. Inspired by modern frontend frameworks like Vue.js, this feature enables text properties to automatically update when underlying variable values change.
+
+### Core Concept
+
+Traditional text property manipulation requires manually updating all affected text regions whenever you want to change a property value. With reactive text properties, you simply define a variable relationship once, and tp.el handles all updates automatically:
+
+```elisp
+;; Traditional approach (manual updates required)
+(defvar my-color "red")
+(tp-set 1 10 '(face (:foreground "red")))
+;; To change color, you must manually update every region:
+(setq my-color "blue")
+(tp-set 1 10 '(face (:foreground "blue")))  ; Manual!
+
+;; Reactive approach (automatic updates)
+(defvar my-color "red")
+(tp-define-layer my-layer
+  :props (face (:foreground $my-color)))
+(tp-push-layer 1 10 'my-layer)
+;; Just change the variable - all text updates automatically!
+(setq my-color "blue")  ; All regions with my-layer update instantly!
+```
+
+### How It Works
+
+1. **Reactive Variables**: Any symbol prefixed with `$` in `:props` is treated as a reactive variable. The `$` is stripped to get the actual variable name.
+
+2. **Variable Watchers**: tp.el uses Emacs's `add-variable-watcher` to monitor changes to reactive variables.
+
+3. **Automatic Updates**: When a reactive variable changes via `setq`, all text regions using layers that depend on that variable are automatically updated with the new property values.
+
+### Defining Reactive Layers
+
+#### Basic Reactive Layer
+
+```elisp
+(defvar highlight-color "yellow")
+
+(tp-define-layer my-highlight
+  :props (face (:background $highlight-color)))
+
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-push-layer 1 10 'my-highlight)
+  ;; Text is highlighted in yellow
+  
+  (setq highlight-color "cyan")
+  ;; Text is now highlighted in cyan - automatically!
+)
+```
+
+#### Multiple Reactive Variables
+
+```elisp
+(defvar fg-color "white")
+(defvar bg-color "black")
+
+(tp-define-layer themed-text
+  :props (face (:foreground $fg-color :background $bg-color)))
+
+;; Changing either variable updates the text
+(setq fg-color "yellow")  ; Updates foreground
+(setq bg-color "navy")    ; Updates background
+```
+
+### :data - Additional Reactive State
+
+The `:data` keyword defines additional reactive variables that aren't directly used in `:props` but can trigger computed value updates or be watched:
+
+```elisp
+(tp-define-layer user-info
+  :props (help-echo $full-name)
+  :data (first-name last-name)  ; Not used directly in props
+  :compute ((full-name (lambda () (concat first-name " " last-name)))))
+```
+
+**With Initial Values:**
+
+You can specify initial values using cons cells:
+
+```elisp
+(tp-define-layer user-info
+  :props (help-echo $full-name)
+  :data ((first-name . "John") (last-name . "Doe"))
+  :compute ((full-name (lambda () (concat first-name " " last-name)))))
+
+;; first-name is now "John", last-name is now "Doe"
+```
+
+### :compute - Computed Properties
+
+The `:compute` keyword creates derived values that are automatically recalculated when their dependencies change:
+
+```elisp
+(tp-define-layer progress-display
+  :props (display $progress-text face (:foreground $progress-color))
+  :data ((current . 0) (total . 100))
+  :compute ((progress-text (lambda () (format "%d%%" (/ (* current 100) total))))
+            (progress-color (lambda ()
+                              (cond ((< current 30) "red")
+                                    ((< current 70) "yellow")
+                                    (t "green"))))))
+
+;; Update progress
+(setq current 50)
+;; progress-text becomes "50%" and progress-color becomes "yellow" automatically!
+```
+
+### :watch - Side Effect Callbacks
+
+The `:watch` keyword lets you execute callbacks when reactive variables change:
+
+```elisp
+(tp-define-layer monitored-layer
+  :props (face (:foreground $status-color))
+  :watch ((status-color 
+           (lambda (new-val old-val layer-name)
+             (message "Layer %s: color changed from %s to %s" 
+                      layer-name old-val new-val)))))
+
+(setq status-color "red")
+;; Message: "Layer monitored-layer: color changed from nil to red"
+
+(setq status-color "green")
+;; Message: "Layer monitored-layer: color changed from red to green"
+```
+
+### Anonymous Reactive Layers
+
+You can use reactive variables even without `tp-define-layer`. When you use `$`-prefixed symbols in an anonymous plist, tp.el automatically generates a unique layer name:
+
+```elisp
+(defvar my-face-color "blue")
+
+;; Anonymous reactive layer - tp-name is auto-generated
+(tp-set 1 10 '(face (:foreground $my-face-color)))
+
+;; The layer is now reactive - changing the variable updates the text
+(setq my-face-color "red")
+```
+
+### Layer Name Resolution in APIs
+
+All text property APIs (`tp-set`, `tp-match-set`, `tp-regexp-set`, etc.) now accept layer names directly:
+
+```elisp
+(tp-define-layer warning-style
+  :props (face (:foreground "orange" :weight bold)))
+
+;; Use layer name instead of plist
+(tp-set 1 10 'warning-style)
+
+;; Works with all matching functions
+(tp-match-set "TODO" 'warning-style)
+(tp-regexp-set "[0-9]+" 'warning-style)
+```
+
+### Reactive Layer Groups
+
+Layer groups can also use reactive features in Format 4:
+
+```elisp
+(tp-define-layer-group status-indicators
+  ("success" :props (face (:foreground $success-color))
+             :data ((success-color . "green")))
+  ("warning" :props (face (:foreground $warning-color))
+             :data ((warning-color . "orange")))
+  ("error"   :props (face (:foreground $error-color))
+             :data ((error-color . "red"))))
+```
+
+### Resetting Reactive State
+
+To clear all reactive dependencies and watchers:
+
+```elisp
+(tp-reactive-reset)  ; Clears only reactive state
+
+(tp-layer-reset)     ; Clears layers, groups, AND reactive state
+```
+
+### Complete Example: Theme-Aware Text
+
+```elisp
+;; Define theme variables
+(defvar theme-fg "white")
+(defvar theme-bg "black")
+(defvar theme-accent "cyan")
+
+;; Define theme-aware layers
+(tp-define-layer code-keyword
+  :props (face (:foreground $theme-accent :weight bold)))
+
+(tp-define-layer code-comment
+  :props (face (:foreground "gray" :slant italic)))
+
+(tp-define-layer code-string
+  :props (face (:foreground "green")))
+
+;; Apply layers to code
+(tp-match-set '("defun" "defvar" "let" "if" "when") 'code-keyword)
+(tp-regexp-set ";.*$" 'code-comment)
+(tp-regexp-set "\"[^\"]*\"" 'code-string)
+
+;; Switch to light theme - just change variables!
+(defun switch-to-light-theme ()
+  (interactive)
+  (setq theme-fg "black")
+  (setq theme-bg "white")
+  (setq theme-accent "blue"))
+
+;; Switch to dark theme
+(defun switch-to-dark-theme ()
+  (interactive)
+  (setq theme-fg "white")
+  (setq theme-bg "black")
+  (setq theme-accent "cyan"))
 ```
 
 ---

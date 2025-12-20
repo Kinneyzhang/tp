@@ -9,7 +9,8 @@
   <a href="#安装">安装</a> •
   <a href="#快速开始">快速开始</a> •
   <a href="#api-参考">API 参考</a> •
-  <a href="#属性层系统">属性层系统</a>
+  <a href="#属性层系统">属性层系统</a> •
+  <a href="#响应式文本属性">响应式文本属性</a>
 </p>
 
 ---
@@ -23,8 +24,9 @@
 1. **统一的 API 参数规范**：所有函数支持多种灵活的调用方式，同时适用于字符串和缓冲区
 2. **子属性的精细操作**：支持嵌套属性的路径式访问、修改和深度合并
 3. **创新的属性层系统**：在同一文本区域上堆叠、管理多组属性，实现属性的分层控制
-4. **模式匹配批量操作**：通过字符串或正则表达式批量应用属性
-5. **增强的搜索导航**：丰富的属性搜索和遍历功能
+4. **🆕 响应式文本属性**：当变量值改变时自动更新文本属性 - 受现代响应式 UI 框架启发的突破性功能
+5. **模式匹配批量操作**：通过字符串或正则表达式批量应用属性
+6. **增强的搜索导航**：丰富的属性搜索和遍历功能
 
 ## 功能特性
 
@@ -126,6 +128,38 @@
 (tp-match-add "TODO" '(face (:underline t)))
 ```
 
+### 🆕 响应式文本属性
+
+**这是 tp.el 最具创新性的新功能** - 响应式文本属性会在变量值改变时自动更新。受现代响应式 UI 框架（如 Vue.js）启发，这个功能为 Emacs 文本属性带来了响应式编程范式：
+
+- ✅ **响应式变量**：在属性定义中使用 `$` 前缀的符号（如 `$my-color`），它们会自动解析为变量值
+- ✅ **自动更新**：当响应式变量改变时，所有使用该变量的文本区域会自动更新
+- ✅ **:data 附加状态**：定义不直接用于属性但可以触发更新的额外响应式变量
+- ✅ **:compute 计算属性**：创建从其他响应式变量派生值的计算属性（类似 Vue 的 computed）
+- ✅ **:watch 副作用监听**：当响应式变量改变时执行回调函数（类似 Vue 的 watch）
+
+```elisp
+;; 定义一个带响应式属性的层
+(defvar my-color "red")  ;; 响应式变量
+
+(tp-define-layer my-highlight
+  :props (face (:foreground $my-color)))
+
+;; 应用该层
+(tp-push-layer 1 10 'my-highlight)
+
+;; 之后只需改变变量 - 文本自动更新！
+(setq my-color "blue")  ;; 所有 my-highlight 层的文本自动变成蓝色！
+
+;; 高级示例：使用 :data、:compute 和 :watch
+(tp-define-layer full-name-layer
+  :props (help-echo $full-name face (:foreground $name-color))
+  :data ((first-name . "John") (last-name . "Doe"))  ;; 带初始值
+  :compute ((full-name (lambda () (concat first-name " " last-name))))
+  :watch ((first-name (lambda (new old layer)
+                        (message "名字从 %s 改为 %s" old new)))))
+```
+
 ### 增强的搜索与导航
 
 - ✅ **范围搜索**：`tp-search` 返回所有匹配区间的列表
@@ -205,13 +239,14 @@ tp.el 所有函数按类别组织的完整概览：
 #### 属性层定义函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-define-layer`](#tp-define-layer---定义单个属性层) | 定义单个属性层 |
-| [`tp-define-layer-group`](#tp-define-layer-group---定义属性层组) | 定义属性层组 |
+| [`tp-define-layer`](#tp-define-layer---定义单个属性层) | 定义单个属性层，支持响应式特性（:props、:data、:watch、:compute） |
+| [`tp-define-layer-group`](#tp-define-layer-group---定义属性层组) | 定义属性层组，支持响应式特性 |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取属性层的属性 |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取属性层组中所有属性层的属性 |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | 移除属性层定义 |
 | [`tp-undefine-group`](#tp-undefine-layer--tp-undefine-group) | 移除属性层组定义 |
 | [`tp-layer-reset`](#tp-layer-reset) | 清除所有属性层/属性层组定义 |
+| [`tp-reactive-reset`](#tp-reactive-reset) | 清除所有响应式依赖和监听器 |
 
 #### 属性层放置函数
 | 函数 | 描述 |
@@ -1079,21 +1114,46 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 #### `tp-define-layer` - 定义单个属性层
 
-定义单个文本属性层。支持两种格式：
+定义单个文本属性层。支持多种格式：
 
-**格式一 - 直接定义文本属性：**
+**格式一 - 直接定义文本属性（传统方式，不支持响应式特性）：**
 
 ```elisp
 (tp-define-layer layer-name
   (face (:background "cyan") line-prefix ">>"))
 ```
 
-**格式二 - 使用 :props 关键字（为后续扩展预留）：**
+**格式二 - 使用 :props 关键字：**
 
 ```elisp
 (tp-define-layer layer-name
   :props (face (:background "cyan") line-prefix ">>"))
 ```
+
+**格式三 - 使用 :props、:data、:watch 和/或 :compute（Vue 3 风格响应式）：**
+
+```elisp
+(tp-define-layer layer-name
+  ;; props: $前缀的符号是响应式变量；如果未绑定会自动定义
+  :props (face (:foreground $my-color) help-echo $full-name)
+  ;; data: 不在 props 中使用的额外响应式变量；可以包含初始值
+  :data ((first-name . "John") (last-name . "Doe"))
+  ;; compute: (变量名 函数) 列表 - 计算响应式变量的值
+  :compute ((full-name (lambda () (concat first-name " " last-name))))
+  ;; watch: (变量名 回调函数) 列表 - 变量变化时的副作用
+  :watch ((my-color (lambda (new old layer)
+                      (message "颜色从 %s 改为 %s" old new)))))
+```
+
+**响应式变量：**
+
+如果 `:props` 中的任何符号以 `$` 开头，它将被视为响应式变量。`:data` 中的变量也是响应式的。所有响应式变量如果尚未绑定会自动定义为全局变量。
+
+- **:data** - 变量符号列表（或 `(符号 . 初始值)` cons cell），用于不在 `:props` 中直接使用的额外响应式状态。
+- **:compute** - `(变量符号 计算函数)` 对的列表。计算函数会被求值以获得变量值，可以引用其他响应式变量。
+- **:watch** - `(变量符号 回调函数)` 对的列表。当变量改变时回调函数会被调用，接收 `(新值 旧值 层名)`。
+
+**注意：** 使用 `:watch`、`:compute` 或 `:data` 时，必须使用 `:props` 显式指定文本属性。
 
 如果同名的层已存在，新定义将覆盖旧定义。
 
@@ -1116,6 +1176,21 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-layer-props 'error))
 ;; => (face (:background "red" :foreground "white") help-echo "错误!" tp-name error)
 
+;; 定义响应式属性层（格式三）
+(progn
+  (tp-layer-reset)
+  (defvar theme-color "blue")
+  (tp-define-layer themed-layer
+    :props (face (:foreground $theme-color)))
+  ;; 应用该层
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'themed-layer)
+    ;; 之后改变变量 - 文本自动更新！
+    (setq theme-color "red")
+    (tp-at 1 'face)))
+;; => (:foreground "red")
+
 ;; 重新定义已存在的属性层（覆盖旧定义）
 (progn
   (tp-define-layer test-layer (face bold))
@@ -1128,7 +1203,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 #### `tp-define-layer-group` - 定义属性层组
 
-定义包含多个属性层的层组。每个元素支持三种格式：
+定义包含多个属性层的层组。每个元素支持四种格式：
 
 **格式一 - 匿名层（命名为 GROUP-NAME-0, GROUP-NAME-1 等）：**
 
@@ -1158,6 +1233,17 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   ("残月" :props (display "🌘" face (:height 1.5)))
   ("下弦月" :props (display "🌗" face (:height 2.0))))
 ;; 创建层: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
+```
+
+**格式四 - 使用 :props、:data、:watch 和/或 :compute 的命名层（Vue 3 风格响应式）：**
+
+```elisp
+(tp-define-layer-group reactive-group
+  ("reactive" :props (face (:foreground $my-color) help-echo $full-name)
+              :data ((first-name . "John") (last-name . "Doe"))
+              :compute ((full-name (lambda () (concat first-name " " last-name))))
+              :watch ((my-color (lambda (new old layer) (message "改变了！"))))))
+;; 创建层: reactive-group-reactive，具有完整的响应式支持
 ```
 
 你也可以在层组中引用已定义的层：
@@ -2158,6 +2244,229 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
                   (lambda (s e)
                     (tp-delete-layer s e 'temp-highlight))
                   start end))
+```
+
+---
+
+## 响应式文本属性
+
+**响应式文本属性**是 tp.el 的突破性创新，它将响应式编程范式带入了 Emacs 文本属性。受 Vue.js 等现代前端框架启发，这个功能使文本属性能够在底层变量值改变时自动更新。
+
+### 核心概念
+
+传统的文本属性操作需要在每次想要改变属性值时手动更新所有受影响的文本区域。使用响应式文本属性，你只需定义一次变量关系，tp.el 会自动处理所有更新：
+
+```elisp
+;; 传统方式（需要手动更新）
+(defvar my-color "red")
+(tp-set 1 10 '(face (:foreground "red")))
+;; 要改变颜色，你必须手动更新每个区域：
+(setq my-color "blue")
+(tp-set 1 10 '(face (:foreground "blue")))  ; 手动更新！
+
+;; 响应式方式（自动更新）
+(defvar my-color "red")
+(tp-define-layer my-layer
+  :props (face (:foreground $my-color)))
+(tp-push-layer 1 10 'my-layer)
+;; 只需改变变量 - 所有文本自动更新！
+(setq my-color "blue")  ;; 所有使用 my-layer 的区域立即更新！
+```
+
+### 工作原理
+
+1. **响应式变量**：`:props` 中任何以 `$` 为前缀的符号都被视为响应式变量。`$` 会被去掉以获取实际的变量名。
+
+2. **变量监听器**：tp.el 使用 Emacs 的 `add-variable-watcher` 来监控响应式变量的变化。
+
+3. **自动更新**：当响应式变量通过 `setq` 改变时，所有使用依赖该变量的层的文本区域会自动使用新的属性值更新。
+
+### 定义响应式层
+
+#### 基本响应式层
+
+```elisp
+(defvar highlight-color "yellow")
+
+(tp-define-layer my-highlight
+  :props (face (:background $highlight-color)))
+
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-push-layer 1 10 'my-highlight)
+  ;; 文本以黄色高亮
+  
+  (setq highlight-color "cyan")
+  ;; 文本现在以青色高亮 - 自动更新！
+)
+```
+
+#### 多个响应式变量
+
+```elisp
+(defvar fg-color "white")
+(defvar bg-color "black")
+
+(tp-define-layer themed-text
+  :props (face (:foreground $fg-color :background $bg-color)))
+
+;; 改变任一变量都会更新文本
+(setq fg-color "yellow")  ;; 更新前景色
+(setq bg-color "navy")    ;; 更新背景色
+```
+
+### :data - 附加响应式状态
+
+`:data` 关键字定义不直接用于 `:props` 但可以触发计算值更新或被监听的额外响应式变量：
+
+```elisp
+(tp-define-layer user-info
+  :props (help-echo $full-name)
+  :data (first-name last-name)  ;; 不直接用于 props
+  :compute ((full-name (lambda () (concat first-name " " last-name)))))
+```
+
+**带初始值：**
+
+你可以使用 cons cell 指定初始值：
+
+```elisp
+(tp-define-layer user-info
+  :props (help-echo $full-name)
+  :data ((first-name . "张") (last-name . "三"))
+  :compute ((full-name (lambda () (concat first-name last-name)))))
+
+;; first-name 现在是 "张"，last-name 现在是 "三"
+```
+
+### :compute - 计算属性
+
+`:compute` 关键字创建派生值，当它们的依赖项改变时会自动重新计算：
+
+```elisp
+(tp-define-layer progress-display
+  :props (display $progress-text face (:foreground $progress-color))
+  :data ((current . 0) (total . 100))
+  :compute ((progress-text (lambda () (format "%d%%" (/ (* current 100) total))))
+            (progress-color (lambda ()
+                              (cond ((< current 30) "red")
+                                    ((< current 70) "yellow")
+                                    (t "green"))))))
+
+;; 更新进度
+(setq current 50)
+;; progress-text 变成 "50%"，progress-color 变成 "yellow"，自动更新！
+```
+
+### :watch - 副作用回调
+
+`:watch` 关键字让你在响应式变量改变时执行回调：
+
+```elisp
+(tp-define-layer monitored-layer
+  :props (face (:foreground $status-color))
+  :watch ((status-color 
+           (lambda (new-val old-val layer-name)
+             (message "层 %s: 颜色从 %s 改为 %s" 
+                      layer-name old-val new-val)))))
+
+(setq status-color "red")
+;; 消息: "层 monitored-layer: 颜色从 nil 改为 red"
+
+(setq status-color "green")
+;; 消息: "层 monitored-layer: 颜色从 red 改为 green"
+```
+
+### 匿名响应式层
+
+即使不使用 `tp-define-layer`，你也可以使用响应式变量。当你在匿名 plist 中使用 `$` 前缀的符号时，tp.el 会自动生成唯一的层名：
+
+```elisp
+(defvar my-face-color "blue")
+
+;; 匿名响应式层 - tp-name 自动生成
+(tp-set 1 10 '(face (:foreground $my-face-color)))
+
+;; 该层现在是响应式的 - 改变变量会更新文本
+(setq my-face-color "red")
+```
+
+### API 中的层名解析
+
+所有文本属性 API（`tp-set`、`tp-match-set`、`tp-regexp-set` 等）现在可以直接接受层名：
+
+```elisp
+(tp-define-layer warning-style
+  :props (face (:foreground "orange" :weight bold)))
+
+;; 使用层名代替 plist
+(tp-set 1 10 'warning-style)
+
+;; 适用于所有匹配函数
+(tp-match-set "TODO" 'warning-style)
+(tp-regexp-set "[0-9]+" 'warning-style)
+```
+
+### 响应式层组
+
+层组也可以使用格式四的响应式特性：
+
+```elisp
+(tp-define-layer-group status-indicators
+  ("success" :props (face (:foreground $success-color))
+             :data ((success-color . "green")))
+  ("warning" :props (face (:foreground $warning-color))
+             :data ((warning-color . "orange")))
+  ("error"   :props (face (:foreground $error-color))
+             :data ((error-color . "red"))))
+```
+
+### 重置响应式状态
+
+清除所有响应式依赖和监听器：
+
+```elisp
+(tp-reactive-reset)  ;; 仅清除响应式状态
+
+(tp-layer-reset)     ;; 清除层、组以及响应式状态
+```
+
+### 完整示例：主题感知文本
+
+```elisp
+;; 定义主题变量
+(defvar theme-fg "white")
+(defvar theme-bg "black")
+(defvar theme-accent "cyan")
+
+;; 定义主题感知层
+(tp-define-layer code-keyword
+  :props (face (:foreground $theme-accent :weight bold)))
+
+(tp-define-layer code-comment
+  :props (face (:foreground "gray" :slant italic)))
+
+(tp-define-layer code-string
+  :props (face (:foreground "green")))
+
+;; 将层应用到代码
+(tp-match-set '("defun" "defvar" "let" "if" "when") 'code-keyword)
+(tp-regexp-set ";.*$" 'code-comment)
+(tp-regexp-set "\"[^\"]*\"" 'code-string)
+
+;; 切换到浅色主题 - 只需改变变量！
+(defun switch-to-light-theme ()
+  (interactive)
+  (setq theme-fg "black")
+  (setq theme-bg "white")
+  (setq theme-accent "blue"))
+
+;; 切换到深色主题
+(defun switch-to-dark-theme ()
+  (interactive)
+  (setq theme-fg "white")
+  (setq theme-bg "black")
+  (setq theme-accent "cyan"))
 ```
 
 ---
