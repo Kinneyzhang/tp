@@ -136,8 +136,9 @@ Native Emacs APIs have different functions and parameter orders for strings and 
   (tp-set START END '(face bold))
   ;; 2. Specific buffer or string
   (tp-set START END '(face bold) OBJECT)
-  ;; 3. Entire string (flat properties)
+  ;; 3. Entire string (flat properties or layer name)
   (tp-set STRING 'face 'bold 'help-echo "tip")
+  (tp-set STRING 'layer-name)
   ```
 - ✅ **Unified Object Support**: The same function works with both strings and buffers, no need to remember different APIs
 
@@ -411,8 +412,9 @@ Set text properties on a string or buffer region. Replaces only the specified pr
 (tp-set START END '(PROPERTY VALUE ...) OBJECT)
 (tp-set START END LAYER-NAME OBJECT)
 
-;; Entire string (flat properties)
+;; Entire string (flat properties or layer name)
 (tp-set STRING PROPERTY VALUE ...)
+(tp-set STRING LAYER-NAME)
 ```
 
 LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
@@ -456,6 +458,13 @@ LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or 
 ;; Set properties on entire string
 (tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
+
+;; Use a defined layer name on entire string
+(tp-define-layer my-style
+  :props (face (:foreground $my-color))
+  :data ((my-color . "blue")))
+(tp-set " " 'my-style)
+;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
 ```
 
 ---

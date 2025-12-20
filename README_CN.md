@@ -135,8 +135,9 @@
   (tp-set START END '(face bold))
   ;; 2. 指定缓冲区或字符串
   (tp-set START END '(face bold) OBJECT)
-  ;; 3. 整个字符串（平铺属性）
+  ;; 3. 整个字符串（平铺属性或层名称）
   (tp-set STRING 'face 'bold 'help-echo "tip")
+  (tp-set STRING 'layer-name)
   ```
 - ✅ **统一对象支持**：同一个函数同时支持字符串和缓冲区，无需记忆不同的 API
 
@@ -410,8 +411,9 @@ tp.el 所有函数按类别组织的完整概览：
 (tp-set START END '(PROPERTY VALUE ...) OBJECT)
 (tp-set START END LAYER-NAME OBJECT)
 
-;; 整个字符串（平铺属性）
+;; 整个字符串（平铺属性或层名称）
 (tp-set STRING PROPERTY VALUE ...)
+(tp-set STRING LAYER-NAME)
 ```
 
 LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
@@ -448,13 +450,12 @@ LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-def
 (tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
 
-;; 使用已定义的层名称
-(tp-define-layer warning-style
-  (face (:foreground "orange" :weight bold)))
-(with-temp-buffer
-  (insert "Hello World")
-  (tp-set 1 10 'warning-style))
-;; => (1 . 10)
+;; 在整个字符串上使用已定义的层名称
+(tp-define-layer my-style
+  :props (face (:foreground $my-color))
+  :data ((my-color . "blue")))
+(tp-set " " 'my-style)
+;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
 ```
 
 ---
