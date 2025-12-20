@@ -1365,7 +1365,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-layer-reset)
 ```
 
-清除所有属性层和属性层组定义。
+清除所有属性层和属性层组定义，包括所有响应式依赖和监听器。
 
 **示例：**
 
@@ -1375,6 +1375,33 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-layer-reset)
   (list tp-layer-alist tp-layer-groups))
 ;; => (nil nil)
+```
+
+---
+
+#### `tp-reactive-reset`
+
+```elisp
+(tp-reactive-reset)
+```
+
+清除所有响应式文本属性的监听器和依赖关系，但不影响层定义。
+
+当你想要移除所有响应式绑定但保留层定义时，这个函数很有用。
+
+**示例：**
+
+```elisp
+;; 定义一个响应式层
+(progn
+  (defvar my-reactive-color "red")
+  (tp-define-layer reactive-layer
+    :props (face (:foreground $my-reactive-color)))
+  ;; 仅清除响应式绑定
+  (tp-reactive-reset)
+  ;; 层仍然存在，但改变 my-reactive-color 不再更新它
+  (tp-layer-props 'reactive-layer))
+;; => (face (:foreground "red") tp-name reactive-layer)
 ```
 
 ---

@@ -1368,7 +1368,7 @@ Remove layer or group definition.
 (tp-layer-reset)
 ```
 
-Clear all layer and group definitions.
+Clear all layer and group definitions, including all reactive dependencies and watchers.
 
 **Examples:**
 
@@ -1378,6 +1378,33 @@ Clear all layer and group definitions.
   (tp-layer-reset)
   (list tp-layer-alist tp-layer-groups))
 ;; => (nil nil)
+```
+
+---
+
+#### `tp-reactive-reset`
+
+```elisp
+(tp-reactive-reset)
+```
+
+Clear all reactive text property watchers and dependencies, without affecting layer definitions.
+
+This is useful when you want to remove all reactive bindings but keep the layer definitions intact.
+
+**Examples:**
+
+```elisp
+;; Define a reactive layer
+(progn
+  (defvar my-reactive-color "red")
+  (tp-define-layer reactive-layer
+    :props (face (:foreground $my-reactive-color)))
+  ;; Clear reactive bindings only
+  (tp-reactive-reset)
+  ;; Layer still exists, but changing my-reactive-color no longer updates it
+  (tp-layer-props 'reactive-layer))
+;; => (face (:foreground "red") tp-name reactive-layer)
 ```
 
 ---
