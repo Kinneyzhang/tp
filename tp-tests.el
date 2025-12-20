@@ -2070,6 +2070,21 @@ Returns list of (START END VALUE) intervals."
     ;; tp-name should be preserved for reactive text property support
     (should (eq (get-text-property 0 'tp-name str) 'my-style))))
 
+(ert-deftest tp-test-set-entire-string-with-layer-name ()
+  "Test tp-set with layer name on entire string (string form).
+This tests the fix for the bug where (tp-set str 'layer-name) would
+incorrectly generate an anonymous tp-name instead of using the layer name."
+  (tp-test-with-temp-buffer
+    ;; Define a layer with reactive variables
+    (tp-define-layer my-entire-string-layer
+      :props (face (:background $my-entire-string-color))
+      :data ((my-entire-string-color . "blue")))
+    (let ((str (tp-set " " 'my-entire-string-layer)))
+      ;; tp-name should be the defined layer name, not an anonymous tp-anon-X
+      (should (eq (get-text-property 0 'tp-name str) 'my-entire-string-layer))
+      ;; face should be correctly set
+      (should (equal (plist-get (get-text-property 0 'face str) :background) "blue")))))
+
 (ert-deftest tp-test-reset-with-layer-name ()
   "Test tp-reset accepts a layer name defined by define-tp."
   (tp-test-with-temp-buffer

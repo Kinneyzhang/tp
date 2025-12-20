@@ -2337,6 +2337,7 @@ Appends 'tp-name property to identify the layer."
   "Resolve PROPS to a property list with layer metadata.
 PROPS can be:
 - A symbol (layer name from `tp-layer-alist' or group name from `tp-layer-groups')
+- A single-element list containing a layer/group symbol (from string form of tp-set)
 - A plist (handles anonymous layers with reactive variables)
 
 If PROPS is a symbol:
@@ -2356,24 +2357,35 @@ For group names, includes `tp-layers' property with the full layer stack."
   (cond
    ;; Already a plist - check for reactive variables and add tp-name
    ((listp props)
-    (let* ((existing-tp-name (plist-get props 'tp-name))
-           (reactive-syms (tp--collect-reactive-symbols props)))
-      (if reactive-syms
-          ;; Has reactive symbols - need to handle as anonymous reactive layer
-          (let* ((layer-name (or existing-tp-name (tp--generate-anonymous-layer-name)))
-                 ;; Resolve reactive symbols to get current values
-                 (resolved-props (tp--resolve-reactive-symbols props)))
-            ;; Register this anonymous layer in tp-layer-alist with resolved props
-            (tp--set-layer-props layer-name resolved-props)
-            ;; Register reactive dependencies with the original props
-            (tp--register-reactive-deps layer-name reactive-syms props)
-            ;; Return resolved props with tp-name
-            (append resolved-props (list 'tp-name layer-name)))
-        ;; No reactive symbols - just add tp-name if not present
-        (if existing-tp-name
-            props
-          (let ((layer-name (tp--generate-anonymous-layer-name)))
-            (append props (list 'tp-name layer-name)))))))
+    ;; Handle single-element list containing a layer/group name symbol.
+    ;; This can happen when tp-set is called with string form: (tp-set str 'layer-name)
+    ;; which produces props = (layer-name) in tp--parse-args.
+    (let ((first-elem (car-safe props)))
+      (if (and (= (length props) 1)
+               (symbolp first-elem)
+               (or (assoc first-elem tp-layer-alist)
+                   (assoc first-elem tp-layer-groups)))
+          ;; It's a layer/group name wrapped in a list - recurse with the symbol
+          (tp--resolve-props first-elem)
+        ;; Normal plist processing
+        (let* ((existing-tp-name (plist-get props 'tp-name))
+               (reactive-syms (tp--collect-reactive-symbols props)))
+          (if reactive-syms
+              ;; Has reactive symbols - need to handle as anonymous reactive layer
+              (let* ((layer-name (or existing-tp-name (tp--generate-anonymous-layer-name)))
+                     ;; Resolve reactive symbols to get current values
+                     (resolved-props (tp--resolve-reactive-symbols props)))
+                ;; Register this anonymous layer in tp-layer-alist with resolved props
+                (tp--set-layer-props layer-name resolved-props)
+                ;; Register reactive dependencies with the original props
+                (tp--register-reactive-deps layer-name reactive-syms props)
+                ;; Return resolved props with tp-name
+                (append resolved-props (list 'tp-name layer-name)))
+            ;; No reactive symbols - just add tp-name if not present
+            (if existing-tp-name
+                props
+              (let ((layer-name (tp--generate-anonymous-layer-name)))
+                (append props (list 'tp-name layer-name)))))))))
    ;; Symbol - check if it's a layer or group name
    ((symbolp props)
     (cond
