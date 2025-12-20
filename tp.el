@@ -297,7 +297,8 @@ Returns an updated override-alist with the new computed values."
                                do (setq all-reactive-props
                                         (plist-put all-reactive-props key val))))))
                 (when all-reactive-props
-                  (let ((resolved-props (tp--resolve-reactive-symbols all-reactive-props override-alist)))
+                  (let ((resolved-props (tp--resolve-reactive-symbols
+                                         all-reactive-props override-alist)))
                     (when resolved-props
                       (cl-loop for (key val) on resolved-props by #'cddr
                                do (setq current-props (plist-put current-props key val)))
@@ -372,7 +373,8 @@ Also adds variable watchers so changes to data vars trigger computed updates."
       (dolist (var-sym var-symbols)
         (let ((existing (assoc var-sym tp-reactive-deps)))
           (if existing
-              ;; Add this layer to existing dependencies (with nil props since data vars don't have direct props)
+              ;; Add this layer to existing dependencies
+              ;; (with nil props since data vars don't have direct props)
               (let ((layer-entry (assoc layer-name (cdr existing))))
                 (unless layer-entry
                   (push (cons layer-name nil) (cdr existing))))
@@ -392,7 +394,8 @@ If a variable is not bound, define it with the initial value (nil if not specifi
     (let* ((is-cons (and (consp sym) (not (tp--reactive-symbol-p sym))))
            (var-sym (cond
                      (is-cons (car sym))
-                     ((tp--reactive-symbol-p sym) (tp--reactive-var-symbol sym))
+                     ((tp--reactive-symbol-p sym)
+                      (tp--reactive-var-symbol sym))
                      (t sym)))
            (initial-val (if is-cons (cdr sym) nil)))
       (unless (boundp var-sym)
@@ -409,13 +412,14 @@ Re-applies the layer properties using tp-search-map and tp-add."
           (with-current-buffer buf
             ;; Use tp-search-map to find all regions with this layer
             ;; The callback uses start and end to set properties directly
-            (tp-search-map
-             (lambda (_text start end)
-               ;; Apply the new properties directly to the buffer region
-               (tp-add start end props)
-               ;; Return nil to skip text replacement
-               nil)
-             'tp-name layer-name)))))))
+            (save-excursion
+              (tp-search-map
+               (lambda (_text start end)
+                 ;; Apply the new properties directly to the buffer region
+                 (tp-add start end props)
+                 ;; Return nil to skip text replacement
+                 nil)
+               'tp-name layer-name))))))))
 
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."
