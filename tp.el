@@ -66,11 +66,9 @@ only (face (:foreground $color)) is stored, not the help-echo.")
 
 (defun tp--generate-anonymous-layer-name ()
   "Generate a unique symbol for anonymous layers.
-Uses a combination of timestamp and counter to ensure uniqueness."
+Uses a counter to ensure uniqueness within an Emacs session."
   (setq tp--anonymous-layer-counter (1+ tp--anonymous-layer-counter))
-  (intern (format "tp-anon-%s-%d"
-                  (format-time-string "%s%N")
-                  tp--anonymous-layer-counter)))
+  (intern (format "tp-anon-%d" tp--anonymous-layer-counter)))
 
 
 ;;; Reactive Text Properties Functions
@@ -1998,8 +1996,8 @@ For group names, includes `tp-layers' property with the full layer stack."
           (let* ((layer-name (or existing-tp-name (tp--generate-anonymous-layer-name)))
                  ;; Resolve reactive symbols to get current values
                  (resolved-props (tp--resolve-reactive-symbols props)))
-            ;; Register this anonymous layer in tp-layer-alist with original template
-            (tp--set-layer-props layer-name (tp--resolve-reactive-symbols props))
+            ;; Register this anonymous layer in tp-layer-alist with resolved props
+            (tp--set-layer-props layer-name resolved-props)
             ;; Register reactive dependencies with the original template props
             (tp--register-reactive-deps layer-name reactive-syms props)
             ;; Return resolved props with tp-name
