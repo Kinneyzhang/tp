@@ -248,7 +248,10 @@ Supports four calling conventions:
 1. Buffer region: (START END PROPS)
 2. Buffer region with object: (START END PROPS OBJECT)
 3. String region: (START END PROPS STRING)
-4. Entire string: (STRING PROP VAL ...)"
+4. Entire string: (STRING PROP VAL ...)
+
+PROPS can also be a symbol representing a layer or group name defined
+by `define-tp' or `define-tp-group', which will be resolved to its properties."
   (let (object start finish props)
     (cond
      ;; First arg is a string - apply to entire string
@@ -272,8 +275,11 @@ Supports four calling conventions:
         (setq object nil
               props props-or-val)))
      (t (error "Invalid first argument: %S" start-or-string)))
-    ;; Handle properties as a list
-    (when (listp (car-safe props))
+    ;; Resolve layer/group name to properties if props is a symbol
+    (when (symbolp props)
+      (setq props (or (tp--resolve-props props) props)))
+    ;; Handle properties as a list (only if props is a list and its first element is also a list)
+    (when (and (listp props) (listp (car-safe props)))
       (setq props (car props)))
     (list object start finish props)))
 
@@ -284,15 +290,21 @@ This function supports four calling conventions:
 
 1. Current buffer:
    (tp-set START END \\='(PROPERTY VALUE ...))
+   (tp-set START END LAYER-NAME)
 
 2. Specific buffer:
    (tp-set START END \\='(PROPERTY VALUE ...) BUFFER)
+   (tp-set START END LAYER-NAME BUFFER)
 
 3. Specific string (0-indexed positions):
    (tp-set START END \\='(PROPERTY VALUE ...) STRING)
+   (tp-set START END LAYER-NAME STRING)
 
 4. Entire string:
    (tp-set STRING PROPERTY VALUE ...)
+
+PROPS can also be a symbol representing a layer or group name defined
+by `define-tp' or `define-tp-group', which will be resolved to its properties.
 
 This replaces only the properties specified, preserving other properties.
 Return the modified object (string) or region (START . END) for buffer."
@@ -318,15 +330,21 @@ This function supports four calling conventions:
 
 1. Current buffer:
    (tp-reset START END \\='(PROPERTY VALUE ...))
+   (tp-reset START END LAYER-NAME)
 
 2. Specific buffer:
    (tp-reset START END \\='(PROPERTY VALUE ...) BUFFER)
+   (tp-reset START END LAYER-NAME BUFFER)
 
 3. Specific string (0-indexed positions):
    (tp-reset START END \\='(PROPERTY VALUE ...) STRING)
+   (tp-reset START END LAYER-NAME STRING)
 
 4. Entire string:
    (tp-reset STRING PROPERTY VALUE ...)
+
+PROPS can also be a symbol representing a layer or group name defined
+by `define-tp' or `define-tp-group', which will be resolved to its properties.
 
 Unlike `tp-set', this completely replaces all existing properties.
 Return the modified object (string) or region (START . END) for buffer."
@@ -415,15 +433,21 @@ This function supports four calling conventions:
 
 1. Current buffer:
    (tp-add START END \\='(PROPERTY VALUE ...))
+   (tp-add START END LAYER-NAME)
 
 2. Specific buffer:
    (tp-add START END \\='(PROPERTY VALUE ...) BUFFER)
+   (tp-add START END LAYER-NAME BUFFER)
 
 3. Specific string (0-indexed positions):
    (tp-add START END \\='(PROPERTY VALUE ...) STRING)
+   (tp-add START END LAYER-NAME STRING)
 
 4. Entire string:
    (tp-add STRING PROPERTY VALUE ...)
+
+PROPS can also be a symbol representing a layer or group name defined
+by `define-tp' or `define-tp-group', which will be resolved to its properties.
 
 Unlike `tp-set', this deeply merges nested properties.
 For example, \\='(face (:underline (:style wave))) will merge with
@@ -1030,13 +1054,16 @@ Merges nested plists instead of replacing them."
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
 Each pattern will be matched and have properties applied.
-PLIST is a property list like \\='(face bold help-echo \"tip\").
+PLIST is a property list like \\='(face bold help-echo \"tip\"),
+or a symbol representing a layer/group name defined by `define-tp'
+or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (tp--match-apply pattern plist #'tp-set object))
+  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
+    (tp--match-apply pattern props #'tp-set object)))
 
 (defun tp-match-reset (pattern plist &optional object)
   "Reset (completely replace) properties on all occurrences of PATTERN.
@@ -1044,14 +1071,17 @@ Returns:
   (tp-match-reset PATTERN PLIST &optional OBJECT)
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
-PLIST is a property list like \\='(face bold help-echo \"tip\").
+PLIST is a property list like \\='(face bold help-echo \"tip\"),
+or a symbol representing a layer/group name defined by `define-tp'
+or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-match-set', this completely replaces all existing properties."
-  (tp--match-apply pattern plist
-                   (lambda (start end props obj)
-                     (set-text-properties start end props obj))
-                   object))
+  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
+    (tp--match-apply pattern props
+                     (lambda (start end props obj)
+                       (set-text-properties start end props obj))
+                     object)))
 
 (defun tp-match-add (pattern plist &optional object)
   "Add/update properties on all occurrences of PATTERN.
@@ -1059,11 +1089,14 @@ Unlike `tp-match-set', this completely replaces all existing properties."
   (tp-match-add PATTERN PLIST &optional OBJECT)
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
-PLIST is a property list like \\='(face bold help-echo \"tip\").
+PLIST is a property list like \\='(face bold help-echo \"tip\"),
+or a symbol representing a layer/group name defined by `define-tp'
+or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-match-set', this deeply merges nested properties."
-  (tp--match-apply pattern plist #'tp--deep-merge-apply object))
+  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
+    (tp--match-apply pattern props #'tp--deep-merge-apply object)))
 
 (defun tp-regexp-set (pattern plist &optional object)
   "Set properties on all matches of PATTERN (regexp).
@@ -1072,13 +1105,16 @@ Unlike `tp-match-set', this deeply merges nested properties."
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
 Each pattern will be matched and have properties applied.
-PLIST is a property list like \\='(face bold help-echo \"tip\").
+PLIST is a property list like \\='(face bold help-echo \"tip\"),
+or a symbol representing a layer/group name defined by `define-tp'
+or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (tp--regexp-apply pattern plist #'tp-set object))
+  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
+    (tp--regexp-apply pattern props #'tp-set object)))
 
 (defun tp-regexp-reset (pattern plist &optional object)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
@@ -1086,14 +1122,17 @@ Returns:
   (tp-regexp-reset PATTERN PLIST &optional OBJECT)
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
-PLIST is a property list like \\='(face bold help-echo \"tip\").
+PLIST is a property list like \\='(face bold help-echo \"tip\"),
+or a symbol representing a layer/group name defined by `define-tp'
+or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-regexp-set', this completely replaces all existing properties."
-  (tp--regexp-apply pattern plist
-                    (lambda (start end props obj)
-                      (set-text-properties start end props obj))
-                    object))
+  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
+    (tp--regexp-apply pattern props
+                      (lambda (start end props obj)
+                        (set-text-properties start end props obj))
+                      object)))
 
 (defun tp-regexp-add (pattern plist &optional object)
   "Add/update properties on all regexp matches of PATTERN.
@@ -1101,11 +1140,14 @@ Unlike `tp-regexp-set', this completely replaces all existing properties."
   (tp-regexp-add PATTERN PLIST &optional OBJECT)
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
-PLIST is a property list like \\='(face bold help-echo \"tip\").
+PLIST is a property list like \\='(face bold help-echo \"tip\"),
+or a symbol representing a layer/group name defined by `define-tp'
+or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-regexp-set', this deeply merges nested properties."
-  (tp--regexp-apply pattern plist #'tp--deep-merge-apply object))
+  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
+    (tp--regexp-apply pattern props #'tp--deep-merge-apply object)))
 
 ;;; Search functions
 
@@ -1910,6 +1952,37 @@ Appends 'tp-name property to identify the layer."
     (mapcar (lambda (layer)
               (tp-layer-props layer))
             layers)))
+
+(defun tp--resolve-props (props)
+  "Resolve PROPS to a property list.
+PROPS can be:
+- A symbol (layer name from `tp-layer-alist' or group name from `tp-layer-groups')
+- A plist (returned as-is)
+
+If PROPS is a symbol:
+- First checks `tp-layer-alist' and returns the layer properties
+- Then checks `tp-layer-groups' and returns the first layer's properties
+
+Unlike `tp-layer-props', this does NOT add the `tp-name' property,
+making it suitable for use with basic property-setting APIs like
+`tp-set', `tp-add', `tp-match-set', etc."
+  (cond
+   ;; Already a plist - return as-is
+   ((listp props) props)
+   ;; Symbol - check if it's a layer or group name
+   ((symbolp props)
+    (cond
+     ;; Check layer first
+     ((assoc props tp-layer-alist)
+      (cdr (assoc props tp-layer-alist)))
+     ;; Check group (use first layer's properties)
+     ((assoc props tp-layer-groups)
+      (when-let* ((layers (cdr (assoc props tp-layer-groups)))
+                  (first-layer (car layers)))
+        (cdr (assoc first-layer tp-layer-alist))))
+     ;; Not found - return nil (let caller decide how to handle)
+     (t nil)))
+   (t nil)))
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.

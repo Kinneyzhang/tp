@@ -2042,5 +2042,169 @@ Returns list of (START END VALUE) intervals."
       ;; Cleanup
       (makunbound 'tp-test-undef-color))))
 
+;;; ============================================================
+;;; Layer Name in Property-Setting APIs Tests
+;;; ============================================================
+
+(ert-deftest tp-test-set-with-layer-name ()
+  "Test tp-set accepts a layer name defined by define-tp."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-define-layer my-style (face bold help-echo "tip"))
+    ;; Use layer name instead of plist
+    (tp-set 1 6 'my-style)
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "tip"))))
+
+(ert-deftest tp-test-set-with-layer-name-on-string ()
+  "Test tp-set accepts a layer name on string."
+  (let ((str (copy-sequence "Hello World")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer my-style (face italic))
+    (tp-set 0 5 'my-style str)
+    (should (eq (get-text-property 0 'face str) 'italic))))
+
+(ert-deftest tp-test-reset-with-layer-name ()
+  "Test tp-reset accepts a layer name defined by define-tp."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(mouse-face highlight))
+    (tp-define-layer my-style (face underline))
+    ;; Use layer name - should completely replace
+    (tp-reset 1 6 'my-style)
+    (should (eq (tp-at 1 'face) 'underline))
+    (should (null (tp-at 1 'mouse-face)))))
+
+(ert-deftest tp-test-add-with-layer-name ()
+  "Test tp-add accepts a layer name defined by define-tp."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(help-echo "existing"))
+    (tp-define-layer my-style (face bold))
+    ;; Use layer name - should preserve existing properties
+    (tp-add 1 6 'my-style)
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "existing"))))
+
+(ert-deftest tp-test-match-set-with-layer-name ()
+  "Test tp-match-set accepts a layer name."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-define-layer match-style (face bold help-echo "matched"))
+    (tp-match-set "Hello" 'match-style)
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "matched"))
+    (should (eq (tp-at 13 'face) 'bold))))
+
+(ert-deftest tp-test-match-set-with-layer-name-on-string ()
+  "Test tp-match-set accepts a layer name on string."
+  (let ((str (copy-sequence "Hello World Hello")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer match-style (face italic))
+    (tp-match-set "Hello" 'match-style str)
+    (should (eq (get-text-property 0 'face str) 'italic))
+    (should (eq (get-text-property 12 'face str) 'italic))))
+
+(ert-deftest tp-test-match-reset-with-layer-name ()
+  "Test tp-match-reset accepts a layer name."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-set 1 6 '(mouse-face highlight))
+    (tp-define-layer match-style (face bold))
+    (tp-match-reset "Hello" 'match-style)
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (null (tp-at 1 'mouse-face)))))
+
+(ert-deftest tp-test-match-add-with-layer-name ()
+  "Test tp-match-add accepts a layer name."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-set 1 6 '(help-echo "original"))
+    (tp-define-layer match-style (face bold))
+    (tp-match-add "Hello" 'match-style)
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "original"))))
+
+(ert-deftest tp-test-regexp-set-with-layer-name ()
+  "Test tp-regexp-set accepts a layer name."
+  (tp-test-with-temp-buffer
+    (insert "abc 123 def 456")
+    (tp-define-layer number-style (face bold help-echo "number"))
+    (tp-regexp-set "[0-9]+" 'number-style)
+    (should (eq (tp-at 5 'face) 'bold))
+    (should (equal (tp-at 5 'help-echo) "number"))
+    (should (eq (tp-at 13 'face) 'bold))))
+
+(ert-deftest tp-test-regexp-set-with-layer-name-on-string ()
+  "Test tp-regexp-set accepts a layer name on string."
+  (let ((str (copy-sequence "abc 123 def 456")))
+    (setq tp-layer-alist nil)
+    (setq tp-layer-groups nil)
+    (tp-define-layer number-style (face italic))
+    (tp-regexp-set "[0-9]+" 'number-style str)
+    (should (eq (get-text-property 4 'face str) 'italic))
+    (should (eq (get-text-property 12 'face str) 'italic))))
+
+(ert-deftest tp-test-regexp-reset-with-layer-name ()
+  "Test tp-regexp-reset accepts a layer name."
+  (tp-test-with-temp-buffer
+    (insert "abc 123 def 456")
+    (tp-set 5 8 '(mouse-face highlight))
+    (tp-define-layer number-style (face bold))
+    (tp-regexp-reset "[0-9]+" 'number-style)
+    (should (eq (tp-at 5 'face) 'bold))
+    (should (null (tp-at 5 'mouse-face)))))
+
+(ert-deftest tp-test-regexp-add-with-layer-name ()
+  "Test tp-regexp-add accepts a layer name."
+  (tp-test-with-temp-buffer
+    (insert "abc 123 def 456")
+    (tp-set 5 8 '(help-echo "original"))
+    (tp-define-layer number-style (face bold))
+    (tp-regexp-add "[0-9]+" 'number-style)
+    (should (eq (tp-at 5 'face) 'bold))
+    (should (equal (tp-at 5 'help-echo) "original"))))
+
+(ert-deftest tp-test-set-with-group-name ()
+  "Test tp-set accepts a group name defined by define-tp-group."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-define-layer-group my-group
+      ("style" . (face bold help-echo "grouped")))
+    ;; Use group name - should use first layer's properties
+    (tp-set 1 6 'my-group)
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "grouped"))))
+
+(ert-deftest tp-test-match-set-with-group-name ()
+  "Test tp-match-set accepts a group name."
+  (tp-test-with-temp-buffer
+    (insert "Hello World Hello")
+    (tp-define-layer-group my-group
+      ("style" . (face italic)))
+    (tp-match-set "Hello" 'my-group)
+    (should (eq (tp-at 1 'face) 'italic))
+    (should (eq (tp-at 13 'face) 'italic))))
+
+(ert-deftest tp-test-resolve-props-returns-nil-for-unknown ()
+  "Test tp--resolve-props returns nil for unknown layer name."
+  (tp-test-with-temp-buffer
+    (should (null (tp--resolve-props 'unknown-layer-name)))))
+
+(ert-deftest tp-test-set-with-complex-layer ()
+  "Test tp-set with layer containing complex nested properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-define-layer complex-layer
+      (face (:foreground "red" :underline (:style wave))
+            help-echo "complex"))
+    (tp-set 1 6 'complex-layer)
+    (let ((face (tp-at 1 'face)))
+      (should (equal (plist-get face :foreground) "red"))
+      (should (equal (plist-get (plist-get face :underline) :style) 'wave)))
+    (should (equal (tp-at 1 'help-echo) "complex"))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
