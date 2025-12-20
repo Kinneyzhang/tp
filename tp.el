@@ -206,11 +206,14 @@ Only the reactive portions of the properties are stored for each variable."
   (tp--unregister-layer-computed layer-name)
   (tp--unregister-layer-data layer-name))
 
-(defun tp--reactive-variable-watcher (symbol newval operation _where)
+(defun tp--reactive-variable-watcher (symbol newval operation where)
   "Watcher function called when a reactive variable changes.
 SYMBOL is the variable that changed.
 NEWVAL is the new value being set.
 OPERATION is the type of operation (set, let, unlet, makunbound, defvaralias).
+WHERE indicates where the variable was set:
+  - nil for global `setq' or `set'
+  - a buffer for `setq-local'
 Updates all layers that depend on this variable.
 
 Only 'set' operations trigger updates because:
@@ -243,8 +246,10 @@ Only 'set' operations trigger updates because:
                     (cl-loop for (key val) on resolved-props by #'cddr
                              do (setq current-props (plist-put current-props key val)))
                     (tp--set-layer-props layer-name current-props))))))
-          ;; Update all text regions with this layer
-          (tp--update-layer-regions layer-name))))))
+          ;; Update text regions with this layer
+          ;; If WHERE is a buffer (setq-local), only update that buffer
+          ;; If WHERE is nil (setq), update all buffers that have the text property
+          (tp--update-layer-regions layer-name where))))))
 
 (defun tp--invoke-layer-watchers (layer-name symbol newval oldval)
   "Invoke all registered watcher callbacks for LAYER-NAME watching SYMBOL.
@@ -401,25 +406,38 @@ If a variable is not bound, define it with the initial value (nil if not specifi
       (unless (boundp var-sym)
         (set var-sym initial-val)))))
 
-(defun tp--update-layer-regions (layer-name)
-  "Update all text regions that have LAYER-NAME applied.
-Re-applies the layer properties using tp-search-map and tp-add."
+(defun tp--update-layer-regions (layer-name &optional where)
+  "Update text regions that have LAYER-NAME applied.
+Re-applies the layer properties using tp-search-map and tp-add.
+
+WHERE specifies which buffers to update:
+  - If WHERE is a buffer, only update that buffer (setq-local case).
+  - If WHERE is nil, update all buffers that have the text property (setq case)."
   (let ((props (tp-layer-props layer-name)))
     (when props
-      ;; Update in all buffers
-      (dolist (buf (buffer-list))
-        (when (buffer-live-p buf)
-          (with-current-buffer buf
-            ;; Use tp-search-map to find all regions with this layer
-            ;; The callback uses start and end to set properties directly
+      (if (and where (bufferp where) (buffer-live-p where))
+          ;; setq-local case: only update the specific buffer
+          (with-current-buffer where
             (save-excursion
               (tp-search-map
                (lambda (_text start end)
-                 ;; Apply the new properties directly to the buffer region
                  (tp-add start end props)
-                 ;; Return nil to skip text replacement
                  nil)
-               'tp-name layer-name))))))))
+               'tp-name layer-name)))
+        ;; setq case: update all buffers that have the text property
+        (dolist (buf (buffer-list))
+          (when (buffer-live-p buf)
+            (with-current-buffer buf
+              ;; Use tp-search-map to find all regions with this layer
+              ;; The callback uses start and end to set properties directly
+              (save-excursion
+                (tp-search-map
+                 (lambda (_text start end)
+                   ;; Apply the new properties directly to the buffer region
+                   (tp-add start end props)
+                   ;; Return nil to skip text replacement
+                   nil)
+                 'tp-name layer-name)))))))))
 
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."

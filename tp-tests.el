@@ -2680,5 +2680,69 @@ Returns list of (START END VALUE) intervals."
       (ignore-errors (makunbound 'tp-test-init-name))
       (ignore-errors (makunbound 'tp-test-init-other)))))
 
+(ert-deftest tp-test-setq-local-only-updates-current-buffer ()
+  "Test that setq-local only updates text properties in the current buffer."
+  (let ((buf1 nil)
+        (buf2 nil))
+    (unwind-protect
+        (progn
+          ;; Define a reactive layer
+          (tp-define-layer test-multi-buf-layer
+            :props (face (:foreground $tp-test-multi-color)))
+          ;; Create first buffer with layer applied
+          (setq buf1 (generate-new-buffer " *test-buf1*"))
+          (with-current-buffer buf1
+            (insert "Hello World")
+            (tp-set 1 6 'test-multi-buf-layer))
+          ;; Create second buffer with layer applied
+          (setq buf2 (generate-new-buffer " *test-buf2*"))
+          (with-current-buffer buf2
+            (insert "Hello World")
+            (tp-set 1 6 'test-multi-buf-layer))
+          ;; Use setq-local in buf1
+          (with-current-buffer buf1
+            (setq-local tp-test-multi-color "red"))
+          ;; buf1 should be updated
+          (with-current-buffer buf1
+            (should (equal (plist-get (get-text-property 1 'face) :foreground) "red")))
+          ;; buf2 should NOT be updated (still nil)
+          (with-current-buffer buf2
+            (should (equal (plist-get (get-text-property 1 'face) :foreground) nil))))
+      ;; Cleanup
+      (when (buffer-live-p buf1) (kill-buffer buf1))
+      (when (buffer-live-p buf2) (kill-buffer buf2))
+      (ignore-errors (makunbound 'tp-test-multi-color)))))
+
+(ert-deftest tp-test-setq-updates-all-buffers-with-property ()
+  "Test that setq updates text properties in all buffers that have the property."
+  (let ((buf1 nil)
+        (buf2 nil))
+    (unwind-protect
+        (progn
+          ;; Define a reactive layer
+          (tp-define-layer test-global-layer
+            :props (face (:foreground $tp-test-global-color)))
+          ;; Create first buffer with layer applied
+          (setq buf1 (generate-new-buffer " *test-buf1*"))
+          (with-current-buffer buf1
+            (insert "Hello World")
+            (tp-set 1 6 'test-global-layer))
+          ;; Create second buffer with layer applied
+          (setq buf2 (generate-new-buffer " *test-buf2*"))
+          (with-current-buffer buf2
+            (insert "Hello World")
+            (tp-set 1 6 'test-global-layer))
+          ;; Use global setq
+          (setq tp-test-global-color "blue")
+          ;; Both buffers should be updated
+          (with-current-buffer buf1
+            (should (equal (plist-get (get-text-property 1 'face) :foreground) "blue")))
+          (with-current-buffer buf2
+            (should (equal (plist-get (get-text-property 1 'face) :foreground) "blue"))))
+      ;; Cleanup
+      (when (buffer-live-p buf1) (kill-buffer buf1))
+      (when (buffer-live-p buf2) (kill-buffer buf2))
+      (ignore-errors (makunbound 'tp-test-global-color)))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
