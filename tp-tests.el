@@ -2753,5 +2753,223 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
       (when (buffer-live-p buf2) (kill-buffer buf2))
       (ignore-errors (makunbound 'tp-test-global-color)))))
 
+;;; ============================================================
+;;; Re-definition Tests (Issue: define-tp should update all properties on re-execution)
+;;; ============================================================
+
+(ert-deftest tp-test-redefine-layer-updates-data-initial-values ()
+  "Test that re-defining a layer with different :data initial values updates the variable."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition with gray color
+          (tp-define-layer test-redef-layer
+            :props (face (:background $tp-test-redef-color))
+            :data ((tp-test-redef-color . "gray")))
+          ;; Check initial value
+          (should (equal tp-test-redef-color "gray"))
+          ;; Check layer props
+          (let ((props (cdr (assoc 'test-redef-layer tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :background) "gray")))
+          ;; Re-define with different color
+          (tp-define-layer test-redef-layer
+            :props (face (:background $tp-test-redef-color))
+            :data ((tp-test-redef-color . "blue")))
+          ;; Check variable is updated
+          (should (equal tp-test-redef-color "blue"))
+          ;; Check layer props are updated
+          (let ((props (cdr (assoc 'test-redef-layer tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :background) "blue"))))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-redef-color)))))
+
+(ert-deftest tp-test-redefine-layer-updates-props ()
+  "Test that re-defining a layer updates :props correctly."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition
+          (tp-define-layer test-redef-props
+            :props (face (:foreground $tp-test-redef-fg))
+            :data ((tp-test-redef-fg . "red")))
+          (let ((props (cdr (assoc 'test-redef-props tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
+          ;; Re-define with different props structure
+          (tp-define-layer test-redef-props
+            :props (face (:background $tp-test-redef-bg) help-echo "new")
+            :data ((tp-test-redef-bg . "yellow")))
+          ;; Check new props are applied
+          (let ((props (cdr (assoc 'test-redef-props tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :background) "yellow"))
+            (should (equal (plist-get props 'help-echo) "new"))
+            ;; Old :foreground should NOT be present
+            (should (null (plist-get (plist-get props 'face) :foreground)))))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-redef-fg))
+      (ignore-errors (makunbound 'tp-test-redef-bg)))))
+
+(ert-deftest tp-test-redefine-layer-clears-old-reactive-deps ()
+  "Test that re-defining a layer with different reactive vars clears old dependencies."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition with $old-var
+          (tp-define-layer test-redef-deps
+            :props (face (:foreground $tp-test-old-var))
+            :data ((tp-test-old-var . "red")))
+          ;; Check old var is in dependencies
+          (should (assoc 'tp-test-old-var tp-reactive-deps))
+          (let ((deps (cdr (assoc 'tp-test-old-var tp-reactive-deps))))
+            (should (assoc 'test-redef-deps deps)))
+          ;; Re-define with $new-var
+          (tp-define-layer test-redef-deps
+            :props (face (:foreground $tp-test-new-var))
+            :data ((tp-test-new-var . "blue")))
+          ;; Check old var is no longer in dependencies for this layer
+          (when-let ((deps (cdr (assoc 'tp-test-old-var tp-reactive-deps))))
+            (should-not (assoc 'test-redef-deps deps)))
+          ;; Check new var is in dependencies
+          (should (assoc 'tp-test-new-var tp-reactive-deps))
+          (let ((deps (cdr (assoc 'tp-test-new-var tp-reactive-deps))))
+            (should (assoc 'test-redef-deps deps))))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-old-var))
+      (ignore-errors (makunbound 'tp-test-new-var)))))
+
+(ert-deftest tp-test-redefine-layer-updates-watchers ()
+  "Test that re-defining a layer updates :watch correctly."
+  (tp-test-with-temp-buffer
+    ;; Use defvar to create dynamically-bound variables that watcher callbacks can access
+    (defvar tp-test-watch-log-old nil "Log for old watcher.")
+    (defvar tp-test-watch-log-new nil "Log for new watcher.")
+    (setq tp-test-watch-log-old nil)
+    (setq tp-test-watch-log-new nil)
+    (unwind-protect
+        (progn
+          ;; First definition with old watcher
+          (tp-define-layer test-redef-watch
+            :props (face (:foreground $tp-test-watch-var))
+            :data ((tp-test-watch-var . "red"))
+            :watch ((tp-test-watch-var
+                     (lambda (new old layer)
+                       (push (list 'old new) tp-test-watch-log-old)))))
+          ;; Re-define with new watcher
+          (tp-define-layer test-redef-watch
+            :props (face (:foreground $tp-test-watch-var))
+            :data ((tp-test-watch-var . "red"))
+            :watch ((tp-test-watch-var
+                     (lambda (new old layer)
+                       (push (list 'new new) tp-test-watch-log-new)))))
+          ;; Change variable
+          (setq tp-test-watch-var "blue")
+          ;; Old watcher should NOT be called
+          (should (null tp-test-watch-log-old))
+          ;; New watcher should be called
+          (should (= (length tp-test-watch-log-new) 1))
+          (should (equal (car tp-test-watch-log-new) '(new "blue"))))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-watch-var))
+      (makunbound 'tp-test-watch-log-old)
+      (makunbound 'tp-test-watch-log-new))))
+
+(ert-deftest tp-test-redefine-layer-updates-compute ()
+  "Test that re-defining a layer updates :compute correctly."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition with old compute
+          (setq tp-test-compute-src "hello")
+          (tp-define-layer test-redef-compute
+            :props (help-echo $tp-test-compute-out)
+            :data (tp-test-compute-src)
+            :compute ((tp-test-compute-out
+                       (lambda () (upcase tp-test-compute-src)))))
+          (should (equal tp-test-compute-out "HELLO"))
+          ;; Re-define with different compute
+          (tp-define-layer test-redef-compute
+            :props (help-echo $tp-test-compute-out)
+            :data (tp-test-compute-src)
+            :compute ((tp-test-compute-out
+                       (lambda () (concat tp-test-compute-src "-suffix")))))
+          ;; Check compute is updated
+          (should (equal tp-test-compute-out "hello-suffix"))
+          ;; Trigger re-compute by changing source
+          (setq tp-test-compute-src "world")
+          (should (equal tp-test-compute-out "world-suffix")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-compute-src))
+      (ignore-errors (makunbound 'tp-test-compute-out)))))
+
+(ert-deftest tp-test-redefine-layer-from-reactive-to-static ()
+  "Test re-defining a layer from reactive to non-reactive clears dependencies."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition with reactive variable
+          (tp-define-layer test-reactive-to-static
+            :props (face (:foreground $tp-test-r2s-color))
+            :data ((tp-test-r2s-color . "red")))
+          ;; Check reactive dependency is registered
+          (should (assoc 'tp-test-r2s-color tp-reactive-deps))
+          ;; Re-define as static (non-reactive)
+          (tp-define-layer test-reactive-to-static
+            (face bold))
+          ;; Check reactive dependency is cleared
+          (when-let ((deps (cdr (assoc 'tp-test-r2s-color tp-reactive-deps))))
+            (should-not (assoc 'test-reactive-to-static deps)))
+          ;; Check layer has new static props
+          (let ((props (cdr (assoc 'test-reactive-to-static tp-layer-alist))))
+            (should (eq (plist-get props 'face) 'bold))))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-r2s-color)))))
+
+(ert-deftest tp-test-redefine-layer-group-updates-data ()
+  "Test that re-defining a layer group with different :data initial values updates the variable."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition
+          (tp-define-layer-group test-redef-group
+            ("layer1" :props (face (:background $tp-test-group-color))
+                      :data ((tp-test-group-color . "gray"))))
+          ;; Check initial value
+          (should (equal tp-test-group-color "gray"))
+          ;; Re-define with different color
+          (tp-define-layer-group test-redef-group
+            ("layer1" :props (face (:background $tp-test-group-color))
+                      :data ((tp-test-group-color . "blue"))))
+          ;; Check variable is updated
+          (should (equal tp-test-group-color "blue"))
+          ;; Check layer props are updated
+          (let ((props (cdr (assoc 'test-redef-group-layer1 tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :background) "blue"))))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-group-color)))))
+
+(ert-deftest tp-test-redefine-applied-layer-updates-text ()
+  "Test that re-defining a layer updates text regions that have it applied."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          ;; First definition
+          (tp-define-layer test-redef-applied
+            :props (face (:background $tp-test-applied-color))
+            :data ((tp-test-applied-color . "gray")))
+          ;; Apply to text
+          (insert "Hello World")
+          (tp-set 1 6 'test-redef-applied)
+          ;; Check initial color
+          (should (equal (plist-get (get-text-property 1 'face) :background) "gray"))
+          ;; Re-define with different color
+          (tp-define-layer test-redef-applied
+            :props (face (:background $tp-test-applied-color))
+            :data ((tp-test-applied-color . "blue")))
+          ;; The text should now have the new color
+          ;; This happens because tp-define-layer calls tp--update-layer-regions
+          ;; at the end to update all text regions with the new properties
+          (should (equal (plist-get (get-text-property 1 'face) :background) "blue")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-applied-color)))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
