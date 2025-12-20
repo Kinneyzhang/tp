@@ -16,6 +16,101 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+  - [Core Innovations](#core-innovations)
+- [Features](#features)
+  - [Unified API Parameter Conventions](#unified-api-parameter-conventions)
+  - [Three Property Operation Semantics](#three-property-operation-semantics)
+  - [Fine-grained Sub-property Operations](#fine-grained-sub-property-operations)
+  - [Innovative Property Layer System](#innovative-property-layer-system)
+  - [Pattern Matching & Batch Operations](#pattern-matching--batch-operations)
+  - [Reactive Text Properties](#-reactive-text-properties)
+  - [Enhanced Search & Navigation](#enhanced-search--navigation)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [API Reference](#api-reference)
+  - [API Quick Reference](#api-quick-reference)
+  - [Core Property Functions](#core-property-functions)
+    - [tp-set](#tp-set---set-text-properties)
+    - [tp-reset](#tp-reset---replace-all-properties)
+    - [tp-add](#tp-add---addmerge-properties)
+    - [tp-get](#tp-get---get-property-value)
+    - [tp-at](#tp-at---get-property-at-position)
+    - [tp-remove](#tp-remove---remove-property)
+    - [tp-clear](#tp-clear---clear-all-properties)
+  - [Pattern Matching Functions](#pattern-matching-functions)
+    - [tp-match-set](#tp-match-set---match-string)
+    - [tp-match-reset](#tp-match-reset---match-and-reset)
+    - [tp-match-add](#tp-match-add---match-and-add)
+    - [tp-regexp-set](#tp-regexp-set---match-regexp)
+    - [tp-regexp-reset](#tp-regexp-reset---regexp-and-reset)
+    - [tp-regexp-add](#tp-regexp-add---regexp-and-add)
+  - [Search & Navigation Functions](#search--navigation-functions)
+    - [tp-search-forward / tp-search-backward](#tp-search-forward--tp-search-backward)
+    - [tp-forward / tp-backward](#tp-forward--tp-backward)
+    - [tp-forward-do / tp-backward-do](#tp-forward-do--tp-backward-do)
+    - [tp-search](#tp-search---search-all-matches)
+    - [tp-search-map](#tp-search-map---apply-function-to-matched-text)
+- [The Property Layer System](#the-property-layer-system)
+  - [Property Layer Concept](#property-layer-concept)
+  - [Property Layer Definition](#property-layer-definition)
+    - [tp-define-layer](#tp-define-layer---define-single-layer)
+    - [tp-define-layer-group](#tp-define-layer-group---define-layer-group)
+    - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
+    - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
+    - [tp-layer-reset](#tp-layer-reset)
+    - [tp-reactive-reset](#tp-reactive-reset)
+  - [Property Layer Placement](#property-layer-placement)
+    - [tp-put-layer](#tp-put-layer---set-layer-at-index)
+    - [tp-push-layer](#tp-push-layer---push-layer-to-top)
+  - [Property Layer Deletion](#property-layer-deletion)
+    - [tp-delete-layer](#tp-delete-layer---delete-layer-by-nameindex)
+    - [tp-pop-layer](#tp-pop-layer---pop-top-layer)
+  - [Property Layer Movement](#property-layer-movement)
+    - [tp-move-layer](#tp-move-layer---move-layer-to-position)
+    - [tp-raise-layer](#tp-raise-layer---move-layer-updown)
+    - [tp-rotate-layer](#tp-rotate-layer---cycle-layers)
+    - [tp-pin-layer](#tp-pin-layer---pin-layer-to-top)
+    - [tp-switch-layer](#tp-switch-layer---switch-two-layers)
+  - [Property Layer Merging](#property-layer-merging)
+    - [tp-merge-layers](#tp-merge-layers---merge-multiple-layers)
+    - [tp-flatten-layers](#tp-flatten-layers---flatten-all-layers)
+  - [Property Layer Query Functions](#property-layer-query-functions)
+    - [tp-layer-list](#tp-layer-list---list-all-layers)
+    - [tp-layer-count](#tp-layer-count)
+    - [tp-layer-exists-p](#tp-layer-exists-p)
+    - [tp-layer-top](#tp-layer-top)
+    - [tp-add-to-layers](#tp-add-to-layers---add-properties-to-specific-layers)
+    - [tp-add-to-all-layers](#tp-add-to-all-layers---add-properties-to-all-layers)
+  - [Utility Functions](#utility-functions)
+    - [tp-intervals](#tp-intervals---get-text-property-intervals)
+    - [tp-intervals-map](#tp-intervals-map---apply-function-to-intervals)
+    - [tp-plist](#tp-plist---get-all-properties-in-region)
+    - [tp-empty-p](#tp-empty-p---check-if-object-has-properties)
+    - [tp-region-layer-props](#tp-region-layer-props---get-layer-properties-in-region)
+- [Reactive Text Properties](#reactive-text-properties)
+  - [Core Concept](#core-concept)
+  - [How It Works](#how-it-works)
+  - [Defining Reactive Layers](#defining-reactive-layers)
+  - [:data - Additional Reactive State](#data---additional-reactive-state)
+  - [:compute - Computed Properties](#compute---computed-properties)
+  - [:watch - Side Effect Callbacks](#watch---side-effect-callbacks)
+  - [Anonymous Reactive Layers](#anonymous-reactive-layers)
+  - [Layer Name Resolution in APIs](#layer-name-resolution-in-apis)
+  - [Reactive Layer Groups](#reactive-layer-groups)
+  - [Resetting Reactive State](#resetting-reactive-state)
+  - [Complete Example: Theme-Aware Text](#complete-example-theme-aware-text)
+- [Practical Examples](#practical-examples)
+  - [Syntax Highlighting with Multiple Layers](#syntax-highlighting-with-multiple-layers)
+  - [Status Indicator](#status-indicator)
+  - [Temporary Highlights](#temporary-highlights)
+- [License](#license)
+- [Contributing](#contributing)
+
+---
+
 ## Overview
 
 **tp.el** is a library that comprehensively enhances Emacs text property manipulation. It is not just a simple wrapper around native text property APIs (like `put-text-property`, `get-text-property`), but provides many **functional extensions that native functions do not have**. tp.el innovates in the following areas:
@@ -310,13 +405,17 @@ Set text properties on a string or buffer region. Replaces only the specified pr
 ```elisp
 ;; Current buffer (properties as a list)
 (tp-set START END '(PROPERTY VALUE ...))
+(tp-set START END LAYER-NAME)
 
 ;; Specific buffer or string
 (tp-set START END '(PROPERTY VALUE ...) OBJECT)
+(tp-set START END LAYER-NAME OBJECT)
 
 ;; Entire string (flat properties)
 (tp-set STRING PROPERTY VALUE ...)
 ```
+
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 
 **Examples:**
 
@@ -331,6 +430,14 @@ Set text properties on a string or buffer region. Replaces only the specified pr
 (with-temp-buffer
   (insert "Hello World")
   (tp-set 1 10 '(face bold help-echo "Click me")))
+;; => (1 . 10)
+
+;; Use a defined layer name
+(tp-define-layer warning-style
+  (face (:foreground "orange" :weight bold)))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 'warning-style))
 ;; => (1 . 10)
 
 ;; Set on specific buffer
@@ -359,8 +466,11 @@ Completely replace ALL text properties with the specified ones.
 
 ```elisp
 (tp-reset START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-reset START END LAYER-NAME &optional OBJECT)
 (tp-reset STRING PROPERTY VALUE ...)
 ```
+
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 
 **Examples:**
 
@@ -376,6 +486,14 @@ Completely replace ALL text properties with the specified ones.
 ;; On string
 (tp-reset "Hello" 'face 'italic)
 ;; => #("Hello" 0 5 (face italic))
+
+;; Use a defined layer name
+(tp-define-layer error-style
+  (face (:foreground "red" :weight bold)))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-reset 1 10 'error-style))
+;; => (1 . 10)  ; All properties replaced with error-style
 ```
 
 ---
@@ -386,8 +504,11 @@ Add or update properties with deep merge support for nested plists.
 
 ```elisp
 (tp-add START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-add START END LAYER-NAME &optional OBJECT)
 (tp-add STRING PROPERTY VALUE ...)
 ```
+
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 
 **Examples:**
 
@@ -413,6 +534,16 @@ Add or update properties with deep merge support for nested plists.
   (tp-add str 'face 'shadow)
   (tp-at 0 'face str))
 ;; => (shadow bold)
+
+;; Use a defined layer name
+(tp-define-layer highlight-style
+  (face (:background "yellow")))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-add 1 10 'highlight-style)
+  (tp-at 1))
+;; => Properties merged with highlight-style
 ```
 
 ---
@@ -677,11 +808,13 @@ Clear all text properties from a region.
 
 ```elisp
 (tp-match-set PATTERN PLIST &optional OBJECT)
+(tp-match-set PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 Set properties on all occurrences of a string pattern.
 PATTERN can be a string (single pattern) or a list of strings (multiple patterns).
 PLIST is a property list like `'(face bold help-echo "tip")`.
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 OBJECT is a buffer or string; nil means current buffer.
 
 **Examples:**
@@ -706,6 +839,14 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; Multiple patterns on string
 (tp-match-set '("Hello" "world") '(face bold) "Hello world")
 ;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
+
+;; Use a defined layer name
+(tp-define-layer todo-style
+  (face (:foreground "orange" :weight bold)))
+(with-temp-buffer
+  (insert "TODO: fix this. TODO: also this.")
+  (tp-match-set "TODO" 'todo-style))
+;; => ((1 . 5) (17 . 21))
 ```
 
 ---
@@ -715,10 +856,12 @@ OBJECT is a buffer or string; nil means current buffer.
 Reset (completely replace) all properties on matches.
 PATTERN can be a string or list of strings (multiple patterns).
 PLIST is a property list like `'(face bold help-echo "tip")`.
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 (tp-match-reset PATTERN PLIST &optional OBJECT)
+(tp-match-reset PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **Examples:**
@@ -737,6 +880,14 @@ OBJECT is a buffer or string; nil means current buffer.
   (insert "TODO: fix. FIXME: also fix.")
   (tp-match-reset '("TODO" "FIXME") '(face warning)))
 ;; => ((1 . 5) (12 . 17))
+
+;; Use a defined layer name
+(tp-define-layer alert-style
+  (face (:background "red" :foreground "white")))
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-match-reset "TODO" 'alert-style))
+;; => ((1 . 5))
 ```
 
 ---
@@ -746,10 +897,12 @@ OBJECT is a buffer or string; nil means current buffer.
 Add/merge properties on matches with deep merge support.
 PATTERN can be a string or list of strings (multiple patterns).
 PLIST is a property list like `'(face bold help-echo "tip")`.
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 (tp-match-add PATTERN PLIST &optional OBJECT)
+(tp-match-add PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **Examples:**
@@ -768,6 +921,14 @@ OBJECT is a buffer or string; nil means current buffer.
   (insert "TODO: fix. FIXME: also fix.")
   (tp-match-add '("TODO" "FIXME") '(face (:underline t))))
 ;; => ((1 . 5) (12 . 17))
+
+;; Use a defined layer name
+(tp-define-layer underline-style
+  (face (:underline (:color "blue" :style wave))))
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-match-add "TODO" 'underline-style))
+;; => ((1 . 5))
 ```
 
 ---
@@ -776,11 +937,13 @@ OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 (tp-regexp-set PATTERN PLIST &optional OBJECT)
+(tp-regexp-set PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 Set properties on all matches of a regular expression.
 PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 OBJECT is a buffer or string; nil means current buffer.
 
 **Examples:**
@@ -800,6 +963,14 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; Multiple regexps - match both numbers and uppercase letters
 (tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
 ;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
+
+;; Use a defined layer name
+(tp-define-layer number-style
+  (face (:foreground "green")))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-set "[0-9]+" 'number-style))
+;; => ((5 . 8) (13 . 16))
 ```
 
 ---
@@ -809,10 +980,12 @@ OBJECT is a buffer or string; nil means current buffer.
 Reset (completely replace) all properties on regexp matches.
 PATTERN can be a string or list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 (tp-regexp-reset PATTERN PLIST &optional OBJECT)
+(tp-regexp-reset PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **Examples:**
@@ -832,6 +1005,14 @@ OBJECT is a buffer or string; nil means current buffer.
   (tp-regexp-reset "[0-9]+" '(face italic) str)
   (tp-at 4 str))
 ;; => (face italic)
+
+;; Use a defined layer name
+(tp-define-layer code-number
+  (face (:foreground "cyan")))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-reset "[0-9]+" 'code-number))
+;; => ((5 . 8) (13 . 16))
 ```
 
 ---
@@ -841,10 +1022,12 @@ OBJECT is a buffer or string; nil means current buffer.
 Add/merge properties on regexp matches with deep merge support.
 PATTERN can be a string or list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
+LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
 (tp-regexp-add PATTERN PLIST &optional OBJECT)
+(tp-regexp-add PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **Examples:**
@@ -864,6 +1047,14 @@ OBJECT is a buffer or string; nil means current buffer.
   (tp-regexp-add "[0-9]+" '(face italic) str)
   (tp-at 4 str))
 ;; => (face italic help-echo "number")
+
+;; Use a defined layer name
+(tp-define-layer bold-underline
+  (face (:weight bold :underline t)))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-add "[0-9]+" 'bold-underline))
+;; => ((5 . 8) (13 . 16))
 ```
 
 ---

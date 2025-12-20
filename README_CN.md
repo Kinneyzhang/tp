@@ -15,6 +15,101 @@
 
 ---
 
+## 目录
+
+- [概述](#概述)
+  - [核心创新](#核心创新)
+- [功能特性](#功能特性)
+  - [统一的 API 参数规范](#统一的-api-参数规范)
+  - [三种属性操作语义](#三种属性操作语义)
+  - [子属性的精细操作](#子属性的精细操作)
+  - [创新的属性层系统](#创新的属性层系统)
+  - [模式匹配与批量操作](#模式匹配与批量操作)
+  - [响应式文本属性](#-响应式文本属性)
+  - [增强的搜索与导航](#增强的搜索与导航)
+- [系统要求](#系统要求)
+- [安装](#安装)
+- [API 参考](#api-参考)
+  - [API 快速参考](#api-快速参考)
+  - [核心属性函数](#核心属性函数)
+    - [tp-set](#tp-set---设置文本属性)
+    - [tp-reset](#tp-reset---替换所有属性)
+    - [tp-add](#tp-add---添加合并属性)
+    - [tp-get](#tp-get---获取属性值)
+    - [tp-at](#tp-at---获取位置属性)
+    - [tp-remove](#tp-remove---移除属性)
+    - [tp-clear](#tp-clear---清除所有属性)
+  - [模式匹配函数](#模式匹配函数)
+    - [tp-match-set](#tp-match-set---匹配字符串)
+    - [tp-match-reset](#tp-match-reset---匹配并重置)
+    - [tp-match-add](#tp-match-add---匹配并添加)
+    - [tp-regexp-set](#tp-regexp-set---匹配正则表达式)
+    - [tp-regexp-reset](#tp-regexp-reset---正则匹配并重置)
+    - [tp-regexp-add](#tp-regexp-add---正则匹配并添加)
+  - [搜索和导航函数](#搜索和导航函数)
+    - [tp-search-forward / tp-search-backward](#tp-search-forward--tp-search-backward)
+    - [tp-forward / tp-backward](#tp-forward--tp-backward)
+    - [tp-forward-do / tp-backward-do](#tp-forward-do--tp-backward-do)
+    - [tp-search](#tp-search---搜索所有匹配)
+    - [tp-search-map](#tp-search-map---对匹配文本应用函数)
+- [属性层系统](#属性层系统)
+  - [属性层概念](#属性层概念)
+  - [属性层定义](#属性层定义)
+    - [tp-define-layer](#tp-define-layer---定义单个属性层)
+    - [tp-define-layer-group](#tp-define-layer-group---定义属性层组)
+    - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
+    - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
+    - [tp-layer-reset](#tp-layer-reset)
+    - [tp-reactive-reset](#tp-reactive-reset)
+  - [属性层放置](#属性层放置)
+    - [tp-put-layer](#tp-put-layer---在指定位置设置属性层)
+    - [tp-push-layer](#tp-push-layer---推送属性层到顶部)
+  - [属性层删除](#属性层删除)
+    - [tp-delete-layer](#tp-delete-layer---按名称索引删除属性层)
+    - [tp-pop-layer](#tp-pop-layer---弹出顶层)
+  - [属性层移动](#属性层移动)
+    - [tp-move-layer](#tp-move-layer---移动属性层到指定位置)
+    - [tp-raise-layer](#tp-raise-layer---上移下移属性层)
+    - [tp-rotate-layer](#tp-rotate-layer---轮换属性层)
+    - [tp-pin-layer](#tp-pin-layer---将属性层置顶)
+    - [tp-switch-layer](#tp-switch-layer---交换两个属性层)
+  - [属性层合并](#属性层合并)
+    - [tp-merge-layers](#tp-merge-layers---合并多个属性层)
+    - [tp-flatten-layers](#tp-flatten-layers---扁平化所有属性层)
+  - [属性层查询函数](#属性层查询函数)
+    - [tp-layer-list](#tp-layer-list---列出所有属性层)
+    - [tp-layer-count](#tp-layer-count)
+    - [tp-layer-exists-p](#tp-layer-exists-p)
+    - [tp-layer-top](#tp-layer-top)
+    - [tp-add-to-layers](#tp-add-to-layers---向特定属性层添加属性)
+    - [tp-add-to-all-layers](#tp-add-to-all-layers---向所有属性层添加属性)
+  - [实用工具函数](#实用工具函数)
+    - [tp-intervals](#tp-intervals---获取文本属性区间)
+    - [tp-intervals-map](#tp-intervals-map---对区间应用函数)
+    - [tp-plist](#tp-plist---获取区域中的所有属性)
+    - [tp-empty-p](#tp-empty-p---检查对象是否有属性)
+    - [tp-region-layer-props](#tp-region-layer-props---获取区域中的层属性)
+- [响应式文本属性](#响应式文本属性)
+  - [核心概念](#核心概念)
+  - [工作原理](#工作原理)
+  - [定义响应式层](#定义响应式层)
+  - [:data - 附加响应式状态](#data---附加响应式状态)
+  - [:compute - 计算属性](#compute---计算属性)
+  - [:watch - 副作用回调](#watch---副作用回调)
+  - [匿名响应式层](#匿名响应式层)
+  - [API 中的层名解析](#api-中的层名解析)
+  - [响应式层组](#响应式层组)
+  - [重置响应式状态](#重置响应式状态)
+  - [完整示例：主题感知文本](#完整示例主题感知文本)
+- [实用示例](#实用示例)
+  - [多属性层语法高亮](#多属性层语法高亮)
+  - [状态指示器](#状态指示器)
+  - [临时高亮](#临时高亮)
+- [许可证](#许可证)
+- [贡献](#贡献)
+
+---
+
 ## 概述
 
 **tp.el** 是一个全面增强 Emacs 文本属性操作的库。它不仅仅是对原生文本属性 API（如 `put-text-property`、`get-text-property`）的简单封装，更提供了许多**原生函数所不具备的功能拓展**。tp.el 在以下方面进行了创新：
@@ -309,13 +404,17 @@ tp.el 所有函数按类别组织的完整概览：
 ```elisp
 ;; 当前缓冲区（属性作为列表）
 (tp-set START END '(PROPERTY VALUE ...))
+(tp-set START END LAYER-NAME)
 
 ;; 特定缓冲区或字符串
 (tp-set START END '(PROPERTY VALUE ...) OBJECT)
+(tp-set START END LAYER-NAME OBJECT)
 
 ;; 整个字符串（平铺属性）
 (tp-set STRING PROPERTY VALUE ...)
 ```
+
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 
 **示例：**
 
@@ -348,6 +447,14 @@ tp.el 所有函数按类别组织的完整概览：
 ;; 在整个字符串上设置属性
 (tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
+
+;; 使用已定义的层名称
+(tp-define-layer warning-style
+  (face (:foreground "orange" :weight bold)))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 'warning-style))
+;; => (1 . 10)
 ```
 
 ---
@@ -358,8 +465,11 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 (tp-reset START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-reset START END LAYER-NAME &optional OBJECT)
 (tp-reset STRING PROPERTY VALUE ...)
 ```
+
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 
 **示例：**
 
@@ -375,6 +485,14 @@ tp.el 所有函数按类别组织的完整概览：
 ;; 在字符串上
 (tp-reset "Hello" 'face 'italic)
 ;; => #("Hello" 0 5 (face italic))
+
+;; 使用已定义的层名称
+(tp-define-layer error-style
+  (face (:foreground "red" :weight bold)))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-reset 1 10 'error-style))
+;; => (1 . 10)  ; 所有属性被 error-style 替换
 ```
 
 ---
@@ -385,8 +503,11 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 (tp-add START END '(PROPERTY VALUE ...) &optional OBJECT)
+(tp-add START END LAYER-NAME &optional OBJECT)
 (tp-add STRING PROPERTY VALUE ...)
 ```
+
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 
 **示例：**
 
@@ -412,6 +533,16 @@ tp.el 所有函数按类别组织的完整概览：
   (tp-add str 'face 'shadow)
   (tp-at 0 'face str))
 ;; => (shadow bold)
+
+;; 使用已定义的层名称
+(tp-define-layer highlight-style
+  (face (:background "yellow")))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 10 '(face bold))
+  (tp-add 1 10 'highlight-style)
+  (tp-at 1))
+;; => 属性与 highlight-style 合并
 ```
 
 ---
@@ -676,11 +807,13 @@ tp.el 所有函数按类别组织的完整概览：
 
 ```elisp
 (tp-match-set PATTERN PLIST &optional OBJECT)
+(tp-match-set PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 在所有字符串模式匹配处设置属性。
 PATTERN 可以是字符串（单个模式）或字符串列表（多个模式）。
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 **示例：**
@@ -705,6 +838,14 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; 在字符串上使用多个模式
 (tp-match-set '("Hello" "world") '(face bold) "Hello world")
 ;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
+
+;; 使用已定义的层名称
+(tp-define-layer todo-style
+  (face (:foreground "orange" :weight bold)))
+(with-temp-buffer
+  (insert "TODO: fix this. TODO: also this.")
+  (tp-match-set "TODO" 'todo-style))
+;; => ((1 . 5) (17 . 21))
 ```
 
 ---
@@ -714,10 +855,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 重置（完全替换）匹配处的所有属性。
 PATTERN 可以是字符串或字符串列表（多个模式）。
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 (tp-match-reset PATTERN PLIST &optional OBJECT)
+(tp-match-reset PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **示例：**
@@ -736,6 +879,14 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (insert "TODO: fix. FIXME: also fix.")
   (tp-match-reset '("TODO" "FIXME") '(face warning)))
 ;; => ((1 . 5) (12 . 17))
+
+;; 使用已定义的层名称
+(tp-define-layer alert-style
+  (face (:background "red" :foreground "white")))
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-match-reset "TODO" 'alert-style))
+;; => ((1 . 5))
 ```
 
 ---
@@ -745,10 +896,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 在匹配处添加/合并属性，支持深度合并。
 PATTERN 可以是字符串或字符串列表（多个模式）。
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 (tp-match-add PATTERN PLIST &optional OBJECT)
+(tp-match-add PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **示例：**
@@ -767,6 +920,14 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (insert "TODO: fix. FIXME: also fix.")
   (tp-match-add '("TODO" "FIXME") '(face (:underline t))))
 ;; => ((1 . 5) (12 . 17))
+
+;; 使用已定义的层名称
+(tp-define-layer underline-style
+  (face (:underline (:color "blue" :style wave))))
+(with-temp-buffer
+  (insert "TODO: fix this")
+  (tp-match-add "TODO" 'underline-style))
+;; => ((1 . 5))
 ```
 
 ---
@@ -775,11 +936,13 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 (tp-regexp-set PATTERN PLIST &optional OBJECT)
+(tp-regexp-set PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 在所有正则表达式匹配处设置属性。
 PATTERN 可以是字符串（单个正则）或字符串列表（多个正则）。
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 **示例：**
@@ -799,6 +962,14 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; 多个正则 - 同时匹配数字和大写字母
 (tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
 ;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
+
+;; 使用已定义的层名称
+(tp-define-layer number-style
+  (face (:foreground "green")))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-set "[0-9]+" 'number-style))
+;; => ((5 . 8) (13 . 16))
 ```
 
 ---
@@ -808,10 +979,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 重置（完全替换）正则匹配处的所有属性。
 PATTERN 可以是字符串或字符串列表（多个正则）。
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 (tp-regexp-reset PATTERN PLIST &optional OBJECT)
+(tp-regexp-reset PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **示例：**
@@ -831,6 +1004,14 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (tp-regexp-reset "[0-9]+" '(face italic) str)
   (tp-at 4 str))
 ;; => (face italic)
+
+;; 使用已定义的层名称
+(tp-define-layer code-number
+  (face (:foreground "cyan")))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-reset "[0-9]+" 'code-number))
+;; => ((5 . 8) (13 . 16))
 ```
 
 ---
@@ -840,10 +1021,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 在正则匹配处添加/合并属性，支持深度合并。
 PATTERN 可以是字符串或字符串列表（多个正则）。
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
+LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-define-layer-group` 定义的层组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
 (tp-regexp-add PATTERN PLIST &optional OBJECT)
+(tp-regexp-add PATTERN LAYER-NAME &optional OBJECT)
 ```
 
 **示例：**
@@ -863,6 +1046,14 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (tp-regexp-add "[0-9]+" '(face italic) str)
   (tp-at 4 str))
 ;; => (face italic help-echo "number")
+
+;; 使用已定义的层名称
+(tp-define-layer bold-underline
+  (face (:weight bold :underline t)))
+(with-temp-buffer
+  (insert "abc 123 def 456")
+  (tp-regexp-add "[0-9]+" 'bold-underline))
+;; => ((5 . 8) (13 . 16))
 ```
 
 ---
