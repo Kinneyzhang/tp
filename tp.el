@@ -58,9 +58,6 @@ REACTIVE-PROPS contains only the property key-value pairs that use this variable
 For example, for (define-tp my-layer (help-echo \"test\" face (:foreground $color))),
 only (face (:foreground $color)) is stored, not the help-echo.")
 
-(defvar tp-reactive-enabled t
-  "Non-nil means reactive text property updates are enabled.")
-
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
@@ -108,8 +105,9 @@ REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
     (let ((result nil))
       (cl-loop for (key subval) on val by #'cddr
                when (member reactive-var (tp--collect-reactive-symbols subval))
-               do (setq result (plist-put result key
-                                          (tp--extract-reactive-value subval reactive-var))))
+               do (setq result
+                        (plist-put result key
+                                   (tp--extract-reactive-value subval reactive-var))))
       result))
    ;; Otherwise return val as-is if it contains the reactive var
    (t val)))
@@ -122,8 +120,9 @@ REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
   (let ((result nil))
     (cl-loop for (key val) on plist by #'cddr
              when (member reactive-var (tp--collect-reactive-symbols val))
-             do (setq result (plist-put result key
-                                        (tp--extract-reactive-value val reactive-var))))
+             do (setq result
+                      (plist-put result key
+                                 (tp--extract-reactive-value val reactive-var))))
     result))
 
 (defun tp--resolve-reactive-symbols (form &optional override-alist)
@@ -183,7 +182,8 @@ Only the reactive portions of the properties are stored for each variable."
     (dolist (var-sym vars-to-clean)
       (remove-variable-watcher var-sym #'tp--reactive-variable-watcher)))
   ;; Clean up empty dependency entries
-  (setq tp-reactive-deps (cl-remove-if (lambda (dep) (null (cdr dep))) tp-reactive-deps)))
+  (setq tp-reactive-deps
+        (cl-remove-if (lambda (dep) (null (cdr dep))) tp-reactive-deps)))
 
 (defun tp--reactive-variable-watcher (symbol newval operation _where)
   "Watcher function called when a reactive variable changes.
@@ -196,7 +196,7 @@ Only 'set' operations trigger updates because:
 - 'let'/'unlet': Temporary bindings that will be restored, no need to update UI
 - 'makunbound': Variable is being undefined, not a value change
 - 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'"
-  (when (and tp-reactive-enabled
+  (when (and (not (equal (symbol-value symbol) newval))
              (eq operation 'set))
     (let ((deps (cdr (assoc symbol tp-reactive-deps)))
           ;; Create override alist with the new value
@@ -208,7 +208,8 @@ Only 'set' operations trigger updates because:
                (reactive-props (cdr dep)))
           (when reactive-props
             ;; Resolve the reactive props with the new value override
-            (let ((resolved-props (tp--resolve-reactive-symbols reactive-props override-alist)))
+            (let ((resolved-props (tp--resolve-reactive-symbols
+                                   reactive-props override-alist)))
               ;; Update only the reactive properties in the layer definition
               (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
                 (when current-props
@@ -380,17 +381,19 @@ Return the modified object (string) or region (START . END) for buffer."
 For nested plists (starting with keyword), recursively merge.
 NEW values override BASE values."
   (let ((result (copy-sequence base)))
-    (cl-loop for (key val) on new by #'cddr
-             do (let ((base-val (plist-get result key)))
-                  (setq result
-                        (plist-put result key
-                                   (cond
-                                    ;; Both are plists - recursively merge
-                                    ((and (listp val) (keywordp (car-safe val))
-                                          (listp base-val) (keywordp (car-safe base-val)))
-                                     (tp--deep-merge-plist base-val val))
-                                    ;; Otherwise use new value
-                                    (t val))))))
+    (cl-loop
+     for (key val) on new by #'cddr
+     do (let ((base-val (plist-get result key)))
+          (setq result
+                (plist-put
+                 result key
+                 (cond
+                  ;; Both are plists - recursively merge
+                  ((and (listp val) (keywordp (car-safe val))
+                        (listp base-val) (keywordp (car-safe base-val)))
+                   (tp--deep-merge-plist base-val val))
+                  ;; Otherwise use new value
+                  (t val))))))
     result))
 
 (defun tp--prepend-face (new-face existing-face)
@@ -641,7 +644,9 @@ OBJECT defaults to current buffer."
               (pos 0))
           (while (< pos len)
             (let* ((prop-value (get-text-property pos property str))
-                   (next-pos (or (next-single-property-change pos property str len) len))
+                   (next-pos (or (next-single-property-change
+                                  pos property str len)
+                                 len))
                    (value (if sub-path
                               (tp--get-nested prop-value sub-path)
                             prop-value)))
@@ -657,7 +662,9 @@ OBJECT defaults to current buffer."
               (pos 0))
           (while (< pos len)
             (let* ((prop-value (get-text-property pos property str))
-                   (next-pos (or (next-single-property-change pos property str len) len))
+                   (next-pos (or (next-single-property-change
+                                  pos property str len)
+                                 len))
                    (value (if sub-path
                               (tp--get-nested prop-value sub-path)
                             prop-value)))
@@ -704,7 +711,9 @@ OBJECT defaults to current buffer."
                 (intervals nil))
             (while (< pos end)
               (let* ((prop-value (get-text-property pos property object))
-                     (next-pos (or (next-single-property-change pos property object end) end))
+                     (next-pos (or (next-single-property-change
+                                    pos property object end)
+                                   end))
                      (value (if sub-path
                                 (tp--get-nested prop-value sub-path)
                               prop-value)))
@@ -844,13 +853,17 @@ PROPERTY can be a symbol or a list for nested removal."
         (let ((pos start))
           (while (< pos end)
             (let* ((current-value (get-text-property pos prop-name object))
-                   (next-pos (or (next-single-property-change pos prop-name object end) end)))
+                   (next-pos (or (next-single-property-change
+                                  pos prop-name object end)
+                                 end)))
               (when current-value
-                (let* ((sub-value (if (and (listp current-value) (keywordp (car current-value)))
-                                      (plist-get current-value sub-key)
-                                    nil))
-                       (new-sub-value (when (and (listp sub-value) (keywordp (car sub-value)))
-                                        (tp--remove-nested-keys sub-value nested-keys)))
+                (let* ((sub-value
+                        (if (and (listp current-value) (keywordp (car current-value)))
+                            (plist-get current-value sub-key)
+                          nil))
+                       (new-sub-value
+                        (when (and (listp sub-value) (keywordp (car sub-value)))
+                          (tp--remove-nested-keys sub-value nested-keys)))
                        (new-value
                         (cond
                          ((and (listp current-value) (keywordp (car current-value)))
@@ -1060,7 +1073,8 @@ Merges nested plists instead of replacing them."
                            (new-val
                             (cond
                              ((and (listp val) (keywordp (car-safe val))
-                                   (listp current-val) (keywordp (car-safe current-val)))
+                                   (listp current-val)
+                                   (keywordp (car-safe current-val)))
                               (tp--deep-merge-plist current-val val))
                              (t val))))
                       (put-text-property pos next-pos key new-val obj)))
@@ -1917,7 +1931,8 @@ and the group itself is stored in `tp-layer-groups'."
             (if reactive-syms
                 ;; Has reactive symbols - register dependencies and resolve at runtime
                 (push `(progn
-                         (tp--register-reactive-deps ',layer-name ',reactive-syms ',props)
+                         (tp--register-reactive-deps
+                          ',layer-name ',reactive-syms ',props)
                          (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
                            (tp--set-layer-props ',layer-name resolved-props)))
                       layer-defs)
@@ -2117,7 +2132,8 @@ Returns (TOP-PROPS . BELOW-PROPS-LIST)."
   (let* ((props (text-properties-at pos object))
          (tp-layers-idx (-elem-index 'tp-layers props))
          (top-props (if tp-layers-idx
-                        (-remove-at-indices (list tp-layers-idx (1+ tp-layers-idx)) props)
+                        (-remove-at-indices
+                         (list tp-layers-idx (1+ tp-layers-idx)) props)
                       props))
          (below-props (plist-get props 'tp-layers)))
     (cons top-props below-props)))
@@ -2641,7 +2657,8 @@ NAME can be nil for an unnamed layer."
              ;; Use merge with all layers
              (let* ((layers-to-merge
                      (cl-loop for id in all-ids
-                              for found = (tp--get-layer-by-idx-or-name current-stack id)
+                              for found = (tp--get-layer-by-idx-or-name
+                                           current-stack id)
                               when found collect found))
                     (merged-props
                      (cl-reduce (lambda (acc layer)
@@ -2745,7 +2762,9 @@ Returns the modified object (string) or nil for buffer operations."
             obj (car rest))))
 
     ;; Handle plist wrapped in a list (from region form)
-    (when (and (listp plist) (not (keywordp (car-safe plist))) (listp (car-safe plist)))
+    (when (and (listp plist)
+               (not (keywordp (car-safe plist)))
+               (listp (car-safe plist)))
       (setq plist (car plist)))
 
     ;; Process each interval
@@ -2758,7 +2777,8 @@ Returns the modified object (string) or nil for buffer operations."
                         collect
                         (if (cl-some
                              (lambda (id)
-                               (let ((found (tp--get-layer-by-idx-or-name current-stack id)))
+                               (let ((found (tp--get-layer-by-idx-or-name
+                                             current-stack id)))
                                  (and found (= (car found) i))))
                              layer-ids)
                             ;; Merge plist into this layer
@@ -2814,7 +2834,9 @@ Returns the modified object (string) or nil for buffer operations."
             obj (car rest))))
 
     ;; Handle plist wrapped in a list (from region form)
-    (when (and (listp plist) (not (keywordp (car-safe plist))) (listp (car-safe plist)))
+    (when (and (listp plist)
+               (not (keywordp (car-safe plist)))
+               (listp (car-safe plist)))
       (setq plist (car plist)))
 
     ;; Get the maximum layer count in the region to build a list of all indices
