@@ -275,10 +275,15 @@ by `define-tp' or `define-tp-group', which will be resolved to its properties."
         (setq object nil
               props props-or-val)))
      (t (error "Invalid first argument: %S" start-or-string)))
-    ;; Resolve layer/group name to properties if props is a symbol
+    ;; Resolve layer/group name to properties if props is a symbol.
+    ;; This allows passing layer names like 'my-layer instead of property lists.
     (when (symbolp props)
       (setq props (or (tp--resolve-props props) props)))
-    ;; Handle properties as a list (only if props is a list and its first element is also a list)
+    ;; Unwrap double-wrapped properties: when called as (tp-set 1 6 '(face bold)),
+    ;; props is already the plist.  But when called internally or from certain
+    ;; contexts, props might be wrapped in an extra list like '((face bold)).
+    ;; We detect this by checking if props is a list whose first element is also
+    ;; a list (not just a symbol like 'face).
     (when (and (listp props) (listp (car-safe props)))
       (setq props (car props)))
     (list object start finish props)))
@@ -1062,8 +1067,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
-    (tp--match-apply pattern props #'tp-set object)))
+  (tp--match-apply pattern (tp--ensure-props plist) #'tp-set object))
 
 (defun tp-match-reset (pattern plist &optional object)
   "Reset (completely replace) properties on all occurrences of PATTERN.
@@ -1077,11 +1081,10 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-match-set', this completely replaces all existing properties."
-  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
-    (tp--match-apply pattern props
-                     (lambda (start end props obj)
-                       (set-text-properties start end props obj))
-                     object)))
+  (tp--match-apply pattern (tp--ensure-props plist)
+                   (lambda (start end props obj)
+                     (set-text-properties start end props obj))
+                   object))
 
 (defun tp-match-add (pattern plist &optional object)
   "Add/update properties on all occurrences of PATTERN.
@@ -1095,8 +1098,7 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-match-set', this deeply merges nested properties."
-  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
-    (tp--match-apply pattern props #'tp--deep-merge-apply object)))
+  (tp--match-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply object))
 
 (defun tp-regexp-set (pattern plist &optional object)
   "Set properties on all matches of PATTERN (regexp).
@@ -1113,8 +1115,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Returns:
 - For strings: the modified string
 - For buffers: list of (START . END) pairs for all matches."
-  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
-    (tp--regexp-apply pattern props #'tp-set object)))
+  (tp--regexp-apply pattern (tp--ensure-props plist) #'tp-set object))
 
 (defun tp-regexp-reset (pattern plist &optional object)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
@@ -1128,11 +1129,10 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-regexp-set', this completely replaces all existing properties."
-  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
-    (tp--regexp-apply pattern props
-                      (lambda (start end props obj)
-                        (set-text-properties start end props obj))
-                      object)))
+  (tp--regexp-apply pattern (tp--ensure-props plist)
+                    (lambda (start end props obj)
+                      (set-text-properties start end props obj))
+                    object))
 
 (defun tp-regexp-add (pattern plist &optional object)
   "Add/update properties on all regexp matches of PATTERN.
@@ -1146,8 +1146,7 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
 Unlike `tp-regexp-set', this deeply merges nested properties."
-  (let ((props (if (symbolp plist) (or (tp--resolve-props plist) plist) plist)))
-    (tp--regexp-apply pattern props #'tp--deep-merge-apply object)))
+  (tp--regexp-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply object))
 
 ;;; Search functions
 
@@ -1963,6 +1962,9 @@ If PROPS is a symbol:
 - First checks `tp-layer-alist' and returns the layer properties
 - Then checks `tp-layer-groups' and returns the first layer's properties
 
+Returns nil if PROPS is a symbol but no matching layer/group is found,
+or if the group's first layer doesn't exist in `tp-layer-alist'.
+
 Unlike `tp-layer-props', this does NOT add the `tp-name' property,
 making it suitable for use with basic property-setting APIs like
 `tp-set', `tp-add', `tp-match-set', etc."
@@ -1978,11 +1980,21 @@ making it suitable for use with basic property-setting APIs like
      ;; Check group (use first layer's properties)
      ((assoc props tp-layer-groups)
       (when-let* ((layers (cdr (assoc props tp-layer-groups)))
-                  (first-layer (car layers)))
-        (cdr (assoc first-layer tp-layer-alist))))
+                  (first-layer (car layers))
+                  ;; Ensure the first layer exists in tp-layer-alist
+                  (layer-entry (assoc first-layer tp-layer-alist)))
+        (cdr layer-entry)))
      ;; Not found - return nil (let caller decide how to handle)
      (t nil)))
    (t nil)))
+
+(defun tp--ensure-props (plist)
+  "Ensure PLIST is a property list, resolving layer names if needed.
+If PLIST is a symbol, resolve it via `tp--resolve-props'.
+If resolution fails, return PLIST unchanged (for backward compatibility)."
+  (if (symbolp plist)
+      (or (tp--resolve-props plist) plist)
+    plist))
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
