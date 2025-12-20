@@ -251,7 +251,7 @@ NEWVAL is the new value, OLDVAL is the old value."
           (condition-case err
               (funcall callback newval oldval layer-name)
             (error (message "tp: watcher error for %s watching %s: %s"
-                            layer-name symbol err))))))))
+                            layer-name watch-sym err))))))))
 
 (defun tp--update-layer-computed (layer-name override-alist)
   "Update computed properties for LAYER-NAME with OVERRIDE-ALIST.
@@ -300,6 +300,16 @@ COMPUTED is a plist of (PROP-KEY COMPUTE-FN) pairs."
 (defun tp--unregister-layer-computed (layer-name)
   "Unregister all computed properties for LAYER-NAME."
   (setq tp-layer-computed (assq-delete-all layer-name tp-layer-computed)))
+
+(defun tp--apply-initial-computed (resolved-props compute)
+  "Apply initial computed values to RESOLVED-PROPS using COMPUTE definitions.
+COMPUTE is a plist of (PROP-KEY COMPUTE-FN) pairs.
+Returns the modified RESOLVED-PROPS."
+  (cl-loop for (prop-key compute-fn) on compute by #'cddr
+           do (let ((val (tp--resolve-reactive-symbols (funcall compute-fn) nil)))
+                (when val
+                  (setq resolved-props (plist-put resolved-props prop-key val)))))
+  resolved-props)
 
 (defun tp--update-layer-regions (layer-name)
   "Update all text regions that have LAYER-NAME applied.
@@ -1946,12 +1956,7 @@ The layer is stored in `tp-layer-alist'."
            (let ((resolved-props (tp--resolve-reactive-symbols ',properties)))
              ;; Apply initial computed values
              ,@(when compute
-                 `((cl-loop for (prop-key compute-fn) on ',compute by #'cddr
-                            do (let ((val (tp--resolve-reactive-symbols
-                                           (funcall compute-fn) nil)))
-                                 (when val
-                                   (setq resolved-props
-                                         (plist-put resolved-props prop-key val)))))))
+                 `((setq resolved-props (tp--apply-initial-computed resolved-props ',compute))))
              (tp--set-layer-props ',name resolved-props))
            (assoc ',name tp-layer-alist))
       ;; No reactive symbols - use static properties
@@ -2121,12 +2126,7 @@ and the group itself is stored in `tp-layer-groups'."
                              `((tp--register-layer-computed ',layer-name ',compute)))
                          (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
                            ,@(when compute
-                               `((cl-loop for (prop-key compute-fn) on ',compute by #'cddr
-                                          do (let ((val (tp--resolve-reactive-symbols
-                                                         (funcall compute-fn) nil)))
-                                               (when val
-                                                 (setq resolved-props
-                                                       (plist-put resolved-props prop-key val)))))))
+                               `((setq resolved-props (tp--apply-initial-computed resolved-props ',compute))))
                            (tp--set-layer-props ',layer-name resolved-props)))
                       layer-defs)
               ;; No reactive symbols - use static properties
