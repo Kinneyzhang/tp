@@ -58,6 +58,18 @@ REACTIVE-PROPS contains only the property key-value pairs that use this variable
 For example, for (define-tp my-layer (help-echo \"test\" face (:foreground $color))),
 only (face (:foreground $color)) is stored, not the help-echo.")
 
+(defvar tp-layer-watchers nil
+  "Alist mapping layer names to their watcher definitions.
+Each element is (LAYER-NAME . WATCHER-LIST) where WATCHER-LIST
+is a list of (VAR-SYMBOL . CALLBACK) pairs.
+CALLBACK receives (NEW-VAL OLD-VAL LAYER-NAME) when VAR-SYMBOL changes.")
+
+(defvar tp-layer-computed nil
+  "Alist mapping layer names to their computed property definitions.
+Each element is (LAYER-NAME . COMPUTED-PLIST) where COMPUTED-PLIST
+is a plist of (PROP-KEY . COMPUTE-FN) pairs.
+COMPUTE-FN is evaluated to get the current value of the property.")
+
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
@@ -183,7 +195,10 @@ Only the reactive portions of the properties are stored for each variable."
       (remove-variable-watcher var-sym #'tp--reactive-variable-watcher)))
   ;; Clean up empty dependency entries
   (setq tp-reactive-deps
-        (cl-remove-if (lambda (dep) (null (cdr dep))) tp-reactive-deps)))
+        (cl-remove-if (lambda (dep) (null (cdr dep))) tp-reactive-deps))
+  ;; Also clean up layer watchers and computed properties
+  (tp--unregister-layer-watchers layer-name)
+  (tp--unregister-layer-computed layer-name))
 
 (defun tp--reactive-variable-watcher (symbol newval operation _where)
   "Watcher function called when a reactive variable changes.
@@ -199,6 +214,7 @@ Only 'set' operations trigger updates because:
   (when (and (not (equal (symbol-value symbol) newval))
              (eq operation 'set))
     (let ((deps (cdr (assoc symbol tp-reactive-deps)))
+          (oldval (symbol-value symbol))
           ;; Create override alist with the new value
           ;; (watcher is called before the variable is actually updated)
           (override-alist (list (cons symbol newval))))
@@ -207,6 +223,10 @@ Only 'set' operations trigger updates because:
                ;; Get the reactive props stored directly in the dependency
                (reactive-props (cdr dep)))
           (when reactive-props
+            ;; Call user-defined watch callbacks for this layer
+            (tp--invoke-layer-watchers layer-name symbol newval oldval)
+            ;; Update computed properties for this layer
+            (tp--update-layer-computed layer-name override-alist)
             ;; Resolve the reactive props with the new value override
             (let ((resolved-props (tp--resolve-reactive-symbols
                                    reactive-props override-alist)))
@@ -219,6 +239,67 @@ Only 'set' operations trigger updates because:
                   (tp--set-layer-props layer-name current-props)))
               ;; Update all text regions with this layer
               (tp--update-layer-regions layer-name))))))))
+
+(defun tp--invoke-layer-watchers (layer-name symbol newval oldval)
+  "Invoke all registered watcher callbacks for LAYER-NAME watching SYMBOL.
+NEWVAL is the new value, OLDVAL is the old value."
+  (when-let ((watchers (cdr (assoc layer-name tp-layer-watchers))))
+    (dolist (watcher watchers)
+      (let ((watch-sym (car watcher))
+            (callback (cdr watcher)))
+        (when (eq watch-sym symbol)
+          (condition-case err
+              (funcall callback newval oldval layer-name)
+            (error (message "tp: watcher error for %s watching %s: %s"
+                            layer-name symbol err))))))))
+
+(defun tp--update-layer-computed (layer-name override-alist)
+  "Update computed properties for LAYER-NAME with OVERRIDE-ALIST.
+Evaluates compute functions and updates the layer properties."
+  (when-let ((computed (cdr (assoc layer-name tp-layer-computed))))
+    (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
+      (when current-props
+        (cl-loop for (prop-key compute-fn) on computed by #'cddr
+                 do (let ((computed-val
+                           (condition-case err
+                               ;; Resolve reactive symbols in compute function result
+                               (tp--resolve-reactive-symbols
+                                (funcall compute-fn) override-alist)
+                             (error
+                              (message "tp: compute error for %s.%s: %s"
+                                       layer-name prop-key err)
+                              nil))))
+                      (when computed-val
+                        (setq current-props (plist-put current-props prop-key computed-val)))))
+        (tp--set-layer-props layer-name current-props)))))
+
+(defun tp--register-layer-watchers (layer-name watchers)
+  "Register WATCHERS for LAYER-NAME.
+WATCHERS is a list of (VAR-SYMBOL CALLBACK) pairs."
+  (when watchers
+    (let ((watcher-pairs
+           (mapcar (lambda (watcher)
+                     (cons (car watcher) (cadr watcher)))
+                   watchers)))
+      (if (assoc layer-name tp-layer-watchers)
+          (setf (cdr (assoc layer-name tp-layer-watchers)) watcher-pairs)
+        (push (cons layer-name watcher-pairs) tp-layer-watchers)))))
+
+(defun tp--register-layer-computed (layer-name computed)
+  "Register COMPUTED property definitions for LAYER-NAME.
+COMPUTED is a plist of (PROP-KEY COMPUTE-FN) pairs."
+  (when computed
+    (if (assoc layer-name tp-layer-computed)
+        (setf (cdr (assoc layer-name tp-layer-computed)) computed)
+      (push (cons layer-name computed) tp-layer-computed))))
+
+(defun tp--unregister-layer-watchers (layer-name)
+  "Unregister all watchers for LAYER-NAME."
+  (setq tp-layer-watchers (assq-delete-all layer-name tp-layer-watchers)))
+
+(defun tp--unregister-layer-computed (layer-name)
+  "Unregister all computed properties for LAYER-NAME."
+  (setq tp-layer-computed (assq-delete-all layer-name tp-layer-computed)))
 
 (defun tp--update-layer-regions (layer-name)
   "Update all text regions that have LAYER-NAME applied.
@@ -242,12 +323,14 @@ Re-applies the layer properties using tp-search-map and tp-add."
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."
   (interactive)
-  ;; Remove all watchers
+  ;; Remove all variable watchers
   (dolist (dep tp-reactive-deps)
     (let ((var-sym (car dep)))
       (remove-variable-watcher var-sym #'tp--reactive-variable-watcher)))
-  ;; Clear registries
-  (setq tp-reactive-deps nil))
+  ;; Clear all registries
+  (setq tp-reactive-deps nil)
+  (setq tp-layer-watchers nil)
+  (setq tp-layer-computed nil))
 
 
 ;;; Core Property Functions
@@ -1770,52 +1853,105 @@ Returns a plist of all properties in the region or string."
 
 ;;; Layer Definition Functions
 
+(defun tp--parse-define-layer-args (args)
+  "Parse ARGS for tp-define-layer macro.
+Returns a plist with keys :props, :watch, :compute.
+When :watch or :compute are present, :props is required."
+  (let (props watch compute has-keywords)
+    (cond
+     ;; Check for keyword arguments format
+     ((and (keywordp (car args))
+           (memq (car args) '(:props :watch :compute)))
+      (setq has-keywords t)
+      ;; Parse keyword arguments
+      (let ((rest args))
+        (while rest
+          (pcase (car rest)
+            (:props (setq props (cadr rest) rest (cddr rest)))
+            (:watch (setq watch (cadr rest) rest (cddr rest)))
+            (:compute (setq compute (cadr rest) rest (cddr rest)))
+            (_ (error "Unknown keyword in tp-define-layer: %s" (car rest))))))
+      ;; Validate: if :watch or :compute present, :props must be present
+      (when (and (or watch compute) (null props))
+        (error "When using :watch or :compute, :props must be explicitly specified")))
+     ;; Format 1: single plist (legacy)
+     ((and (= (length args) 1)
+           (listp (car args)))
+      (setq props (car args)))
+     (t (error "Invalid tp-define-layer format")))
+    (list :props props :watch watch :compute compute)))
+
 (defmacro tp-define-layer (name &rest args)
   "Define a single text property layer named NAME.
 
-This macro supports two formats:
+This macro supports three formats:
 
-Format 1 - Direct plist:
+Format 1 - Direct plist (legacy, no :watch/:compute support):
   (tp-define-layer layer-name
     (display \"🌑\" face (:height 1.0)))
 
-Format 2 - With :props keyword (for future extensibility):
+Format 2 - With :props keyword:
   (tp-define-layer layer-name
     :props (display \"🌑\" face (:height 1.0)))
+
+Format 3 - With :props, :watch, and/or :compute (Vue 3 style reactivity):
+  (tp-define-layer layer-name
+    :props (face (:foreground $my-color) help-echo \"tip\")
+    :watch ((my-color (lambda (new old layer)
+                        (message \"Color changed from %s to %s\" old new))))
+    :compute (derived-prop (lambda () (concat \"Value: \" $my-var))))
 
 Reactive Variables:
   If any symbol in the property specification starts with $, it is
   treated as a reactive variable. When that variable's value changes,
   all text regions with this layer will be automatically updated.
 
-  Example:
-    (defvar my-color \"red\")
-    (tp-define-layer my-layer
-      (face (:foreground $my-color)))
-    ;; Changing my-color will automatically update text with my-layer
+:watch - A list of (VAR-SYMBOL CALLBACK) pairs. CALLBACK is called
+  when VAR-SYMBOL changes, receiving (NEW-VALUE OLD-VALUE LAYER-NAME).
+  Similar to Vue 3's watch() function for side effects.
+
+:compute - A plist of (PROP-KEY COMPUTE-FN) pairs. COMPUTE-FN is a
+  function that returns the computed value for PROP-KEY. The function
+  can use reactive variables ($-prefixed symbols) and will be
+  re-evaluated when any of its reactive dependencies change.
+  Similar to Vue 3's computed() for derived state.
+
+Note: When using :watch or :compute, you MUST use :props to specify
+the text properties explicitly.
 
 If a layer with the same NAME already exists, it will be overwritten
 with the new definition.
 
 The layer is stored in `tp-layer-alist'."
   (declare (indent defun))
-  (let* ((properties
-          (cond
-           ;; Format 2: :props (plist)
-           ((and (eq (car args) :props)
-                 (cadr args))
-            (cadr args))
-           ;; Format 1: (plist)
-           ((and (= (length args) 1)
-                 (listp (car args)))
-            (car args))
-           (t (error "Invalid tp-define-layer format for %s" name))))
-         (reactive-syms (tp--collect-reactive-symbols properties)))
-    (if reactive-syms
+  (let* ((parsed (tp--parse-define-layer-args args))
+         (properties (plist-get parsed :props))
+         (watch (plist-get parsed :watch))
+         (compute (plist-get parsed :compute))
+         (reactive-syms (tp--collect-reactive-symbols properties))
+         ;; Also collect reactive symbols from compute functions
+         (compute-reactive-syms
+          (when compute
+            (cl-loop for (_key fn) on compute by #'cddr
+                     append (tp--collect-reactive-symbols fn))))
+         (all-reactive-syms (delete-dups (append reactive-syms compute-reactive-syms))))
+    (if all-reactive-syms
         ;; Has reactive symbols - register dependencies and resolve at runtime
         `(progn
-           (tp--register-reactive-deps ',name ',reactive-syms ',properties)
+           (tp--register-reactive-deps ',name ',all-reactive-syms ',properties)
+           ,@(when watch
+               `((tp--register-layer-watchers ',name ',watch)))
+           ,@(when compute
+               `((tp--register-layer-computed ',name ',compute)))
            (let ((resolved-props (tp--resolve-reactive-symbols ',properties)))
+             ;; Apply initial computed values
+             ,@(when compute
+                 `((cl-loop for (prop-key compute-fn) on ',compute by #'cddr
+                            do (let ((val (tp--resolve-reactive-symbols
+                                           (funcall compute-fn) nil)))
+                                 (when val
+                                   (setq resolved-props
+                                         (plist-put resolved-props prop-key val)))))))
              (tp--set-layer-props ',name resolved-props))
            (assoc ',name tp-layer-alist))
       ;; No reactive symbols - use static properties
@@ -1827,10 +1963,21 @@ The layer is stored in `tp-layer-alist'."
 
 (defun tp--layer-group-element-format (element)
   "Determine the format type of ELEMENT.
-Returns 'symbol, 'format-1, 'format-2, 'format-3, or nil if invalid."
+Returns 'symbol, 'format-1, 'format-2, 'format-3, 'format-4, or nil if invalid."
   (cond
    ;; Symbol - reference to existing layer
    ((symbolp element) 'symbol)
+   ;; Format 4 - ("name" :props (plist...) [:watch ...] [:compute ...])
+   ;; Named layer with :props and optional :watch/:compute
+   ((and (listp element)
+         (> (length element) 3)
+         (stringp (car element))
+         (eq (cadr element) :props)
+         (listp (caddr element))
+         ;; Must have additional keywords after :props
+         (let ((rest (cdddr element)))
+           (and rest (keywordp (car rest)))))
+    'format-4)
    ;; Format 3 - ("name" :props (plist...))
    ((and (listp element)
          (= (length element) 3)
@@ -1851,16 +1998,33 @@ Returns 'symbol, 'format-1, 'format-2, 'format-3, or nil if invalid."
    (t nil)))
 
 (defun tp--parse-layer-group-element (group-name element idx)
-  "Parse a layer group element and return (layer-name . properties).
+  "Parse a layer group element and return (layer-name . properties) or extended form.
 GROUP-NAME is the name of the layer group.
 ELEMENT is the element to parse (can be anonymous plist, cons-cell, or :props form).
 IDX is the index for anonymous elements.
 
 Returns a cons cell (LAYER-NAME . PROPERTIES) or a symbol if ELEMENT
-references an already-defined layer."
+references an already-defined layer.
+For format-4 elements, returns (LAYER-NAME :props PROPS :watch WATCH :compute COMPUTE)."
   (let ((format (tp--layer-group-element-format element)))
     (pcase format
       ('symbol element)
+      ('format-4
+       ;; Parse named layer with :props and optional :watch/:compute
+       (let* ((layer-suffix (car element))
+              (layer-name (intern (format "%s-%s" group-name layer-suffix)))
+              (rest (cdr element))
+              (props nil)
+              (watch nil)
+              (compute nil))
+         ;; Parse keyword arguments
+         (while rest
+           (pcase (car rest)
+             (:props (setq props (cadr rest) rest (cddr rest)))
+             (:watch (setq watch (cadr rest) rest (cddr rest)))
+             (:compute (setq compute (cadr rest) rest (cddr rest)))
+             (_ (setq rest (cdr rest)))))
+         (list layer-name :props props :watch watch :compute compute)))
       ('format-3
        (let* ((layer-suffix (car element))
               (layer-name (intern (format "%s-%s" group-name layer-suffix)))
@@ -1879,7 +2043,7 @@ references an already-defined layer."
 (defmacro tp-define-layer-group (name &rest elements)
   "Define a layer group named NAME containing multiple layers.
 
-This macro supports three formats for each element:
+This macro supports four formats for each element:
 
 Format 1 - Anonymous layers (named as NAME-0, NAME-1, etc.):
   (tp-define-layer-group group-name
@@ -1899,10 +2063,20 @@ Format 3 - Named layers with :props keyword (named as NAME-suffix):
     (\"残月\" :props (display \"🌘\" face (:height 1.5)))
     (\"下弦月\" :props (display \"🌗\" face (:height 2.0))))
 
+Format 4 - Named layers with :props, :watch, and/or :compute (Vue 3 style):
+  (tp-define-layer-group group-name
+    (\"reactive\" :props (face (:foreground $my-color))
+                 :watch ((my-color (lambda (new old layer) (message \"Changed!\")))))
+    (\"computed\" :props (face (:height 1.0))
+                 :compute (help-echo (lambda () (format \"Value: %s\" $my-var)))))
+
 Reactive Variables:
   If any symbol in the property specification starts with $, it is
   treated as a reactive variable. When that variable's value changes,
   all text regions with that layer will be automatically updated.
+
+:watch - A list of (VAR-SYMBOL CALLBACK) pairs for side effects.
+:compute - A plist of (PROP-KEY COMPUTE-FN) for derived properties.
 
 You can also reference already-defined layers by their symbol name:
   (tp-define-layer-group group-name
@@ -1923,7 +2097,43 @@ and the group itself is stored in `tp-layer-groups'."
          ;; Reference to existing layer (symbol)
          ((symbolp parsed)
           (push parsed layer-names))
-         ;; New layer definition (cons cell of name . props)
+         ;; Extended format with :watch/:compute (format-4)
+         ;; parsed is (layer-name :props ... :watch ... :compute ...)
+         ((and (listp parsed) (plist-get (cdr parsed) :props))
+          (let* ((layer-name (car parsed))
+                 (props (plist-get (cdr parsed) :props))
+                 (watch (plist-get (cdr parsed) :watch))
+                 (compute (plist-get (cdr parsed) :compute))
+                 (reactive-syms (tp--collect-reactive-symbols props))
+                 (compute-reactive-syms
+                  (when compute
+                    (cl-loop for (_key fn) on compute by #'cddr
+                             append (tp--collect-reactive-symbols fn))))
+                 (all-reactive-syms (delete-dups (append reactive-syms compute-reactive-syms))))
+            (if all-reactive-syms
+                ;; Has reactive symbols - register dependencies and resolve at runtime
+                (push `(progn
+                         (tp--register-reactive-deps
+                          ',layer-name ',all-reactive-syms ',props)
+                         ,@(when watch
+                             `((tp--register-layer-watchers ',layer-name ',watch)))
+                         ,@(when compute
+                             `((tp--register-layer-computed ',layer-name ',compute)))
+                         (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
+                           ,@(when compute
+                               `((cl-loop for (prop-key compute-fn) on ',compute by #'cddr
+                                          do (let ((val (tp--resolve-reactive-symbols
+                                                         (funcall compute-fn) nil)))
+                                               (when val
+                                                 (setq resolved-props
+                                                       (plist-put resolved-props prop-key val)))))))
+                           (tp--set-layer-props ',layer-name resolved-props)))
+                      layer-defs)
+              ;; No reactive symbols - use static properties
+              (push `(tp--set-layer-props ',layer-name ',props)
+                    layer-defs))
+            (push layer-name layer-names)))
+         ;; Simple format (cons cell of name . props)
          ((consp parsed)
           (let* ((layer-name (car parsed))
                  (props (cdr parsed))

@@ -2336,5 +2336,207 @@ Returns list of (START END VALUE) intervals."
       ;; Cleanup
       (makunbound 'tp-test-regexp-color))))
 
+;;; ============================================================
+;;; :watch and :compute Tests (Vue 3 style reactivity)
+;;; ============================================================
+
+(ert-deftest tp-test-define-layer-with-watch ()
+  "Test tp-define-layer with :watch for side effects."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-watch-var nil "Test variable for watch.")
+    (defvar tp-test-watch-log nil "Log of watch callback invocations.")
+    (setq tp-test-watch-var "initial")
+    (setq tp-test-watch-log nil)
+    (unwind-protect
+        (progn
+          (tp-define-layer test-watch-layer
+            :props (face (:foreground $tp-test-watch-var))
+            :watch ((tp-test-watch-var
+                     (lambda (new old layer)
+                       (push (list new old layer) tp-test-watch-log)))))
+          ;; Check the layer is defined with resolved value
+          (let ((props (cdr (assoc 'test-watch-layer tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "initial")))
+          ;; Check the watcher is registered
+          (should (assoc 'test-watch-layer tp-layer-watchers))
+          ;; Change the variable
+          (setq tp-test-watch-var "changed")
+          ;; Check the layer is updated
+          (let ((props (cdr (assoc 'test-watch-layer tp-layer-alist))))
+            (should (equal (plist-get (plist-get props 'face) :foreground) "changed")))
+          ;; Check the watcher was called
+          (should (= (length tp-test-watch-log) 1))
+          (let ((log-entry (car tp-test-watch-log)))
+            (should (equal (nth 0 log-entry) "changed"))
+            (should (equal (nth 1 log-entry) "initial"))
+            (should (eq (nth 2 log-entry) 'test-watch-layer))))
+      ;; Cleanup
+      (makunbound 'tp-test-watch-var)
+      (makunbound 'tp-test-watch-log))))
+
+(ert-deftest tp-test-define-layer-with-compute ()
+  "Test tp-define-layer with :compute for derived properties."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-compute-size nil "Test variable for compute.")
+    (setq tp-test-compute-size 10)
+    (unwind-protect
+        (progn
+          (tp-define-layer test-compute-layer
+            :props (face (:foreground $tp-test-compute-size))
+            :compute (help-echo (lambda () (format "Size: %d" tp-test-compute-size))))
+          ;; Check the layer is defined
+          (should (assoc 'test-compute-layer tp-layer-alist))
+          ;; Check the computed is registered
+          (should (assoc 'test-compute-layer tp-layer-computed))
+          ;; Check initial computed value
+          (let ((props (cdr (assoc 'test-compute-layer tp-layer-alist))))
+            (should (equal (plist-get props 'help-echo) "Size: 10"))))
+      ;; Cleanup
+      (makunbound 'tp-test-compute-size))))
+
+(ert-deftest tp-test-define-layer-with-watch-and-compute ()
+  "Test tp-define-layer with both :watch and :compute."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-wc-color nil "Test variable for watch and compute.")
+    (defvar tp-test-wc-log nil "Log of watch callback invocations.")
+    (setq tp-test-wc-color "blue")
+    (setq tp-test-wc-log nil)
+    (unwind-protect
+        (progn
+          (tp-define-layer test-wc-layer
+            :props (face (:foreground $tp-test-wc-color))
+            :watch ((tp-test-wc-color
+                     (lambda (new old layer)
+                       (push (list new old) tp-test-wc-log))))
+            :compute (help-echo (lambda () (concat "Color: " tp-test-wc-color))))
+          ;; Check layer is defined
+          (should (assoc 'test-wc-layer tp-layer-alist))
+          ;; Check both watcher and computed are registered
+          (should (assoc 'test-wc-layer tp-layer-watchers))
+          (should (assoc 'test-wc-layer tp-layer-computed))
+          ;; Check initial computed value
+          (let ((props (cdr (assoc 'test-wc-layer tp-layer-alist))))
+            (should (equal (plist-get props 'help-echo) "Color: blue")))
+          ;; Change the variable
+          (setq tp-test-wc-color "green")
+          ;; Check the watcher was called
+          (should (= (length tp-test-wc-log) 1))
+          (let ((log-entry (car tp-test-wc-log)))
+            (should (equal (nth 0 log-entry) "green"))
+            (should (equal (nth 1 log-entry) "blue"))))
+      ;; Cleanup
+      (makunbound 'tp-test-wc-color)
+      (makunbound 'tp-test-wc-log))))
+
+(ert-deftest tp-test-define-layer-watch-requires-props ()
+  "Test that :watch requires :props to be explicitly specified."
+  (tp-test-with-temp-buffer
+    (should-error
+     (macroexpand-1
+      '(tp-define-layer test-invalid
+         :watch ((some-var (lambda (new old layer) nil))))))))
+
+(ert-deftest tp-test-define-layer-compute-requires-props ()
+  "Test that :compute requires :props to be explicitly specified."
+  (tp-test-with-temp-buffer
+    (should-error
+     (macroexpand-1
+      '(tp-define-layer test-invalid
+         :compute (help-echo (lambda () "computed")))))))
+
+(ert-deftest tp-test-undefine-layer-clears-watch-and-compute ()
+  "Test tp-undefine-layer clears watchers and computed properties."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-undef-wc-var nil "Test variable for undefine wc.")
+    (setq tp-test-undef-wc-var "test")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-undef-wc
+            :props (face (:foreground $tp-test-undef-wc-var))
+            :watch ((tp-test-undef-wc-var (lambda (n o l) nil)))
+            :compute (help-echo (lambda () "computed")))
+          ;; Check registrations
+          (should (assoc 'test-undef-wc tp-layer-watchers))
+          (should (assoc 'test-undef-wc tp-layer-computed))
+          ;; Undefine the layer
+          (tp-undefine-layer 'test-undef-wc)
+          ;; Check watchers and computed are cleaned up
+          (should-not (assoc 'test-undef-wc tp-layer-watchers))
+          (should-not (assoc 'test-undef-wc tp-layer-computed)))
+      ;; Cleanup
+      (makunbound 'tp-test-undef-wc-var))))
+
+(ert-deftest tp-test-define-layer-group-with-watch ()
+  "Test tp-define-layer-group with :watch (format-4)."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-group-watch-var nil "Test variable for group watch.")
+    (defvar tp-test-group-watch-log nil "Log of watch callback invocations.")
+    (setq tp-test-group-watch-var "red")
+    (setq tp-test-group-watch-log nil)
+    (unwind-protect
+        (progn
+          (tp-define-layer-group test-watch-group
+            ("reactive" :props (face (:foreground $tp-test-group-watch-var))
+                        :watch ((tp-test-group-watch-var
+                                 (lambda (new old layer)
+                                   (push (list new old layer) tp-test-group-watch-log)))))
+            ("static" :props (face (:foreground "blue"))))
+          ;; Check the group is defined
+          (should (assoc 'test-watch-group tp-layer-groups))
+          ;; Check the reactive layer has its watcher registered
+          (should (assoc 'test-watch-group-reactive tp-layer-watchers))
+          ;; Static layer should not have a watcher
+          (should-not (assoc 'test-watch-group-static tp-layer-watchers))
+          ;; Change the variable
+          (setq tp-test-group-watch-var "green")
+          ;; Check the watcher was called
+          (should (= (length tp-test-group-watch-log) 1)))
+      ;; Cleanup
+      (makunbound 'tp-test-group-watch-var)
+      (makunbound 'tp-test-group-watch-log))))
+
+(ert-deftest tp-test-define-layer-group-with-compute ()
+  "Test tp-define-layer-group with :compute (format-4)."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-group-compute-var nil "Test variable for group compute.")
+    (setq tp-test-group-compute-var 42)
+    (unwind-protect
+        (progn
+          (tp-define-layer-group test-compute-group
+            ;; Using $tp-test-group-compute-var to trigger reactive path
+            ("computed" :props (face (:foreground $tp-test-group-compute-var))
+                        :compute (help-echo (lambda () (format "Value: %s" tp-test-group-compute-var))))
+            ("static" :props (face (:foreground "blue"))))
+          ;; Check the group is defined
+          (should (assoc 'test-compute-group tp-layer-groups))
+          ;; Check the computed layer has its compute registered
+          (should (assoc 'test-compute-group-computed tp-layer-computed))
+          ;; Static layer should not have computed
+          (should-not (assoc 'test-compute-group-static tp-layer-computed)))
+      ;; Cleanup
+      (makunbound 'tp-test-group-compute-var))))
+
+(ert-deftest tp-test-reactive-reset-clears-watch-and-compute ()
+  "Test tp-reactive-reset clears watchers and computed properties."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-reset-wc-var nil "Test variable for reset wc.")
+    (setq tp-test-reset-wc-var "test")
+    (unwind-protect
+        (progn
+          (tp-define-layer test-reset-wc
+            :props (face (:foreground $tp-test-reset-wc-var))
+            :watch ((tp-test-reset-wc-var (lambda (n o l) nil)))
+            :compute (help-echo (lambda () "computed")))
+          ;; Check registrations
+          (should tp-layer-watchers)
+          (should tp-layer-computed)
+          ;; Reset reactive
+          (tp-reactive-reset)
+          ;; Check all are cleared
+          (should-not tp-layer-watchers)
+          (should-not tp-layer-computed))
+      ;; Cleanup
+      (makunbound 'tp-test-reset-wc-var))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
