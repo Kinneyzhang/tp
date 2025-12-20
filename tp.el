@@ -120,9 +120,13 @@ TEMPLATE-PROPS is the original property specification with reactive symbols."
     (let* ((var-sym (tp--reactive-var-symbol rsym))
            (existing (assoc var-sym tp-reactive-deps)))
       (if existing
-          ;; Add this layer to existing dependencies if not already there
-          (unless (assoc layer-name (cdr existing))
-            (push (cons layer-name template-props) (cdr existing)))
+          ;; Update or add this layer to existing dependencies
+          (let ((layer-entry (assoc layer-name (cdr existing))))
+            (if layer-entry
+                ;; Update existing entry with new template-props
+                (setf (cdr layer-entry) template-props)
+              ;; Add new layer entry
+              (push (cons layer-name template-props) (cdr existing))))
         ;; Create new dependency entry and add watcher
         (push (cons var-sym (list (cons layer-name template-props))) tp-reactive-deps)
         ;; Add variable watcher for this variable
@@ -132,13 +136,18 @@ TEMPLATE-PROPS is the original property specification with reactive symbols."
   "Unregister all reactive dependencies for LAYER-NAME."
   ;; Remove from templates
   (setq tp-layer-templates (assq-delete-all layer-name tp-layer-templates))
-  ;; Remove from dependencies
-  (dolist (dep tp-reactive-deps)
-    (let ((var-sym (car dep)))
-      (setf (cdr dep) (assq-delete-all layer-name (cdr dep)))
-      ;; If no more dependencies, remove the watcher
-      (when (null (cdr dep))
-        (remove-variable-watcher var-sym #'tp--reactive-variable-watcher))))
+  ;; Collect variables that need watcher removal
+  (let ((vars-to-clean nil))
+    ;; First pass: remove layer from dependencies and collect empty vars
+    (dolist (dep tp-reactive-deps)
+      (let ((var-sym (car dep)))
+        (setf (cdr dep) (assq-delete-all layer-name (cdr dep)))
+        ;; If no more dependencies, mark for watcher removal
+        (when (null (cdr dep))
+          (push var-sym vars-to-clean))))
+    ;; Remove watchers for variables with no dependencies
+    (dolist (var-sym vars-to-clean)
+      (remove-variable-watcher var-sym #'tp--reactive-variable-watcher)))
   ;; Clean up empty dependency entries
   (setq tp-reactive-deps (cl-remove-if (lambda (dep) (null (cdr dep))) tp-reactive-deps)))
 
@@ -147,9 +156,14 @@ TEMPLATE-PROPS is the original property specification with reactive symbols."
 SYMBOL is the variable that changed.
 NEWVAL is the new value being set.
 OPERATION is the type of operation (set, let, unlet, makunbound, defvaralias).
-Updates all layers that depend on this variable."
+Updates all layers that depend on this variable.
+
+Only 'set' operations trigger updates because:
+- 'let'/'unlet': Temporary bindings that will be restored, no need to update UI
+- 'makunbound': Variable is being undefined, not a value change
+- 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'"
   (when (and tp-reactive-enabled
-             (eq operation 'set))  ; Only react to set operations
+             (eq operation 'set))
     (let ((deps (cdr (assoc symbol tp-reactive-deps)))
           ;; Create override alist with the new value
           ;; (watcher is called before the variable is actually updated)
@@ -167,21 +181,21 @@ Updates all layers that depend on this variable."
 
 (defun tp--update-layer-regions (layer-name)
   "Update all text regions that have LAYER-NAME applied.
-Re-applies the layer properties using tp--search-do and tp-add."
+Re-applies the layer properties using tp-search-map and tp-add."
   (let ((props (tp-layer-props layer-name)))
     (when props
       ;; Update in all buffers
       (dolist (buf (buffer-list))
         (when (buffer-live-p buf)
           (with-current-buffer buf
-            ;; Use tp--search-do to find all regions with this layer
-            ;; and apply updated properties directly to the buffer region
-            (tp--search-do
-             (lambda (match _obj)
-               (let ((m-start (car match))
-                     (m-end (cadr match)))
-                 ;; Apply the new properties directly to the buffer region
-                 (tp-add m-start m-end props)))
+            ;; Use tp-search-map to find all regions with this layer
+            ;; The callback uses start and end to set properties directly
+            (tp-search-map
+             (lambda (_text start end)
+               ;; Apply the new properties directly to the buffer region
+               (tp-add start end props)
+               ;; Return nil to skip text replacement
+               nil)
              'tp-name layer-name)))))))
 
 (defun tp-reactive-reset ()
