@@ -1877,9 +1877,14 @@ Returns list of (START END VALUE) intervals."
   ;; Single reactive property
   (should (equal (tp--extract-reactive-props '(help-echo "test" face (:foreground $color)) '$color)
                  '(face (:foreground $color))))
-  ;; Multiple properties, only one uses the variable
+  ;; Multiple properties, only one uses the variable - should extract only reactive sub-props
   (should (equal (tp--extract-reactive-props '(help-echo "test" face (:foreground $color :background "green")) '$color)
-                 '(face (:foreground $color :background "green"))))
+                 '(face (:foreground $color))))
+  ;; Nested plist with reactive variable - should extract only reactive nested sub-props
+  (should (equal (tp--extract-reactive-props
+                  '(face (:foreground $color1 :underline (:style wave :color $color2 :position t)))
+                  '$color2)
+                 '(face (:underline (:color $color2)))))
   ;; No properties use the variable
   (should (null (tp--extract-reactive-props '(help-echo "test" face bold) '$color))))
 

@@ -86,14 +86,35 @@ Returns a list of reactive symbols found."
             (tp--collect-reactive-symbols (cdr form))))
    (t nil)))
 
+(defun tp--extract-reactive-value (val reactive-var)
+  "Extract only the parts of VAL that use REACTIVE-VAR.
+If VAL is a plist, recursively extract only the key-value pairs containing REACTIVE-VAR.
+If VAL directly contains REACTIVE-VAR, return VAL as-is.
+REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
+  (cond
+   ;; If val is the reactive var itself, return it
+   ((eq val reactive-var) val)
+   ;; If val is a plist (starts with a keyword), extract reactive parts recursively
+   ((and (listp val) (keywordp (car val)))
+    (let ((result nil))
+      (cl-loop for (key subval) on val by #'cddr
+               when (member reactive-var (tp--collect-reactive-symbols subval))
+               do (setq result (plist-put result key
+                                          (tp--extract-reactive-value subval reactive-var))))
+      result))
+   ;; Otherwise return val as-is if it contains the reactive var
+   (t val)))
+
 (defun tp--extract-reactive-props (plist reactive-var)
   "Extract only the properties from PLIST that use REACTIVE-VAR.
 Returns a plist containing only the key-value pairs that reference REACTIVE-VAR.
+For nested plists, only the sub-properties containing REACTIVE-VAR are included.
 REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
   (let ((result nil))
     (cl-loop for (key val) on plist by #'cddr
              when (member reactive-var (tp--collect-reactive-symbols val))
-             do (setq result (plist-put result key val)))
+             do (setq result (plist-put result key
+                                        (tp--extract-reactive-value val reactive-var))))
     result))
 
 (defun tp--resolve-reactive-symbols (form &optional override-alist)
