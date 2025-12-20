@@ -1872,6 +1872,17 @@ Returns list of (START END VALUE) intervals."
                  '($color $bg)))
   (should (null (tp--collect-reactive-symbols '(face bold)))))
 
+(ert-deftest tp-test-extract-reactive-props ()
+  "Test tp--extract-reactive-props extracts only properties using a reactive var."
+  ;; Single reactive property
+  (should (equal (tp--extract-reactive-props '(help-echo "test" face (:foreground $color)) '$color)
+                 '(face (:foreground $color))))
+  ;; Multiple properties, only one uses the variable
+  (should (equal (tp--extract-reactive-props '(help-echo "test" face (:foreground $color :background "green")) '$color)
+                 '(face (:foreground $color :background "green"))))
+  ;; No properties use the variable
+  (should (null (tp--extract-reactive-props '(help-echo "test" face bold) '$color))))
+
 (ert-deftest tp-test-resolve-reactive-symbols ()
   "Test tp--resolve-reactive-symbols replaces $foo with variable values."
   ;; Use defvar to create dynamically-bound variables
@@ -1899,10 +1910,14 @@ Returns list of (START END VALUE) intervals."
           ;; Check the layer is defined with resolved value
           (let ((props (cdr (assoc 'test-reactive-layer tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
-          ;; Check the template is stored
-          (should (assoc 'test-reactive-layer tp-layer-templates))
-          ;; Check the dependency is registered
-          (should (assoc 'tp-test-var-color tp-reactive-deps)))
+          ;; Check the dependency is registered with only reactive props
+          (should (assoc 'tp-test-var-color tp-reactive-deps))
+          ;; Check the stored reactive props only contain the face property
+          (let* ((deps (cdr (assoc 'tp-test-var-color tp-reactive-deps)))
+                 (layer-dep (assoc 'test-reactive-layer deps)))
+            (should layer-dep)
+            ;; The stored props should be just the reactive portion
+            (should (plist-get (cdr layer-dep) 'face))))
       ;; Cleanup
       (makunbound 'tp-test-var-color))))
 
@@ -1957,10 +1972,8 @@ Returns list of (START END VALUE) intervals."
           (tp-define-layer test-reactive-reset
             (face (:foreground $tp-test-reset-color)))
           (should tp-reactive-deps)
-          (should tp-layer-templates)
           (tp-reactive-reset)
-          (should-not tp-reactive-deps)
-          (should-not tp-layer-templates))
+          (should-not tp-reactive-deps))
       ;; Cleanup
       (makunbound 'tp-test-reset-color))))
 
@@ -1975,8 +1988,7 @@ Returns list of (START END VALUE) intervals."
             (face (:foreground $tp-test-reset2-color)))
           (should tp-reactive-deps)
           (tp-layer-reset)
-          (should-not tp-reactive-deps)
-          (should-not tp-layer-templates))
+          (should-not tp-reactive-deps))
       ;; Cleanup
       (makunbound 'tp-test-reset2-color))))
 
@@ -1996,10 +2008,12 @@ Returns list of (START END VALUE) intervals."
           ;; Check the non-reactive layer is defined
           (let ((props (cdr (assoc 'test-reactive-group-second tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "blue")))
-          ;; Check the template is stored for reactive layer
-          (should (assoc 'test-reactive-group-first tp-layer-templates))
-          ;; Non-reactive layer should not have template
-          (should-not (assoc 'test-reactive-group-second tp-layer-templates)))
+          ;; Check the reactive layer is registered in tp-reactive-deps
+          (should (assoc 'tp-test-group-color tp-reactive-deps))
+          ;; The reactive layer should be in the dependencies
+          (let* ((deps (cdr (assoc 'tp-test-group-color tp-reactive-deps)))
+                 (layer-dep (assoc 'test-reactive-group-first deps)))
+            (should layer-dep)))
       ;; Cleanup
       (makunbound 'tp-test-group-color))))
 
@@ -2012,10 +2026,12 @@ Returns list of (START END VALUE) intervals."
         (progn
           (tp-define-layer test-undef-reactive
             (face (:foreground $tp-test-undef-color)))
-          (should (assoc 'test-undef-reactive tp-layer-templates))
+          ;; Check the dependency is registered
           (should (assoc 'tp-test-undef-color tp-reactive-deps))
+          (let* ((deps (cdr (assoc 'tp-test-undef-color tp-reactive-deps)))
+                 (layer-dep (assoc 'test-undef-reactive deps)))
+            (should layer-dep))
           (tp-undefine-layer 'test-undef-reactive)
-          (should-not (assoc 'test-undef-reactive tp-layer-templates))
           ;; Dependency should be cleaned up if no other layers use it
           (should-not (cdr (assoc 'tp-test-undef-color tp-reactive-deps))))
       ;; Cleanup

@@ -53,13 +53,10 @@ Stores layer group definitions, where each group contains multiple layer names."
 
 (defvar tp-reactive-deps nil
   "Alist mapping reactive variables to their dependent layers.
-Each element is (VARIABLE-SYMBOL . ((LAYER-NAME . PROPERTY-SPEC) ...)).
-PROPERTY-SPEC is the original property specification containing the variable.")
-
-(defvar tp-layer-templates nil
-  "Alist mapping layer names to their template property specifications.
-Each element is (LAYER-NAME . TEMPLATE-PLIST).
-TEMPLATE-PLIST contains symbols starting with $ that need to be resolved.")
+Each element is (VARIABLE-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).
+REACTIVE-PROPS contains only the property key-value pairs that use this variable.
+For example, for (define-tp my-layer (help-echo \"test\" face (:foreground $color))),
+only (face (:foreground $color)) is stored, not the help-echo.")
 
 (defvar tp-reactive-enabled t
   "Non-nil means reactive text property updates are enabled.")
@@ -89,6 +86,16 @@ Returns a list of reactive symbols found."
             (tp--collect-reactive-symbols (cdr form))))
    (t nil)))
 
+(defun tp--extract-reactive-props (plist reactive-var)
+  "Extract only the properties from PLIST that use REACTIVE-VAR.
+Returns a plist containing only the key-value pairs that reference REACTIVE-VAR.
+REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
+  (let ((result nil))
+    (cl-loop for (key val) on plist by #'cddr
+             when (member reactive-var (tp--collect-reactive-symbols val))
+             do (setq result (plist-put result key val)))
+    result))
+
 (defun tp--resolve-reactive-symbols (form &optional override-alist)
   "Recursively resolve all reactive symbols in FORM to their values.
 Reactive symbols ($foo) are replaced with the value of the variable foo.
@@ -110,32 +117,29 @@ override the current variable values (used during watcher callbacks)."
 
 (defun tp--register-reactive-deps (layer-name reactive-symbols template-props)
   "Register REACTIVE-SYMBOLS as dependencies for LAYER-NAME.
-TEMPLATE-PROPS is the original property specification with reactive symbols."
-  ;; Store the template for this layer
-  (if (assoc layer-name tp-layer-templates)
-      (setf (cdr (assoc layer-name tp-layer-templates)) template-props)
-    (push (cons layer-name template-props) tp-layer-templates))
-  ;; Register each reactive symbol's dependency
+TEMPLATE-PROPS is the original property specification with reactive symbols.
+Only the reactive portions of the properties are stored for each variable."
+  ;; Register each reactive symbol's dependency with only its relevant properties
   (dolist (rsym reactive-symbols)
     (let* ((var-sym (tp--reactive-var-symbol rsym))
+           ;; Extract only the properties that use this specific reactive variable
+           (reactive-props (tp--extract-reactive-props template-props rsym))
            (existing (assoc var-sym tp-reactive-deps)))
       (if existing
           ;; Update or add this layer to existing dependencies
           (let ((layer-entry (assoc layer-name (cdr existing))))
             (if layer-entry
-                ;; Update existing entry with new template-props
-                (setf (cdr layer-entry) template-props)
+                ;; Update existing entry with new reactive-props
+                (setf (cdr layer-entry) reactive-props)
               ;; Add new layer entry
-              (push (cons layer-name template-props) (cdr existing))))
+              (push (cons layer-name reactive-props) (cdr existing))))
         ;; Create new dependency entry and add watcher
-        (push (cons var-sym (list (cons layer-name template-props))) tp-reactive-deps)
+        (push (cons var-sym (list (cons layer-name reactive-props))) tp-reactive-deps)
         ;; Add variable watcher for this variable
         (add-variable-watcher var-sym #'tp--reactive-variable-watcher)))))
 
 (defun tp--unregister-reactive-deps (layer-name)
   "Unregister all reactive dependencies for LAYER-NAME."
-  ;; Remove from templates
-  (setq tp-layer-templates (assq-delete-all layer-name tp-layer-templates))
   ;; Collect variables that need watcher removal
   (let ((vars-to-clean nil))
     ;; First pass: remove layer from dependencies and collect empty vars
@@ -170,12 +174,18 @@ Only 'set' operations trigger updates because:
           (override-alist (list (cons symbol newval))))
       (dolist (dep deps)
         (let* ((layer-name (car dep))
-               (template (cdr (assoc layer-name tp-layer-templates))))
-          (when template
-            ;; Resolve the template with the new value override
-            (let ((resolved-props (tp--resolve-reactive-symbols template override-alist)))
-              ;; Update the layer definition using the helper function
-              (tp--set-layer-props layer-name resolved-props)
+               ;; Get the reactive props stored directly in the dependency
+               (reactive-props (cdr dep)))
+          (when reactive-props
+            ;; Resolve the reactive props with the new value override
+            (let ((resolved-props (tp--resolve-reactive-symbols reactive-props override-alist)))
+              ;; Update only the reactive properties in the layer definition
+              (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
+                (when current-props
+                  ;; Merge the resolved reactive props into the current layer props
+                  (cl-loop for (key val) on resolved-props by #'cddr
+                           do (setq current-props (plist-put current-props key val)))
+                  (tp--set-layer-props layer-name current-props)))
               ;; Update all text regions with this layer
               (tp--update-layer-regions layer-name))))))))
 
@@ -206,8 +216,7 @@ Re-applies the layer properties using tp-search-map and tp-add."
     (let ((var-sym (car dep)))
       (remove-variable-watcher var-sym #'tp--reactive-variable-watcher)))
   ;; Clear registries
-  (setq tp-reactive-deps nil)
-  (setq tp-layer-templates nil))
+  (setq tp-reactive-deps nil))
 
 
 ;;; Core Property Functions
