@@ -415,29 +415,23 @@ WHERE specifies which buffers to update:
   - If WHERE is nil, update all buffers that have the text property (setq case)."
   (let ((props (tp-layer-props layer-name)))
     (when props
-      (if (and where (bufferp where) (buffer-live-p where))
-          ;; setq-local case: only update the specific buffer
-          (with-current-buffer where
-            (save-excursion
-              (tp-search-map
-               (lambda (_text start end)
-                 (tp-add start end props)
-                 nil)
-               'tp-name layer-name)))
-        ;; setq case: update all buffers that have the text property
-        (dolist (buf (buffer-list))
-          (when (buffer-live-p buf)
-            (with-current-buffer buf
-              ;; Use tp-search-map to find all regions with this layer
-              ;; The callback uses start and end to set properties directly
+      ;; Callback for tp-search-map: applies props to matched region.
+      ;; _TEXT is unused (the matched text), START and END are buffer positions.
+      ;; Returns nil to prevent tp-search-map from replacing the text.
+      (let ((apply-props-fn (lambda (_text start end)
+                              (tp-add start end props)
+                              nil)))
+        (if (and where (bufferp where) (buffer-live-p where))
+            ;; setq-local case: only update the specific buffer
+            (with-current-buffer where
               (save-excursion
-                (tp-search-map
-                 (lambda (_text start end)
-                   ;; Apply the new properties directly to the buffer region
-                   (tp-add start end props)
-                   ;; Return nil to skip text replacement
-                   nil)
-                 'tp-name layer-name)))))))))
+                (tp-search-map apply-props-fn 'tp-name layer-name)))
+          ;; setq case: update all buffers that have the text property
+          (dolist (buf (buffer-list))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (save-excursion
+                  (tp-search-map apply-props-fn 'tp-name layer-name))))))))))
 
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."
