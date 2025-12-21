@@ -194,8 +194,8 @@
 
 ```elisp
 ;; 属性层使用示例
-(tp-define-layer highlight (face (:background "yellow")))
-(tp-define-layer error (face (:foreground "red")))
+(tp-define-layer 'highlight '(face (:background "yellow")))
+(tp-define-layer 'error '(face (:foreground "red")))
 
 ;; 堆叠多个属性层
 (tp-push-layer 1 10 'highlight)
@@ -238,8 +238,8 @@
 ;; 定义一个带响应式属性的层
 (defvar my-color "red")  ;; 响应式变量
 
-(tp-define-layer my-highlight
-  :props (face (:foreground $my-color)))
+(tp-define-layer 'my-highlight
+  :props '(face (:foreground $my-color)))
 
 ;; 应用该层
 (tp-push-layer 1 10 'my-highlight)
@@ -248,11 +248,11 @@
 (setq my-color "blue")  ;; 所有 my-highlight 层的文本自动变成蓝色！
 
 ;; 高级示例：使用 :data、:compute 和 :watch
-(tp-define-layer full-name-layer
-  :props (help-echo $full-name face (:foreground $name-color))
-  :data ((first-name . "John") (last-name . "Doe"))  ;; 带初始值
-  :compute ((full-name (lambda () (concat first-name " " last-name))))
-  :watch ((first-name (lambda (new old layer)
+(tp-define-layer 'full-name-layer
+  :props '(help-echo $full-name face (:foreground $name-color))
+  :data '((first-name . "John") (last-name . "Doe"))  ;; 带初始值
+  :compute '((full-name (lambda () (concat first-name " " last-name))))
+  :watch '((first-name (lambda (new old layer)
                         (message "名字从 %s 改为 %s" old new)))))
 ```
 
@@ -451,9 +451,9 @@ LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-def
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
 
 ;; 在整个字符串上使用已定义的层名称
-(tp-define-layer my-style
-  :props (face (:foreground $my-color))
-  :data ((my-color . "blue")))
+(tp-define-layer 'my-style
+  :props '(face (:foreground $my-color))
+  :data '((my-color . "blue")))
 (tp-set " " 'my-style)
 ;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
 ```
@@ -488,8 +488,8 @@ LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-def
 ;; => #("Hello" 0 5 (face italic))
 
 ;; 使用已定义的层名称
-(tp-define-layer error-style
-  (face (:foreground "red" :weight bold)))
+(tp-define-layer 'error-style
+  '(face (:foreground "red" :weight bold)))
 (with-temp-buffer
   (insert "Hello World")
   (tp-reset 1 10 'error-style))
@@ -536,8 +536,8 @@ LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-def
 ;; => (shadow bold)
 
 ;; 使用已定义的层名称
-(tp-define-layer highlight-style
-  (face (:background "yellow")))
+(tp-define-layer 'highlight-style
+  '(face (:background "yellow")))
 (with-temp-buffer
   (insert "Hello World")
   (tp-set 1 10 '(face bold))
@@ -841,8 +841,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
 
 ;; 使用已定义的层名称
-(tp-define-layer todo-style
-  (face (:foreground "orange" :weight bold)))
+(tp-define-layer 'todo-style
+  '(face (:foreground "orange" :weight bold)))
 (with-temp-buffer
   (insert "TODO: fix this. TODO: also this.")
   (tp-match-set "TODO" 'todo-style))
@@ -882,8 +882,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => ((1 . 5) (12 . 17))
 
 ;; 使用已定义的层名称
-(tp-define-layer alert-style
-  (face (:background "red" :foreground "white")))
+(tp-define-layer 'alert-style
+  '(face (:background "red" :foreground "white")))
 (with-temp-buffer
   (insert "TODO: fix this")
   (tp-match-reset "TODO" 'alert-style))
@@ -923,8 +923,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => ((1 . 5) (12 . 17))
 
 ;; 使用已定义的层名称
-(tp-define-layer underline-style
-  (face (:underline (:color "blue" :style wave))))
+(tp-define-layer 'underline-style
+  '(face (:underline (:color "blue" :style wave))))
 (with-temp-buffer
   (insert "TODO: fix this")
   (tp-match-add "TODO" 'underline-style))
@@ -965,8 +965,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
 
 ;; 使用已定义的层名称
-(tp-define-layer number-style
-  (face (:foreground "green")))
+(tp-define-layer 'number-style
+  '(face (:foreground "green")))
 (with-temp-buffer
   (insert "abc 123 def 456")
   (tp-regexp-set "[0-9]+" 'number-style))
@@ -1007,8 +1007,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => (face italic)
 
 ;; 使用已定义的层名称
-(tp-define-layer code-number
-  (face (:foreground "cyan")))
+(tp-define-layer 'code-number
+  '(face (:foreground "cyan")))
 (with-temp-buffer
   (insert "abc 123 def 456")
   (tp-regexp-reset "[0-9]+" 'code-number))
@@ -1049,8 +1049,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => (face italic help-echo "number")
 
 ;; 使用已定义的层名称
-(tp-define-layer bold-underline
-  (face (:weight bold :underline t)))
+(tp-define-layer 'bold-underline
+  '(face (:weight bold :underline t)))
 (with-temp-buffer
   (insert "abc 123 def 456")
   (tp-regexp-add "[0-9]+" 'bold-underline))
@@ -1308,33 +1308,26 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 定义单个文本属性层。支持多种格式：
 
-**格式一 - 直接定义文本属性（传统方式，不支持响应式特性）：**
+**格式一 - 直接定义文本属性（不支持响应式特性）：**
 
 ```elisp
-(tp-define-layer layer-name
-  (face (:background "cyan") line-prefix ">>"))
+(tp-define-layer 'layer-name
+  '(face (:background "cyan") line-prefix ">>"))
 ```
 
-**格式二 - 使用 :props 关键字：**
+**格式二 - 使用 :props、:data、:watch 和/或 :compute（Vue 3 风格响应式）：**
 
 ```elisp
-(tp-define-layer layer-name
-  :props (face (:background "cyan") line-prefix ">>"))
-```
-
-**格式三 - 使用 :props、:data、:watch 和/或 :compute（Vue 3 风格响应式）：**
-
-```elisp
-(tp-define-layer layer-name
+(tp-define-layer 'layer-name
   ;; props: $前缀的符号是响应式变量；如果未绑定会自动定义
-  :props (face (:foreground $my-color) help-echo $full-name)
+  :props '(face (:foreground $my-color) help-echo $full-name)
   ;; data: 不在 props 中使用的额外响应式变量；可以包含初始值
-  :data ((first-name . "John") (last-name . "Doe"))
+  :data '((first-name . "John") (last-name . "Doe"))
   ;; compute: (变量名 函数) 列表 - 计算响应式变量的值
-  :compute ((full-name (lambda () (concat first-name " " last-name))))
+  :compute '((full-name (lambda () (concat first-name " " last-name))))
   ;; watch: (变量名 回调函数) 列表 - 变量变化时的副作用
-  :watch ((my-color (lambda (new old layer)
-                      (message "颜色从 %s 改为 %s" old new)))))
+  :watch '((my-color (lambda (new old layer)
+                       (message "颜色从 %s 改为 %s" old new)))))
 ```
 
 **响应式变量：**
@@ -1355,25 +1348,17 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 使用格式一（直接 plist）定义单个属性层
 (progn
   (setq tp-layer-alist nil)  ; 重置以确保干净的示例
-  (tp-define-layer highlight
-    (face (:background "yellow" :foreground "black")))
+  (tp-define-layer 'highlight
+  '(face (:background "yellow" :foreground "black")))
   (tp-layer-props 'highlight))
 ;; => (face (:background "yellow" :foreground "black") tp-name highlight)
 
-;; 使用格式二（:props 关键字）定义属性层
-(progn
-  (tp-define-layer error
-    :props (face (:background "red" :foreground "white")
-            help-echo "错误!"))
-  (tp-layer-props 'error))
-;; => (face (:background "red" :foreground "white") help-echo "错误!" tp-name error)
-
-;; 定义响应式属性层（格式三）
+;; 定义响应式属性层
 (progn
   (tp-layer-reset)
   (defvar theme-color "blue")
-  (tp-define-layer themed-layer
-    :props (face (:foreground $theme-color)))
+  (tp-define-layer 'themed-layer
+    :props '(face (:foreground $theme-color)))
   ;; 应用该层
   (with-temp-buffer
     (insert "Hello World")
@@ -1385,8 +1370,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ;; 重新定义已存在的属性层（覆盖旧定义）
 (progn
-  (tp-define-layer test-layer (face bold))
-  (tp-define-layer test-layer (face italic))  ; 覆盖
+  (tp-define-layer 'test-layer '(face bold))
+  (tp-define-layer 'test-layer '(face italic))  ; 覆盖
   (tp-layer-props 'test-layer))
 ;; => (face italic tp-name test-layer)
 ```
@@ -1395,57 +1380,57 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 #### `tp-define-layer-group` - 定义属性层组
 
-定义包含多个属性层的层组。每个元素支持四种格式：
+定义包含多个属性层的层组。每个元素支持多种格式：
 
 **格式一 - 匿名层（命名为 GROUP-NAME-0, GROUP-NAME-1 等）：**
 
 ```elisp
-(tp-define-layer-group tp-test-moons
-  (display "🌑" face (:height 1.0))
-  (display "🌘" face (:height 1.5))
-  (display "🌗" face (:height 2.0)))
+(tp-define-layer-group 'tp-test-moons
+  '(display "🌑" face (:height 1.0))
+  '(display "🌘" face (:height 1.5))
+  '(display "🌗" face (:height 2.0)))
 ;; 创建层: tp-test-moons-0, tp-test-moons-1, tp-test-moons-2
 ```
 
 **格式二 - 使用 cons-cell 命名层（命名为 GROUP-NAME-suffix）：**
 
 ```elisp
-(tp-define-layer-group tp-test-moons
-  ("新月" . (display "🌑" face (:height 1.0)))
-  ("残月" . (display "🌘" face (:height 1.5)))
-  ("下弦月" . (display "🌗" face (:height 2.0))))
+(tp-define-layer-group 'tp-test-moons
+  '("新月" . (display "🌑" face (:height 1.0)))
+  '("残月" . (display "🌘" face (:height 1.5)))
+  '("下弦月" . (display "🌗" face (:height 2.0))))
 ;; 创建层: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
 ```
 
 **格式三 - 使用 :props 关键字命名层（命名为 GROUP-NAME-suffix）：**
 
 ```elisp
-(tp-define-layer-group tp-test-moons
-  ("新月" :props (display "🌑" face (:height 1.0)))
-  ("残月" :props (display "🌘" face (:height 1.5)))
-  ("下弦月" :props (display "🌗" face (:height 2.0))))
+(tp-define-layer-group 'tp-test-moons
+  '("新月" :props (display "🌑" face (:height 1.0)))
+  '("残月" :props (display "🌘" face (:height 1.5)))
+  '("下弦月" :props (display "🌗" face (:height 2.0))))
 ;; 创建层: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
 ```
 
 **格式四 - 使用 :props、:data、:watch 和/或 :compute 的命名层（Vue 3 风格响应式）：**
 
 ```elisp
-(tp-define-layer-group reactive-group
-  ("reactive" :props (face (:foreground $my-color) help-echo $full-name)
-              :data ((first-name . "John") (last-name . "Doe"))
-              :compute ((full-name (lambda () (concat first-name " " last-name))))
-              :watch ((my-color (lambda (new old layer) (message "改变了！"))))))
+(tp-define-layer-group 'reactive-group
+  '("reactive" :props (face (:foreground $my-color) help-echo $full-name)
+               :data ((first-name . "John") (last-name . "Doe"))
+               :compute ((full-name (lambda () (concat first-name " " last-name))))
+               :watch ((my-color (lambda (new old layer) (message "改变了！"))))))
 ;; 创建层: reactive-group-reactive，具有完整的响应式支持
 ```
 
 你也可以在层组中引用已定义的层：
 
 ```elisp
-(tp-define-layer existing-layer (face bold))
-(tp-define-layer-group my-group
-  existing-layer                                ; 引用已存在的属性层
-  (face (:background "red") line-prefix ">>")   ; 匿名属性层
-  ("named" . (face italic)))                    ; 命名属性层
+(tp-define-layer 'existing-layer '(face bold))
+(tp-define-layer-group 'my-group
+  'existing-layer                                 ; 引用已存在的属性层
+  '(face (:background "red") line-prefix ">>")   ; 匿名属性层
+  '("named" . (face italic)))                    ; 命名属性层
 ```
 
 如果同名的层组已存在，新定义将覆盖旧定义。
@@ -1458,16 +1443,13 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer highlight
-    (face (:background "yellow" :foreground "black")))
-  (tp-define-layer error
-    (face (:background "red" :foreground "white")))
-  (tp-define-layer info
-    (face (:background "blue" :foreground "white")))
-  (tp-define-layer-group status-colors
-    highlight
-    error
-    info)
+  (tp-define-layer 'highlight
+  '(face (:background "yellow" :foreground "black")))
+  (tp-define-layer 'error
+  '(face (:background "red" :foreground "white")))
+  (tp-define-layer 'info
+  '(face (:background "blue" :foreground "white")))
+  (tp-define-layer-group 'status-colors 'highlight 'error 'info)
   (length (tp-group-props 'status-colors)))
 ;; => 3
 
@@ -1475,11 +1457,11 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer-group moon-phases
-    ("new" . (display "🌑"))
-    ("waxing-crescent" . (display "🌒"))
-    ("first-quarter" . (display "🌓"))
-    ("full" . (display "🌕")))
+  (tp-define-layer-group 'moon-phases
+    '("new" . (display "🌑"))
+    '("waxing-crescent" . (display "🌒"))
+    '("first-quarter" . (display "🌓"))
+    '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
 ;; => (display "🌕" tp-name moon-phases-full)
 ```
@@ -1501,7 +1483,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 获取属性层属性
 (progn
   (setq tp-layer-alist nil)
-  (tp-define-layer my-layer (face bold help-echo "tip"))
+  (tp-define-layer 'my-layer '(face bold help-echo "tip"))
   (tp-layer-props 'my-layer))
 ;; => (face bold help-echo "tip" tp-name my-layer)
 
@@ -1509,9 +1491,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
-  (tp-define-layer-group my-group layer1 layer2)
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
+  (tp-define-layer-group 'my-group 'layer1 'layer2)
   (length (tp-group-props 'my-group)))
 ;; => 2
 ```
@@ -1533,7 +1515,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 取消定义属性层
 (progn
   (setq tp-layer-alist nil)
-  (tp-define-layer temp-layer (face bold))
+  (tp-define-layer 'temp-layer '(face bold))
   (tp-undefine-layer 'temp-layer)
   (tp-layer-props 'temp-layer))
 ;; => nil
@@ -1542,8 +1524,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer l1 (face bold))
-  (tp-define-layer my-group l1)
+  (tp-define-layer 'l1 '(face bold))
+  (tp-define-layer-group 'my-group 'l1)
   (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
 ;; => nil
@@ -1563,7 +1545,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 (progn
-  (tp-define-layer test-layer (face bold))
+  (tp-define-layer 'test-layer '(face bold))
   (tp-layer-reset)
   (list tp-layer-alist tp-layer-groups))
 ;; => (nil nil)
@@ -1587,8 +1569,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 定义一个响应式层
 (progn
   (defvar my-reactive-color "red")
-  (tp-define-layer reactive-layer
-    :props (face (:foreground $my-reactive-color)))
+  (tp-define-layer 'reactive-layer
+  :props '(face (:foreground $my-reactive-color)))
   ;; 仅清除响应式绑定
   (tp-reactive-reset)
   ;; 层仍然存在，但改变 my-reactive-color 不再更新它
@@ -1622,8 +1604,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 base 属性层放在顶部
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -1633,8 +1615,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 highlight 放在索引 1（顶部下面）
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -1645,8 +1627,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将属性层放在底部
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer info (face (:foreground "blue")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'info '(face (:foreground "blue")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -1675,8 +1657,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 首先推入 base 属性层
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1686,8 +1668,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 highlight 推到顶部（现在可见）
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1718,8 +1700,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 按名称删除
 (progn
   (tp-layer-reset)
-  (tp-define-layer highlight (face (:background "yellow")))
-  (tp-define-layer base (face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1731,8 +1713,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 删除顶层（idx=0）
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1744,8 +1726,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 删除底层
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1774,8 +1756,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1814,9 +1796,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将索引 2 的层移动到索引 0（顶部）
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
-  (tp-define-layer layer3 (face underline))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
+  (tp-define-layer 'layer3 '(face underline))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1830,8 +1812,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 按名称移动层到底部
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1844,8 +1826,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 在字符串上移动
 (let ((str (copy-sequence "Hello")))
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (tp-push-layer str 'layer1)
   (tp-push-layer str 'layer2)
   ;; layer2 在顶部
@@ -1874,9 +1856,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 layer1 上移 2 个位置（到顶部）
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
-  (tp-define-layer layer3 (face underline))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
+  (tp-define-layer 'layer3 '(face underline))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1890,8 +1872,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将索引 0 的属性层下移 1 个位置
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1922,8 +1904,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 堆栈: highlight (顶) -> base (底)
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1955,8 +1937,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 'base 设为顶层
 (progn
   (tp-layer-reset)
-  (tp-define-layer base (face default))
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1987,8 +1969,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 交换 layer1 和 layer2
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2022,8 +2004,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将 layer1 和 layer2 合并为 merged-layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (help-echo "tip"))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2035,8 +2017,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 按索引合并
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (help-echo "tip"))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2066,8 +2048,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 将所有属性层扁平化为 'flat-layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (help-echo "tip"))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2079,7 +2061,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 使用 nil 名称扁平化（无名属性层）
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
+  (tp-define-layer 'layer1 '(face bold))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2105,8 +2087,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer highlight (face (:background "yellow")))
-  (tp-define-layer base (face default))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (tp-define-layer 'base '(face default))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -2130,8 +2112,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2155,7 +2137,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
+  (tp-define-layer 'layer1 '(face bold))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2179,8 +2161,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2213,8 +2195,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer layer1 (face (:foreground "red")))
-  (tp-define-layer layer2 (face (:foreground "blue")))
+  (tp-define-layer 'layer1 '(face (:foreground "red")))
+  (tp-define-layer 'layer2 '(face (:foreground "blue")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2247,8 +2229,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 (let ((str (copy-sequence "Hello World")))
-  (tp-define-layer layer1 (face bold))
-  (tp-define-layer layer2 (face italic))
+  (tp-define-layer 'layer1 '(face bold))
+  (tp-define-layer 'layer2 '(face italic))
   (tp-push-layer 0 5 'layer1 str)
   (tp-push-layer 0 5 'layer2 str)
   ;; 向所有层添加下划线
@@ -2327,7 +2309,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer highlight (face (:background "yellow")))
+  (tp-define-layer 'highlight '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World Test")
     (tp-push-layer 1 6 'highlight)
@@ -2398,13 +2380,13 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (tp-layer-reset)
   ;; 为不同高亮目的定义属性层
-  (tp-define-layer code-base
-    (face font-lock-keyword-face))
-  (tp-define-layer code-error
-    (face (:underline (:color "red" :style wave))
+  (tp-define-layer 'code-base
+  '(face font-lock-keyword-face))
+  (tp-define-layer 'code-error
+  '(face (:underline (:color "red" :style wave))
      help-echo "语法错误"))
-  (tp-define-layer code-debug
-    (face (:background "dark blue")))
+  (tp-define-layer 'code-debug
+  '(face (:background "dark blue")))
   (with-temp-buffer
     (insert (make-string 100 ?x))  ; 创建 100 字符缓冲区
     ;; 应用基础高亮
@@ -2429,10 +2411,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (progn
   (tp-layer-reset)
   ;; 将状态属性层定义为一个组
-  (tp-define-layer status-todo (face (:foreground "gray")))
-  (tp-define-layer status-progress (face (:foreground "yellow")))
-  (tp-define-layer status-done (face (:foreground "green")))
-  (tp-define-layer-group task-status status-todo status-progress status-done)
+  (tp-define-layer 'status-todo '(face (:foreground "gray")))
+  (tp-define-layer 'status-progress '(face (:foreground "yellow")))
+  (tp-define-layer 'status-done '(face (:foreground "green")))
+  (tp-define-layer-group 'task-status 'status-todo 'status-progress 'status-done)
   ;; 检查组是否已定义
   (length (tp-group-props 'task-status)))
 ;; => 3
@@ -2450,8 +2432,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 定义临时高亮属性层
 (progn
   (tp-layer-reset)
-  (tp-define-layer temp-highlight
-    (face (:background "yellow")))
+  (tp-define-layer 'temp-highlight
+  '(face (:background "yellow")))
   (tp-layer-props 'temp-highlight))
 ;; => (face (:background "yellow") tp-name temp-highlight)
 
@@ -2485,8 +2467,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ;; 响应式方式（自动更新）
 (defvar my-color "red")
-(tp-define-layer my-layer
-  :props (face (:foreground $my-color)))
+(tp-define-layer 'my-layer
+  :props '(face (:foreground $my-color)))
 (tp-push-layer 1 10 'my-layer)
 ;; 只需改变变量 - 所有文本自动更新！
 (setq my-color "blue")  ;; 所有使用 my-layer 的区域立即更新！
@@ -2507,8 +2489,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 (defvar highlight-color "yellow")
 
-(tp-define-layer my-highlight
-  :props (face (:background $highlight-color)))
+(tp-define-layer 'my-highlight
+  :props '(face (:background $highlight-color)))
 
 (with-temp-buffer
   (insert "Hello World")
@@ -2526,8 +2508,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (defvar fg-color "white")
 (defvar bg-color "black")
 
-(tp-define-layer themed-text
-  :props (face (:foreground $fg-color :background $bg-color)))
+(tp-define-layer 'themed-text
+  :props '(face (:foreground $fg-color :background $bg-color)))
 
 ;; 改变任一变量都会更新文本
 (setq fg-color "yellow")  ;; 更新前景色
@@ -2539,10 +2521,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 `:data` 关键字定义不直接用于 `:props` 但可以触发计算值更新或被监听的额外响应式变量：
 
 ```elisp
-(tp-define-layer user-info
-  :props (help-echo $full-name)
-  :data (first-name last-name)  ;; 不直接用于 props
-  :compute ((full-name (lambda () (concat first-name " " last-name)))))
+(tp-define-layer 'user-info
+  :props '(help-echo $full-name)
+  :data '(first-name last-name)  ;; 不直接用于 props
+  :compute '((full-name (lambda () (concat first-name " " last-name)))))
 ```
 
 **带初始值：**
@@ -2550,10 +2532,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 你可以使用 cons cell 指定初始值：
 
 ```elisp
-(tp-define-layer user-info
-  :props (help-echo $full-name)
-  :data ((first-name . "张") (last-name . "三"))
-  :compute ((full-name (lambda () (concat first-name last-name)))))
+(tp-define-layer 'user-info
+  :props '(help-echo $full-name)
+  :data '((first-name . "张") (last-name . "三"))
+  :compute '((full-name (lambda () (concat first-name last-name)))))
 
 ;; first-name 现在是 "张"，last-name 现在是 "三"
 ```
@@ -2563,10 +2545,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 `:compute` 关键字创建派生值，当它们的依赖项改变时会自动重新计算：
 
 ```elisp
-(tp-define-layer progress-display
-  :props (display $progress-text face (:foreground $progress-color))
-  :data ((current . 0) (total . 100))
-  :compute ((progress-text (lambda () (format "%d%%" (/ (* current 100) total))))
+(tp-define-layer 'progress-display
+  :props '(display $progress-text face (:foreground $progress-color))
+  :data '((current . 0) (total . 100))
+  :compute '((progress-text (lambda () (format "%d%%" (/ (* current 100) total))))
             (progress-color (lambda ()
                               (cond ((< current 30) "red")
                                     ((< current 70) "yellow")
@@ -2582,9 +2564,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 `:watch` 关键字让你在响应式变量改变时执行回调：
 
 ```elisp
-(tp-define-layer monitored-layer
-  :props (face (:foreground $status-color))
-  :watch ((status-color 
+(tp-define-layer 'monitored-layer
+  :props '(face (:foreground $status-color))
+  :watch '((status-color 
            (lambda (new-val old-val layer-name)
              (message "层 %s: 颜色从 %s 改为 %s" 
                       layer-name old-val new-val)))))
@@ -2615,8 +2597,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 所有文本属性 API（`tp-set`、`tp-match-set`、`tp-regexp-set` 等）现在可以直接接受层名：
 
 ```elisp
-(tp-define-layer warning-style
-  :props (face (:foreground "orange" :weight bold)))
+(tp-define-layer 'warning-style
+  :props '(face (:foreground "orange" :weight bold)))
 
 ;; 使用层名代替 plist
 (tp-set 1 10 'warning-style)
@@ -2628,16 +2610,16 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ### 响应式层组
 
-层组也可以使用格式四的响应式特性：
+层组也可以使用响应式特性：
 
 ```elisp
-(tp-define-layer-group status-indicators
-  ("success" :props (face (:foreground $success-color))
-             :data ((success-color . "green")))
-  ("warning" :props (face (:foreground $warning-color))
-             :data ((warning-color . "orange")))
-  ("error"   :props (face (:foreground $error-color))
-             :data ((error-color . "red"))))
+(tp-define-layer-group 'status-indicators
+  '("success" :props (face (:foreground $success-color))
+              :data ((success-color . "green")))
+  '("warning" :props (face (:foreground $warning-color))
+              :data ((warning-color . "orange")))
+  '("error"   :props (face (:foreground $error-color))
+              :data ((error-color . "red"))))
 ```
 
 ### 重置响应式状态
@@ -2659,14 +2641,14 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (defvar theme-accent "cyan")
 
 ;; 定义主题感知层
-(tp-define-layer code-keyword
-  :props (face (:foreground $theme-accent :weight bold)))
+(tp-define-layer 'code-keyword
+  :props '(face (:foreground $theme-accent :weight bold)))
 
-(tp-define-layer code-comment
-  :props (face (:foreground "gray" :slant italic)))
+(tp-define-layer 'code-comment
+  :props '(face (:foreground "gray" :slant italic)))
 
-(tp-define-layer code-string
-  :props (face (:foreground "green")))
+(tp-define-layer 'code-string
+  :props '(face (:foreground "green")))
 
 ;; 将层应用到代码
 (tp-match-set '("defun" "defvar" "let" "if" "when") 'code-keyword)
