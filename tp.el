@@ -1976,9 +1976,13 @@ Returns a plist of all properties in the region or string."
 ;;; Layer Definition Functions
 
 (defun tp--parse-define-layer-args (args)
-  "Parse ARGS for tp-define-layer macro.
+  "Parse ARGS for tp-define-layer function.
 Returns a plist with keys :props, :data, :watch, :compute.
-When :watch, :compute, or :data are present, :props is required."
+When :watch, :compute, or :data are present, :props is required.
+
+ARGS can be:
+- A single plist: the properties directly
+- Keyword arguments: :props PLIST [:data DATA] [:watch WATCH] [:compute COMPUTE]"
   (let (props data watch compute has-keywords)
     (cond
      ;; Check for keyword arguments format
@@ -1997,36 +2001,32 @@ When :watch, :compute, or :data are present, :props is required."
       ;; Validate: if :watch, :compute, or :data present, :props must be present
       (when (and (or watch compute data) (null props))
         (error "When using :watch, :compute, or :data, :props must be explicitly specified")))
-     ;; Format 1: single plist (legacy)
+     ;; Format 1: single plist (the plist directly as first arg)
      ((and (= (length args) 1)
            (listp (car args)))
       (setq props (car args)))
      (t (error "Invalid tp-define-layer format")))
     (list :props props :data data :watch watch :compute compute)))
 
-(defmacro tp-define-layer (name &rest args)
+(defun tp-define-layer (name &rest args)
   "Define a single text property layer named NAME.
 
-This macro supports three formats:
+This function supports two formats:
 
-Format 1 - Direct plist (legacy, no :watch/:compute/:data support):
-  (tp-define-layer layer-name
-    (display \"🌑\" face (:height 1.0)))
+Format 1 - Direct plist (no :watch/:compute/:data support):
+  (tp-define-layer \\='layer-name
+    \\='(display \"🌑\" face (:height 1.0)))
 
-Format 2 - With :props keyword:
-  (tp-define-layer layer-name
-    :props (display \"🌑\" face (:height 1.0)))
-
-Format 3 - With :props, :data, :watch, and/or :compute (Vue 3 style reactivity):
-  (tp-define-layer layer-name
+Format 2 - With :props, :data, :watch, and/or :compute (Vue 3 style reactivity):
+  (tp-define-layer \\='layer-name
     ;; props: $-prefixed symbols are reactive variables; auto-defined if not bound
-    :props (face (:foreground $my-color) help-echo $full-name)
+    :props \\='(face (:foreground $my-color) help-echo $full-name)
     ;; data: additional reactive variables not used in props; auto-defined if not bound
-    :data (first-name last-name)
+    :data \\='((first-name . \"John\") (last-name . \"Doe\"))
     ;; compute: list of (VAR-NAME FUNCTION) - compute reactive variable values
-    :compute ((full-name (lambda () (concat first-name \" \" last-name))))
+    :compute \\='((full-name (lambda () (concat first-name \" \" last-name))))
     ;; watch: list of (VAR-NAME CALLBACK) - side effects when vars change
-    :watch ((my-color (lambda (new old layer)
+    :watch \\='((my-color (lambda (new old layer)
                         (message \"Color changed from %s to %s\" old new)))))
 
 Reactive Variables:
@@ -2034,7 +2034,8 @@ Reactive Variables:
   Variables in :data are also reactive. All reactive variables are automatically
   defined as global variables if they are not already bound.
 
-:data - A list of variable symbols for additional reactive state not in :props.
+:data - A list of variable symbols or cons cells (SYMBOL . INITIAL-VALUE)
+  for additional reactive state not in :props.
 
 :compute - A list of (VAR-SYMBOL COMPUTE-FN) pairs. COMPUTE-FN is evaluated
   to compute the value of VAR-SYMBOL. Can reference other reactive variables
@@ -2048,7 +2049,6 @@ the text properties explicitly.
 
 If a layer with the same NAME already exists, it will be overwritten.
 The layer is stored in `tp-layer-alist'."
-  (declare (indent defun))
   (let* ((parsed (tp--parse-define-layer-args args))
          (properties (plist-get parsed :props))
          (data (plist-get parsed :data))
@@ -2071,41 +2071,60 @@ The layer is stored in `tp-layer-alist'."
                                       computed-vars))))
     (if (or all-reactive-syms data compute)
         ;; Has reactive features - register dependencies and resolve at runtime
-        `(progn
-           ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
-           (tp--unregister-reactive-deps ',name)
-           ;; Ensure all reactive variables are defined
-           (tp--ensure-reactive-variables ',all-vars-to-define)
-           ;; Register data variables
-           ,@(when data
-               `((tp--register-layer-data ',name ',data)))
-           ;; Register computed variable definitions
-           ,@(when compute
-               `((tp--register-layer-computed ',name ',compute)
-                 ;; Apply initial computed values
-                 (tp--apply-initial-computed ',compute)))
-           ;; Register reactive dependencies
-           (tp--register-reactive-deps ',name ',all-reactive-syms ',properties)
-           ;; Register watchers
-           ,@(when watch
-               `((tp--register-layer-watchers ',name ',watch)))
-           ;; Set layer properties with resolved values
-           (let ((resolved-props (tp--resolve-reactive-symbols ',properties)))
-             (tp--set-layer-props ',name resolved-props))
-           ;; Update any text regions that already have this layer applied
-           ;; This ensures re-definition immediately updates applied text
-           (tp--update-layer-regions ',name)
-           (assoc ',name tp-layer-alist))
+        (progn
+          ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
+          (tp--unregister-reactive-deps name)
+          ;; Ensure all reactive variables are defined
+          (tp--ensure-reactive-variables all-vars-to-define)
+          ;; Register data variables
+          (when data
+            (tp--register-layer-data name data))
+          ;; Register computed variable definitions
+          (when compute
+            (tp--register-layer-computed name compute)
+            ;; Apply initial computed values
+            (tp--apply-initial-computed compute))
+          ;; Register reactive dependencies
+          (tp--register-reactive-deps name all-reactive-syms properties)
+          ;; Register watchers
+          (when watch
+            (tp--register-layer-watchers name watch))
+          ;; Set layer properties with resolved values
+          (let ((resolved-props (tp--resolve-reactive-symbols properties)))
+            (tp--set-layer-props name resolved-props))
+          ;; Update any text regions that already have this layer applied
+          ;; This ensures re-definition immediately updates applied text
+          (tp--update-layer-regions name)
+          (assoc name tp-layer-alist))
       ;; No reactive symbols - use static properties
-      `(progn
-         ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
-         (tp--unregister-reactive-deps ',name)
-         (tp--set-layer-props ',name ',properties)
-         ;; Update any text regions that already have this layer applied
-         (tp--update-layer-regions ',name)
-         (assoc ',name tp-layer-alist)))))
+      (progn
+        ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
+        (tp--unregister-reactive-deps name)
+        (tp--set-layer-props name properties)
+        ;; Update any text regions that already have this layer applied
+        (tp--update-layer-regions name)
+        (assoc name tp-layer-alist)))))
 
-(defalias 'define-tp 'tp-define-layer)
+(defmacro define-tp (name &rest args)
+  "Define a single text property layer named NAME.
+
+This macro provides a convenient syntax for `tp-define-layer'.
+All arguments use quoted list format.
+
+Format 1 - Direct plist (no :watch/:compute/:data support):
+  (define-tp tp-process-bar-done
+    \\='(display (space :width ($tp-done-pixel))
+              face (:background $tp-done-color)))
+
+Format 2 - With :props, :data, :watch, and/or :compute:
+  (define-tp tp-process-bar-done
+    :props \\='(display (space :width ($tp-done-pixel))
+                     face (:background $tp-done-color))
+    :data \\=`((tp-done-color . ,tp-success-color)))
+
+See `tp-define-layer' for full documentation."
+  (declare (indent defun))
+  `(tp-define-layer ',name ,@args))
 
 (defun tp--layer-group-element-format (element)
   "Determine the format type of ELEMENT.
@@ -2188,57 +2207,70 @@ For format-4 elements, returns (LAYER-NAME :props PROPS :data DATA :watch WATCH 
          (cons layer-name element)))
       (_ (error "Invalid layer group element: %S" element)))))
 
-(defmacro tp-define-layer-group (name &rest elements)
+(defun tp--define-layer-from-parsed (layer-name props data watch compute)
+  "Internal helper to define a layer from parsed components.
+LAYER-NAME is the symbol name for the layer.
+PROPS is the property list.
+DATA is the list of data variables.
+WATCH is the list of watcher definitions.
+COMPUTE is the list of computed variable definitions."
+  (let* ((reactive-syms (tp--collect-reactive-symbols props))
+         (computed-vars (when compute (mapcar #'car compute)))
+         (all-reactive-syms (delete-dups reactive-syms))
+         (props-vars (mapcar #'tp--reactive-var-symbol reactive-syms))
+         (all-vars-to-define (delete-dups
+                              (append data
+                                      props-vars
+                                      computed-vars))))
+    (if (or all-reactive-syms data compute)
+        ;; Has reactive features - register dependencies and resolve at runtime
+        (progn
+          (tp--unregister-reactive-deps layer-name)
+          (tp--ensure-reactive-variables all-vars-to-define)
+          (when data
+            (tp--register-layer-data layer-name data))
+          (when compute
+            (tp--register-layer-computed layer-name compute)
+            (tp--apply-initial-computed compute))
+          (tp--register-reactive-deps layer-name all-reactive-syms props)
+          (when watch
+            (tp--register-layer-watchers layer-name watch))
+          (let ((resolved-props (tp--resolve-reactive-symbols props)))
+            (tp--set-layer-props layer-name resolved-props))
+          (tp--update-layer-regions layer-name))
+      ;; No reactive symbols - use static properties
+      (progn
+        (tp--unregister-reactive-deps layer-name)
+        (tp--set-layer-props layer-name props)
+        (tp--update-layer-regions layer-name)))
+    layer-name))
+
+(defun tp-define-layer-group (name &rest elements)
   "Define a layer group named NAME containing multiple layers.
 
-This macro supports four formats for each element:
+This function accepts a list of layer definitions in ELEMENTS.
+Each element in ELEMENTS should be one of:
 
-Format 1 - Anonymous layers (named as NAME-0, NAME-1, etc.):
-  (tp-define-layer-group group-name
-    (display \"🌑\" face (:height 1.0))
-    (display \"🌘\" face (:height 1.5))
-    (display \"🌗\" face (:height 2.0)))
+- A symbol: reference to an existing layer
+- A plist: anonymous layer (named as NAME-0, NAME-1, etc.)
+- A cons cell (\"suffix\" . plist): named layer (named as NAME-suffix)
+- A list (\"suffix\" :props plist [:data data] [:watch watch] [:compute compute]):
+  named layer with reactive features
 
-Format 2 - Named layers with cons-cell (named as NAME-suffix):
-  (tp-define-layer-group group-name
-    (\"新月\" . (display \"🌑\" face (:height 1.0)))
-    (\"残月\" . (display \"🌘\" face (:height 1.5)))
-    (\"下弦月\" . (display \"🌗\" face (:height 2.0))))
+All property lists should be evaluated (quoted in the call).
 
-Format 3 - Named layers with :props keyword (named as NAME-suffix):
-  (tp-define-layer-group group-name
-    (\"新月\" :props (display \"🌑\" face (:height 1.0)))
-    (\"残月\" :props (display \"🌘\" face (:height 1.5)))
-    (\"下弦月\" :props (display \"🌗\" face (:height 2.0))))
-
-Format 4 - Named layers with :props, :data, :watch, and/or :compute (Vue 3 style):
-  (tp-define-layer-group group-name
-    (\"reactive\" :props (face (:foreground $my-color) help-echo $full-name)
-                 :data (first-name last-name)
-                 :compute ((full-name (lambda () (concat first-name \" \" last-name))))
-                 :watch ((my-color (lambda (new old layer) (message \"Changed!\"))))))
-
-Reactive Variables:
-  If any symbol in :props starts with $, it is treated as a reactive variable.
-  Variables in :data are also reactive. All reactive variables are automatically
-  defined as global variables if they are not already bound.
-
-:data - A list of variable symbols for additional reactive state not in :props.
-:compute - A list of (VAR-SYMBOL COMPUTE-FN) pairs for computed reactive variables.
-:watch - A list of (VAR-SYMBOL CALLBACK) pairs for side effects.
-
-You can also reference already-defined layers by their symbol name:
-  (tp-define-layer-group group-name
-    existing-layer-1
-    existing-layer-2
-    (display \"🌗\" face (:height 2.0)))
+Example:
+  (tp-define-layer-group \\='my-group
+    \\='existing-layer
+    \\='(face bold)
+    \\='(\"named\" . (face italic))
+    \\='(\"reactive\" :props (face (:foreground $color))
+                   :data ((color . \"red\"))))
 
 If a layer group with the same NAME already exists, it will be overwritten.
 Individual layers created by the group are stored in `tp-layer-alist',
 and the group itself is stored in `tp-layer-groups'."
-  (declare (indent defun))
   (let ((layer-names nil)
-        (layer-defs nil)
         (idx 0))
     (dolist (element elements)
       (let ((parsed (tp--parse-layer-group-element name element idx)))
@@ -2247,95 +2279,61 @@ and the group itself is stored in `tp-layer-groups'."
          ((symbolp parsed)
           (push parsed layer-names))
          ;; Extended format with :data/:watch/:compute (format-4)
-         ;; parsed is (layer-name :props ... :data ... :watch ... :compute ...)
          ((and (listp parsed) (plist-get (cdr parsed) :props))
           (let* ((layer-name (car parsed))
                  (props (plist-get (cdr parsed) :props))
                  (data (plist-get (cdr parsed) :data))
                  (watch (plist-get (cdr parsed) :watch))
-                 (compute (plist-get (cdr parsed) :compute))
-                 (reactive-syms (tp--collect-reactive-symbols props))
-                 (computed-vars (when compute (mapcar #'car compute)))
-                 (all-reactive-syms (delete-dups reactive-syms))
-                 (props-vars (mapcar #'tp--reactive-var-symbol reactive-syms))
-                 (all-vars-to-define (delete-dups
-                                      (append data
-                                              props-vars
-                                              computed-vars))))
-            (if (or all-reactive-syms data compute)
-                ;; Has reactive features - register dependencies and resolve at runtime
-                (push `(progn
-                         ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
-                         (tp--unregister-reactive-deps ',layer-name)
-                         ;; Ensure all reactive variables are defined
-                         (tp--ensure-reactive-variables ',all-vars-to-define)
-                         ;; Register data variables
-                         ,@(when data
-                             `((tp--register-layer-data ',layer-name ',data)))
-                         ;; Register computed variable definitions
-                         ,@(when compute
-                             `((tp--register-layer-computed ',layer-name ',compute)
-                               (tp--apply-initial-computed ',compute)))
-                         ;; Register reactive dependencies
-                         (tp--register-reactive-deps
-                          ',layer-name ',all-reactive-syms ',props)
-                         ;; Register watchers
-                         ,@(when watch
-                             `((tp--register-layer-watchers ',layer-name ',watch)))
-                         ;; Set layer properties with resolved values
-                         (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
-                           (tp--set-layer-props ',layer-name resolved-props))
-                         ;; Update any text regions that already have this layer applied
-                         (tp--update-layer-regions ',layer-name))
-                      layer-defs)
-              ;; No reactive symbols - use static properties
-              (push `(progn
-                       ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
-                       (tp--unregister-reactive-deps ',layer-name)
-                       (tp--set-layer-props ',layer-name ',props)
-                       ;; Update any text regions that already have this layer applied
-                       (tp--update-layer-regions ',layer-name))
-                    layer-defs))
+                 (compute (plist-get (cdr parsed) :compute)))
+            (tp--define-layer-from-parsed layer-name props data watch compute)
             (push layer-name layer-names)))
          ;; Simple format (cons cell of name . props)
          ((consp parsed)
           (let* ((layer-name (car parsed))
-                 (props (cdr parsed))
-                 (reactive-syms (tp--collect-reactive-symbols props)))
-            (if reactive-syms
-                ;; Has reactive symbols - register dependencies and resolve at runtime
-                (push `(progn
-                         ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
-                         (tp--unregister-reactive-deps ',layer-name)
-                         (tp--ensure-reactive-variables
-                          ',(mapcar #'tp--reactive-var-symbol reactive-syms))
-                         (tp--register-reactive-deps
-                          ',layer-name ',reactive-syms ',props)
-                         (let ((resolved-props (tp--resolve-reactive-symbols ',props)))
-                           (tp--set-layer-props ',layer-name resolved-props))
-                         ;; Update any text regions that already have this layer applied
-                         (tp--update-layer-regions ',layer-name))
-                      layer-defs)
-              ;; No reactive symbols - use static properties
-              (push `(progn
-                       ;; Clean up old reactive dependencies, watchers, computed properties, and data (for re-definition)
-                       (tp--unregister-reactive-deps ',layer-name)
-                       (tp--set-layer-props ',layer-name ',props)
-                       ;; Update any text regions that already have this layer applied
-                       (tp--update-layer-regions ',layer-name))
-                    layer-defs))
+                 (props (cdr parsed)))
+            (tp--define-layer-from-parsed layer-name props nil nil nil)
             (push layer-name layer-names)
             ;; Only increment idx for anonymous (Format 1) elements
             (when (eq (tp--layer-group-element-format element) 'format-1)
               (cl-incf idx)))))))
     (setq layer-names (nreverse layer-names))
-    (setq layer-defs (nreverse layer-defs))
-    `(progn
-       ,@layer-defs
-       (tp--set-group-layers ',name ',layer-names)
-       (assoc ',name tp-layer-groups))))
+    (tp--set-group-layers name layer-names)
+    (assoc name tp-layer-groups)))
 
-(defalias 'define-tp-group 'tp-define-layer-group)
+(defmacro define-tp-group (name &rest elements)
+  "Define a layer group named NAME containing multiple layers.
+
+This macro provides a convenient syntax for `tp-define-layer-group'.
+All layer definitions should use quoted list format.
+
+Supported formats for each element in ELEMENTS:
+
+Format 1 - Existing layer reference:
+  \\='existing-layer-name
+
+Format 2 - Anonymous layer (named as NAME-0, NAME-1, etc.):
+  \\='(display \"🌑\" face (:height 1.0))
+
+Format 3 - Named layer with cons-cell (named as NAME-suffix):
+  \\='(\"新月\" . (display \"🌑\" face (:height 1.0)))
+
+Format 4 - Named layer with :props keyword (named as NAME-suffix):
+  \\='(\"新月\" :props (display \"🌑\" face (:height 1.0)))
+
+Format 5 - Named layer with :props, :data, :watch, and/or :compute:
+  \\='(\"reactive\" :props (face (:foreground $my-color))
+               :data ((my-color . \"red\"))
+               :watch ((my-color (lambda (new old layer) (message \"Changed!\")))))
+
+Example:
+  (define-tp-group my-group
+    \\='existing-layer
+    \\='(face bold)
+    \\='(\"named\" . (face italic)))
+
+See `tp-define-layer-group' for full documentation."
+  (declare (indent defun))
+  `(tp-define-layer-group ',name ,@elements))
 
 (defun tp--set-layer-props (layer-name properties)
   "Set PROPERTIES for layer LAYER-NAME in `tp-layer-alist'.

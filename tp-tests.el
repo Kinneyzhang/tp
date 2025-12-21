@@ -223,7 +223,7 @@
 (ert-deftest tp-test-define-layer ()
   "Test tp-define-layer creates a layer (Format 1 - direct plist)."
   (tp-test-with-temp-buffer
-    (tp-define-layer test-layer (face bold help-echo "test"))
+    (tp-define-layer 'test-layer '(face bold help-echo "test"))
     (should (assoc 'test-layer tp-layer-alist))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face bold help-echo "test")))))
@@ -231,7 +231,7 @@
 (ert-deftest tp-test-define-layer-with-props ()
   "Test tp-define-layer with :props keyword (Format 2)."
   (tp-test-with-temp-buffer
-    (tp-define-layer test-layer :props (face italic help-echo "props"))
+    (tp-define-layer 'test-layer :props '(face italic help-echo "props"))
     (should (assoc 'test-layer tp-layer-alist))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face italic help-echo "props")))))
@@ -239,23 +239,23 @@
 (ert-deftest tp-test-define-layer-updates-existing ()
   "Test tp-define-layer updates existing layer."
   (tp-test-with-temp-buffer
-    (tp-define-layer test-layer (face bold))
-    (tp-define-layer test-layer (face italic))
+    (tp-define-layer 'test-layer '(face bold))
+    (tp-define-layer 'test-layer '(face italic))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face italic)))))
 
 (ert-deftest tp-test-define-layer-updates-existing-with-props ()
   "Test tp-define-layer with :props updates existing layer."
   (tp-test-with-temp-buffer
-    (tp-define-layer test-layer (face bold))
-    (tp-define-layer test-layer :props (face underline))
+    (tp-define-layer 'test-layer '(face bold))
+    (tp-define-layer 'test-layer :props '(face underline))
     (should (equal (cdr (assoc 'test-layer tp-layer-alist))
                    '(face underline)))))
 
 (ert-deftest tp-test-layer-props ()
   "Test tp-layer-props returns properties with tp-name."
   (tp-test-with-temp-buffer
-    (tp-define-layer my-layer (face bold))
+    (tp-define-layer 'my-layer '(face bold))
     (let ((props (tp-layer-props 'my-layer)))
       (should (eq (plist-get props 'face) 'bold))
       (should (eq (plist-get props 'tp-name) 'my-layer)))))
@@ -268,7 +268,7 @@
 (ert-deftest tp-test-layer-undefine ()
   "Test tp-undefine-layer removes layer definition."
   (tp-test-with-temp-buffer
-   (tp-define-layer test-layer (face bold))
+   (tp-define-layer 'test-layer '(face bold))
    (should (assoc 'test-layer tp-layer-alist))
    (tp-undefine-layer 'test-layer)
    (should-not (assoc 'test-layer tp-layer-alist))))
@@ -280,11 +280,11 @@
 (ert-deftest tp-test-define-layer-group-anonymous ()
   "Test tp-define-layer-group creates a layer group with anonymous layers."
   (tp-test-with-temp-buffer
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer-group my-group
-      layer1
-      (face italic)
-      (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer-group 'my-group
+      'layer1
+      '(face italic)
+      '(face underline))
     (should (assoc 'my-group tp-layer-groups))
     ;; Check all layers are present in the group
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
@@ -297,9 +297,9 @@
 (ert-deftest tp-test-define-layer-group-named-cons ()
   "Test tp-define-layer-group with named cons-cell format."
   (tp-test-with-temp-buffer
-    (tp-define-layer-group my-group
-      ("first" . (face bold))
-      ("second" . (face italic)))
+    (tp-define-layer-group 'my-group
+      '("first" . (face bold))
+      '("second" . (face italic)))
     (should (assoc 'my-group tp-layer-groups))
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
       (should (= (length layers) 2))
@@ -312,9 +312,9 @@
 (ert-deftest tp-test-define-layer-group-named-props ()
   "Test tp-define-layer-group with :props format."
   (tp-test-with-temp-buffer
-    (tp-define-layer-group my-group
-      ("first" :props (face bold))
-      ("second" :props (face italic)))
+    (tp-define-layer-group 'my-group
+      '("first" :props (face bold))
+      '("second" :props (face italic)))
     (should (assoc 'my-group tp-layer-groups))
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
       (should (= (length layers) 2))
@@ -327,12 +327,12 @@
 (ert-deftest tp-test-define-layer-group-mixed ()
   "Test tp-define-layer-group with mixed formats."
   (tp-test-with-temp-buffer
-    (tp-define-layer existing-layer (face underline))
-    (tp-define-layer-group my-group
-      existing-layer
-      (face bold)
-      ("named" . (face italic))
-      ("with-props" :props (face strike-through)))
+    (tp-define-layer 'existing-layer '(face underline))
+    (tp-define-layer-group 'my-group
+      'existing-layer
+      '(face bold)
+      '("named" . (face italic))
+      '("with-props" :props (face strike-through)))
     (should (assoc 'my-group tp-layer-groups))
     (let ((layers (cdr (assoc 'my-group tp-layer-groups))))
       (should (= (length layers) 4))
@@ -344,9 +344,9 @@
 (ert-deftest tp-test-group-props ()
   "Test tp-group-props returns all layer properties."
   (tp-test-with-temp-buffer
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer-group my-group layer1 layer2)
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer-group 'my-group 'layer1 'layer2)
     (let ((props-list (tp-group-props 'my-group)))
       (should (= (length props-list) 2))
       ;; Check that both layers are present
@@ -357,8 +357,8 @@
 (ert-deftest tp-test-group-undefine ()
   "Test tp-undefine-group removes group definition."
   (tp-test-with-temp-buffer
-   (tp-define-layer layer1 (face bold))
-   (tp-define-layer-group my-group layer1)
+   (tp-define-layer 'layer1 '(face bold))
+   (tp-define-layer-group 'my-group 'layer1)
    (should (assoc 'my-group tp-layer-groups))
    (tp-undefine-group 'my-group)
    (should-not (assoc 'my-group tp-layer-groups))))
@@ -366,19 +366,19 @@
 (ert-deftest tp-test-layer-group-updates-existing ()
   "Test tp-define-layer-group updates existing group."
   (tp-test-with-temp-buffer
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer-group my-group layer1)
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer-group 'my-group 'layer1)
     (should (= (length (cdr (assoc 'my-group tp-layer-groups))) 1))
-    (tp-define-layer-group my-group layer1 layer2)
+    (tp-define-layer-group 'my-group 'layer1 'layer2)
     (should (= (length (cdr (assoc 'my-group tp-layer-groups))) 2))))
 
 (ert-deftest tp-test-layer-reset ()
   "Test tp-layer-reset clears all definitions."
   (tp-test-with-temp-buffer
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer-group group1 layer1 layer2)
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer-group 'group1 'layer1 'layer2)
     (should tp-layer-alist)
     (should tp-layer-groups)
     (tp-layer-reset)
@@ -393,7 +393,7 @@
   "Test tp-push-layer adds layer to stack."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
+    (tp-define-layer 'layer1 '(face bold))
     (tp-push-layer 1 6 'layer1)
     (should (eq (tp-at 1 'face) 'bold))
     (should (eq (tp-at 1 'tp-name) 'layer1))))
@@ -402,8 +402,8 @@
   "Test pushing multiple layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; layer2 should be on top (visible)
@@ -416,8 +416,8 @@
   "Test tp-delete-layer removes layer from stack."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Delete top layer
@@ -430,9 +430,9 @@
   "Test deleting layer from middle of stack."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -447,8 +447,8 @@
   "Test tp-pop-layer removes top layer."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Pop top layer
@@ -460,9 +460,9 @@
   "Test tp-rotate-layer cycles layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -482,9 +482,9 @@
   "Test tp-pin-layer brings layer to top."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -496,9 +496,9 @@
   "Test tp-raise-layer moves layer up."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -511,8 +511,8 @@
   "Test tp-switch-layer swaps two layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; layer2 is on top
@@ -526,9 +526,9 @@
   "Test tp-move-layer moves layer by index."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -543,9 +543,9 @@
   "Test tp-move-layer moves layer by name."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -560,9 +560,9 @@
   "Test tp-move-layer with negative indices."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -578,8 +578,8 @@
   (let ((str (copy-sequence "Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer str 'layer1)
     (tp-push-layer str 'layer2)
     ;; layer2 is on top
@@ -593,9 +593,9 @@
   "Test tp-put-layer inserts layer at specified index."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Insert layer3 at index 1 (between layer2 and layer1)
@@ -609,8 +609,8 @@
   "Test tp-merge-layers merges specified layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (help-echo "test"))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(help-echo "test"))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Merge layer1 and layer2 into merged-layer
@@ -624,8 +624,8 @@
   "Test tp-flatten-layers flattens all layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (help-echo "test"))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(help-echo "test"))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Flatten all layers into flat-layer
@@ -642,9 +642,9 @@
   "Test tp-layer-list returns all layer names."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -658,8 +658,8 @@
   "Test tp-layer-count returns correct count."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (should (= (tp-layer-count 1 6) 1))
     (tp-push-layer 1 6 'layer2)
@@ -669,7 +669,7 @@
   "Test tp-layer-exists-p correctly detects layers."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
+    (tp-define-layer 'layer1 '(face bold))
     (tp-push-layer 1 6 'layer1)
     (should (tp-layer-exists-p 1 6 'layer1))
     (should-not (tp-layer-exists-p 1 6 'layer2))))
@@ -678,8 +678,8 @@
   "Test tp-layer-top returns top layer name."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (should (eq (tp-layer-top 1 6) 'layer1))
     (tp-push-layer 1 6 'layer2)
@@ -1673,9 +1673,9 @@ Returns list of (START END VALUE) intervals."
   "Test tp-add-to-layers adds properties to specified layers in buffer."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -1694,9 +1694,9 @@ Returns list of (START END VALUE) intervals."
   "Test tp-add-to-layers with layer indices."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -1717,8 +1717,8 @@ Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer str 'layer1)
     (tp-push-layer str 'layer2)
     ;; Add help-echo to layer1
@@ -1733,7 +1733,7 @@ Returns list of (START END VALUE) intervals."
   "Test tp-add-to-layers deeply merges properties."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face (:foreground "red")))
+    (tp-define-layer 'layer1 '(face (:foreground "red")))
     (tp-push-layer 1 6 'layer1)
     ;; Add background to layer1 - should merge with existing face
     (tp-add-to-layers '(layer1) 1 6 '(face (:background "blue")))
@@ -1745,9 +1745,9 @@ Returns list of (START END VALUE) intervals."
   "Test tp-add-to-all-layers adds properties to all layers in buffer."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
-    (tp-define-layer layer3 (face underline))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
+    (tp-define-layer 'layer3 '(face underline))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     (tp-push-layer 1 6 'layer3)
@@ -1768,8 +1768,8 @@ Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer str 'layer1)
     (tp-push-layer str 'layer2)
     ;; Add help-echo to all layers
@@ -1784,8 +1784,8 @@ Returns list of (START END VALUE) intervals."
   "Test tp-add-to-all-layers deeply merges properties."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face (:foreground "red")))
-    (tp-define-layer layer2 (face (:foreground "blue")))
+    (tp-define-layer 'layer1 '(face (:foreground "red")))
+    (tp-define-layer 'layer2 '(face (:foreground "blue")))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Add background to all layers
@@ -1804,8 +1804,8 @@ Returns list of (START END VALUE) intervals."
   "Test tp-add-to-layers with negative index (-1 means bottom)."
   (tp-test-with-temp-buffer
     (insert "Hello")
-    (tp-define-layer layer1 (face bold))
-    (tp-define-layer layer2 (face italic))
+    (tp-define-layer 'layer1 '(face bold))
+    (tp-define-layer 'layer2 '(face italic))
     (tp-push-layer 1 6 'layer1)
     (tp-push-layer 1 6 'layer2)
     ;; Stack is: layer2 (0), layer1 (1)
@@ -1822,7 +1822,7 @@ Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer layer1 (face bold))
+    (tp-define-layer 'layer1 '(face bold))
     (tp-push-layer str 'layer1)
     (let ((result (tp-add-to-layers '(layer1) str 'help-echo "test")))
       (should (stringp result))
@@ -1833,7 +1833,7 @@ Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer layer1 (face bold))
+    (tp-define-layer 'layer1 '(face bold))
     (tp-push-layer str 'layer1)
     (let ((result (tp-add-to-all-layers str 'help-echo "test")))
       (should (stringp result))
@@ -1905,8 +1905,7 @@ Returns list of (START END VALUE) intervals."
     (defvar tp-test-var-color "red" "Test color variable.")
     (unwind-protect
         (progn
-          (tp-define-layer test-reactive-layer
-            (face (:foreground $tp-test-var-color)))
+          (tp-define-layer 'test-reactive-layer '(face (:foreground $tp-test-var-color)))
           ;; Check the layer is defined with resolved value
           (let ((props (cdr (assoc 'test-reactive-layer tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
@@ -1928,8 +1927,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-reactive-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer test-reactive-update
-            (face (:foreground $tp-test-reactive-color)))
+          (tp-define-layer 'test-reactive-update '(face (:foreground $tp-test-reactive-color)))
           ;; Verify initial value
           (let ((props (cdr (assoc 'test-reactive-update tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
@@ -1948,8 +1946,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-region-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer test-reactive-region
-            (face (:foreground $tp-test-region-color)))
+          (tp-define-layer 'test-reactive-region '(face (:foreground $tp-test-region-color)))
           (insert "Hello World")
           ;; Apply the layer to text
           (tp-push-layer 1 6 'test-reactive-region)
@@ -1969,8 +1966,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-reset-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer test-reactive-reset
-            (face (:foreground $tp-test-reset-color)))
+          (tp-define-layer 'test-reactive-reset '(face (:foreground $tp-test-reset-color)))
           (should tp-reactive-deps)
           (tp-reactive-reset)
           (should-not tp-reactive-deps))
@@ -1984,8 +1980,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-reset2-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer test-reactive-reset2
-            (face (:foreground $tp-test-reset2-color)))
+          (tp-define-layer 'test-reactive-reset2 '(face (:foreground $tp-test-reset2-color)))
           (should tp-reactive-deps)
           (tp-layer-reset)
           (should-not tp-reactive-deps))
@@ -1999,9 +1994,9 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-group-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer-group test-reactive-group
-            ("first" :props (face (:foreground $tp-test-group-color)))
-            ("second" :props (face (:foreground "blue"))))
+          (tp-define-layer-group 'test-reactive-group
+            '("first" :props (face (:foreground $tp-test-group-color)))
+            '("second" :props (face (:foreground "blue"))))
           ;; Check the reactive layer is defined with resolved value
           (let ((props (cdr (assoc 'test-reactive-group-first tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
@@ -2024,8 +2019,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-undef-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer test-undef-reactive
-            (face (:foreground $tp-test-undef-color)))
+          (tp-define-layer 'test-undef-reactive '(face (:foreground $tp-test-undef-color)))
           ;; Check the dependency is registered
           (should (assoc 'tp-test-undef-color tp-reactive-deps))
           (let* ((deps (cdr (assoc 'tp-test-undef-color tp-reactive-deps)))
@@ -2045,7 +2039,7 @@ Returns list of (START END VALUE) intervals."
   "Test tp-set accepts a layer name defined by define-tp."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-define-layer my-style (face bold help-echo "tip"))
+    (tp-define-layer 'my-style '(face bold help-echo "tip"))
     ;; Use layer name instead of plist
     (tp-set 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'bold))
@@ -2058,7 +2052,7 @@ Returns list of (START END VALUE) intervals."
   (let ((str (copy-sequence "Hello World")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer my-style (face italic))
+    (tp-define-layer 'my-style '(face italic))
     (tp-set 0 5 'my-style str)
     (should (eq (get-text-property 0 'face str) 'italic))
     ;; tp-name should be preserved for reactive text property support
@@ -2070,9 +2064,8 @@ This tests the fix for the bug where (tp-set str 'layer-name) would
 incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     ;; Define a layer with reactive variables
-    (tp-define-layer my-entire-string-layer
-      :props (face (:background $my-entire-string-color))
-      :data ((my-entire-string-color . "blue")))
+    (tp-define-layer 'my-entire-string-layer :props '(face (:background $my-entire-string-color))
+      :data '((my-entire-string-color . "blue")))
     (let ((str (tp-set " " 'my-entire-string-layer)))
       ;; tp-name should be the defined layer name, not an anonymous tp-anon-X
       (should (eq (get-text-property 0 'tp-name str) 'my-entire-string-layer))
@@ -2084,7 +2077,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-set 1 6 '(mouse-face highlight))
-    (tp-define-layer my-style (face underline))
+    (tp-define-layer 'my-style '(face underline))
     ;; Use layer name - should completely replace
     (tp-reset 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'underline))
@@ -2097,7 +2090,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-set 1 6 '(help-echo "existing"))
-    (tp-define-layer my-style (face bold))
+    (tp-define-layer 'my-style '(face bold))
     ;; Use layer name - should preserve existing properties
     (tp-add 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'bold))
@@ -2109,7 +2102,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test tp-match-set accepts a layer name."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
-    (tp-define-layer match-style (face bold help-echo "matched"))
+    (tp-define-layer 'match-style '(face bold help-echo "matched"))
     (tp-match-set "Hello" 'match-style)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "matched"))
@@ -2122,7 +2115,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (let ((str (copy-sequence "Hello World Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer match-style (face italic))
+    (tp-define-layer 'match-style '(face italic))
     (tp-match-set "Hello" 'match-style str)
     (should (eq (get-text-property 0 'face str) 'italic))
     (should (eq (get-text-property 12 'face str) 'italic))
@@ -2134,7 +2127,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
     (tp-set 1 6 '(mouse-face highlight))
-    (tp-define-layer match-style (face bold))
+    (tp-define-layer 'match-style '(face bold))
     (tp-match-reset "Hello" 'match-style)
     (should (eq (tp-at 1 'face) 'bold))
     (should (null (tp-at 1 'mouse-face)))))
@@ -2144,7 +2137,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
     (tp-set 1 6 '(help-echo "original"))
-    (tp-define-layer match-style (face bold))
+    (tp-define-layer 'match-style '(face bold))
     (tp-match-add "Hello" 'match-style)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "original"))))
@@ -2153,7 +2146,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test tp-regexp-set accepts a layer name."
   (tp-test-with-temp-buffer
     (insert "abc 123 def 456")
-    (tp-define-layer number-style (face bold help-echo "number"))
+    (tp-define-layer 'number-style '(face bold help-echo "number"))
     (tp-regexp-set "[0-9]+" 'number-style)
     (should (eq (tp-at 5 'face) 'bold))
     (should (equal (tp-at 5 'help-echo) "number"))
@@ -2164,7 +2157,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (let ((str (copy-sequence "abc 123 def 456")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
-    (tp-define-layer number-style (face italic))
+    (tp-define-layer 'number-style '(face italic))
     (tp-regexp-set "[0-9]+" 'number-style str)
     (should (eq (get-text-property 4 'face str) 'italic))
     (should (eq (get-text-property 12 'face str) 'italic))))
@@ -2174,7 +2167,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "abc 123 def 456")
     (tp-set 5 8 '(mouse-face highlight))
-    (tp-define-layer number-style (face bold))
+    (tp-define-layer 'number-style '(face bold))
     (tp-regexp-reset "[0-9]+" 'number-style)
     (should (eq (tp-at 5 'face) 'bold))
     (should (null (tp-at 5 'mouse-face)))))
@@ -2184,7 +2177,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "abc 123 def 456")
     (tp-set 5 8 '(help-echo "original"))
-    (tp-define-layer number-style (face bold))
+    (tp-define-layer 'number-style '(face bold))
     (tp-regexp-add "[0-9]+" 'number-style)
     (should (eq (tp-at 5 'face) 'bold))
     (should (equal (tp-at 5 'help-echo) "original"))
@@ -2195,8 +2188,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test tp-set accepts a group name defined by define-tp-group."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-define-layer-group my-group
-      ("style" . (face bold help-echo "grouped")))
+    (tp-define-layer-group 'my-group
+      '("style" . (face bold help-echo "grouped")))
     ;; Use group name - should include tp-name for top layer
     (tp-set 1 6 'my-group)
     (should (eq (tp-at 1 'face) 'bold))
@@ -2208,9 +2201,9 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test tp-set with group containing multiple layers preserves tp-layers."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-define-layer-group my-group
-      ("first" . (face bold))
-      ("second" . (face italic)))
+    (tp-define-layer-group 'my-group
+      '("first" . (face bold))
+      '("second" . (face italic)))
     ;; Use group name - should include tp-layers for multiple layers
     (tp-set 1 6 'my-group)
     ;; First layer is on top
@@ -2226,8 +2219,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test tp-match-set accepts a group name."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
-    (tp-define-layer-group my-group
-      ("style" . (face italic)))
+    (tp-define-layer-group 'my-group
+      '("style" . (face italic)))
     (tp-match-set "Hello" 'my-group)
     (should (eq (tp-at 1 'face) 'italic))
     (should (eq (tp-at 13 'face) 'italic))
@@ -2243,8 +2236,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test tp-set with layer containing complex nested properties."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    (tp-define-layer complex-layer
-      (face (:foreground "red" :underline (:style wave))
+    (tp-define-layer 'complex-layer '(face (:foreground "red" :underline (:style wave))
             help-echo "complex"))
     (tp-set 1 6 'complex-layer)
     (let ((face (tp-at 1 'face)))
@@ -2295,7 +2287,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     ;; First set with a layer name
-    (tp-define-layer my-existing-layer (face bold))
+    (tp-define-layer 'my-existing-layer '(face bold))
     (tp-set 1 6 'my-existing-layer)
     (should (eq (tp-at 1 'tp-name) 'my-existing-layer))
     ;; Now set with anonymous plist that already has tp-name
@@ -2359,9 +2351,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (setq tp-test-watch-log nil)
     (unwind-protect
         (progn
-          (tp-define-layer test-watch-layer
-            :props (face (:foreground $tp-test-watch-var))
-            :watch ((tp-test-watch-var
+          (tp-define-layer 'test-watch-layer :props '(face (:foreground $tp-test-watch-var))
+            :watch '((tp-test-watch-var
                      (lambda (new old layer)
                        (push (list new old layer) tp-test-watch-log)))))
           ;; Check the layer is defined with resolved value
@@ -2389,9 +2380,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer test-data-layer
-            :props (face (:foreground $tp-test-data-color))
-            :data (tp-test-data-extra))
+          (tp-define-layer 'test-data-layer :props '(face (:foreground $tp-test-data-color))
+            :data '(tp-test-data-extra))
           ;; Check that variables were auto-defined
           (should (boundp 'tp-test-data-color))
           (should (boundp 'tp-test-data-extra))
@@ -2411,10 +2401,10 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
           ;; Set up the source variables
           (setq tp-test-first-name "John")
           (setq tp-test-last-name "Doe")
-          (tp-define-layer test-compute-layer
-            :props (help-echo $tp-test-full-name)
-            :data (tp-test-first-name tp-test-last-name)
-            :compute ((tp-test-full-name
+          (tp-define-layer 'test-compute-layer
+            :props '(help-echo $tp-test-full-name)
+            :data '(tp-test-first-name tp-test-last-name)
+            :compute '((tp-test-full-name
                        (lambda ()
                          (concat tp-test-first-name " " tp-test-last-name)))))
           ;; Check the layer is defined
@@ -2441,10 +2431,10 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
           (setq tp-test-dc-first "Jane")
           (setq tp-test-dc-last "Smith")
           ;; Define layer with :data and :compute
-          (tp-define-layer test-dc-layer
-            :props (face (:foreground $tp-test-dc-color) help-echo $tp-test-dc-full-name)
-            :data (tp-test-dc-first tp-test-dc-last)
-            :compute ((tp-test-dc-full-name
+          (tp-define-layer 'test-dc-layer
+            :props '(face (:foreground $tp-test-dc-color) help-echo $tp-test-dc-full-name)
+            :data '(tp-test-dc-first tp-test-dc-last)
+            :compute '((tp-test-dc-full-name
                        (lambda ()
                          (concat tp-test-dc-first " " tp-test-dc-last)))))
           ;; Check data is registered
@@ -2463,36 +2453,33 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   "Test that :watch requires :props to be explicitly specified."
   (tp-test-with-temp-buffer
     (should-error
-     (macroexpand-1
-      '(tp-define-layer test-invalid
-         :watch ((some-var (lambda (new old layer) nil))))))))
+     (tp-define-layer 'test-invalid
+       :watch '((some-var (lambda (new old layer) nil)))))))
 
 (ert-deftest tp-test-define-layer-compute-requires-props ()
   "Test that :compute requires :props to be explicitly specified."
   (tp-test-with-temp-buffer
     (should-error
-     (macroexpand-1
-      '(tp-define-layer test-invalid
-         :compute ((some-var (lambda () "computed"))))))))
+     (tp-define-layer 'test-invalid
+       :compute '((some-var (lambda () "computed")))))))
 
 (ert-deftest tp-test-define-layer-data-requires-props ()
   "Test that :data requires :props to be explicitly specified."
   (tp-test-with-temp-buffer
     (should-error
-     (macroexpand-1
-      '(tp-define-layer test-invalid
-         :data (some-var))))))
+     (tp-define-layer 'test-invalid
+       :data '(some-var)))))
 
 (ert-deftest tp-test-undefine-layer-clears-watch-compute-data ()
   "Test tp-undefine-layer clears watchers, computed, and data."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer test-undef-wcd
-            :props (face (:foreground $tp-test-undef-color) help-echo $tp-test-undef-full)
-            :data (tp-test-undef-first tp-test-undef-last)
-            :watch ((tp-test-undef-color (lambda (n o l) nil)))
-            :compute ((tp-test-undef-full
+          (tp-define-layer 'test-undef-wcd
+            :props '(face (:foreground $tp-test-undef-color) help-echo $tp-test-undef-full)
+            :data '(tp-test-undef-first tp-test-undef-last)
+            :watch '((tp-test-undef-color (lambda (n o l) nil)))
+            :compute '((tp-test-undef-full
                        (lambda ()
                          (concat tp-test-undef-first " " tp-test-undef-last)))))
           ;; Check registrations
@@ -2520,12 +2507,12 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (setq tp-test-group-watch-log nil)
     (unwind-protect
         (progn
-          (tp-define-layer-group test-watch-group
-            ("reactive" :props (face (:foreground $tp-test-group-watch-var))
+          (tp-define-layer-group 'test-watch-group
+            '("reactive" :props (face (:foreground $tp-test-group-watch-var))
                         :watch ((tp-test-group-watch-var
                                  (lambda (new old layer)
                                    (push (list new old layer) tp-test-group-watch-log)))))
-            ("static" :props (face (:foreground "blue"))))
+            '("static" :props (face (:foreground "blue"))))
           ;; Check the group is defined
           (should (assoc 'test-watch-group tp-layer-groups))
           ;; Check the reactive layer has its watcher registered
@@ -2547,13 +2534,13 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
         (progn
           (setq tp-test-group-first "Group")
           (setq tp-test-group-last "Test")
-          (tp-define-layer-group test-compute-group
-            ("computed" :props (help-echo $tp-test-group-full)
+          (tp-define-layer-group 'test-compute-group
+            '("computed" :props (help-echo $tp-test-group-full)
                         :data (tp-test-group-first tp-test-group-last)
-                        :compute ((tp-test-group-full
+                        :compute '((tp-test-group-full
                                    (lambda ()
                                      (concat tp-test-group-first " " tp-test-group-last)))))
-            ("static" :props (face (:foreground "blue"))))
+            '("static" :props (face (:foreground "blue"))))
           ;; Check the group is defined
           (should (assoc 'test-compute-group tp-layer-groups))
           ;; Check the computed layer has its compute registered
@@ -2572,11 +2559,11 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer test-reset-all
-            :props (face (:foreground $tp-test-reset-color) help-echo $tp-test-reset-full)
-            :data (tp-test-reset-first tp-test-reset-last)
-            :watch ((tp-test-reset-color (lambda (n o l) nil)))
-            :compute ((tp-test-reset-full
+          (tp-define-layer 'test-reset-all
+            :props '(face (:foreground $tp-test-reset-color) help-echo $tp-test-reset-full)
+            :data '(tp-test-reset-first tp-test-reset-last)
+            :watch '((tp-test-reset-color (lambda (n o l) nil)))
+            :compute '((tp-test-reset-full
                        (lambda ()
                          (concat tp-test-reset-first " " tp-test-reset-last)))))
           ;; Check registrations
@@ -2603,9 +2590,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
           ;; Variables should not exist before
           (should-not (boundp 'tp-test-auto-var1))
           (should-not (boundp 'tp-test-auto-var2))
-          (tp-define-layer test-auto-layer
-            :props (face (:foreground $tp-test-auto-var1))
-            :data (tp-test-auto-var2))
+          (tp-define-layer 'test-auto-layer :props '(face (:foreground $tp-test-auto-var1))
+            :data '(tp-test-auto-var2))
           ;; Variables should now exist
           (should (boundp 'tp-test-auto-var1))
           (should (boundp 'tp-test-auto-var2)))
@@ -2619,8 +2605,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; Define layer with auto-created variable (nil initial value)
-          (tp-define-layer test-local-layer
-            :props (face (:foreground $tp-test-local-color)))
+          (tp-define-layer 'test-local-layer :props '(face (:foreground $tp-test-local-color)))
           ;; Apply layer to text
           (insert "Hello World")
           (tp-set 1 6 'test-local-layer)
@@ -2639,10 +2624,10 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; Define layer with :data and :compute
-          (tp-define-layer test-data-compute-layer
-            :props (help-echo $tp-test-dc-full)
-            :data (tp-test-dc-first tp-test-dc-last)
-            :compute ((tp-test-dc-full
+          (tp-define-layer 'test-data-compute-layer
+            :props '(help-echo $tp-test-dc-full)
+            :data '(tp-test-dc-first tp-test-dc-last)
+            :compute '((tp-test-dc-full
                        (lambda ()
                          (concat tp-test-dc-first " " tp-test-dc-last)))))
           ;; Apply layer to text
@@ -2669,9 +2654,9 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; Define layer with :data having initial values
-          (tp-define-layer test-data-init-layer
-            :props (face (:foreground $tp-test-init-color) help-echo $tp-test-init-name)
-            :data ((tp-test-init-color . "blue")
+          (tp-define-layer 'test-data-init-layer
+            :props '(face (:foreground $tp-test-init-color) help-echo $tp-test-init-name)
+            :data '((tp-test-init-color . "blue")
                    (tp-test-init-name . "Initial Name")
                    tp-test-init-other))
           ;; Check initial values
@@ -2696,8 +2681,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; Define a reactive layer
-          (tp-define-layer test-multi-buf-layer
-            :props (face (:foreground $tp-test-multi-color)))
+          (tp-define-layer 'test-multi-buf-layer :props '(face (:foreground $tp-test-multi-color)))
           ;; Create first buffer with layer applied
           (setq buf1 (generate-new-buffer " *test-buf1*"))
           (with-current-buffer buf1
@@ -2729,8 +2713,7 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; Define a reactive layer
-          (tp-define-layer test-global-layer
-            :props (face (:foreground $tp-test-global-color)))
+          (tp-define-layer 'test-global-layer :props '(face (:foreground $tp-test-global-color)))
           ;; Create first buffer with layer applied
           (setq buf1 (generate-new-buffer " *test-buf1*"))
           (with-current-buffer buf1
@@ -2763,18 +2746,16 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition with gray color
-          (tp-define-layer test-redef-layer
-            :props (face (:background $tp-test-redef-color))
-            :data ((tp-test-redef-color . "gray")))
+          (tp-define-layer 'test-redef-layer :props '(face (:background $tp-test-redef-color))
+            :data '((tp-test-redef-color . "gray")))
           ;; Check initial value
           (should (equal tp-test-redef-color "gray"))
           ;; Check layer props
           (let ((props (cdr (assoc 'test-redef-layer tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :background) "gray")))
           ;; Re-define with different color
-          (tp-define-layer test-redef-layer
-            :props (face (:background $tp-test-redef-color))
-            :data ((tp-test-redef-color . "blue")))
+          (tp-define-layer 'test-redef-layer :props '(face (:background $tp-test-redef-color))
+            :data '((tp-test-redef-color . "blue")))
           ;; Check variable is updated
           (should (equal tp-test-redef-color "blue"))
           ;; Check layer props are updated
@@ -2789,15 +2770,14 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition
-          (tp-define-layer test-redef-props
-            :props (face (:foreground $tp-test-redef-fg))
-            :data ((tp-test-redef-fg . "red")))
+          (tp-define-layer 'test-redef-props :props '(face (:foreground $tp-test-redef-fg))
+            :data '((tp-test-redef-fg . "red")))
           (let ((props (cdr (assoc 'test-redef-props tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
           ;; Re-define with different props structure
-          (tp-define-layer test-redef-props
-            :props (face (:background $tp-test-redef-bg) help-echo "new")
-            :data ((tp-test-redef-bg . "yellow")))
+          (tp-define-layer 'test-redef-props
+            :props '(face (:background $tp-test-redef-bg) help-echo "new")
+            :data '((tp-test-redef-bg . "yellow")))
           ;; Check new props are applied
           (let ((props (cdr (assoc 'test-redef-props tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :background) "yellow"))
@@ -2814,17 +2794,15 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition with $old-var
-          (tp-define-layer test-redef-deps
-            :props (face (:foreground $tp-test-old-var))
-            :data ((tp-test-old-var . "red")))
+          (tp-define-layer 'test-redef-deps :props '(face (:foreground $tp-test-old-var))
+            :data '((tp-test-old-var . "red")))
           ;; Check old var is in dependencies
           (should (assoc 'tp-test-old-var tp-reactive-deps))
           (let ((deps (cdr (assoc 'tp-test-old-var tp-reactive-deps))))
             (should (assoc 'test-redef-deps deps)))
           ;; Re-define with $new-var
-          (tp-define-layer test-redef-deps
-            :props (face (:foreground $tp-test-new-var))
-            :data ((tp-test-new-var . "blue")))
+          (tp-define-layer 'test-redef-deps :props '(face (:foreground $tp-test-new-var))
+            :data '((tp-test-new-var . "blue")))
           ;; Check old var is no longer in dependencies for this layer
           (when-let ((deps (cdr (assoc 'tp-test-old-var tp-reactive-deps))))
             (should-not (assoc 'test-redef-deps deps)))
@@ -2847,17 +2825,15 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition with old watcher
-          (tp-define-layer test-redef-watch
-            :props (face (:foreground $tp-test-watch-var))
-            :data ((tp-test-watch-var . "red"))
-            :watch ((tp-test-watch-var
+          (tp-define-layer 'test-redef-watch :props '(face (:foreground $tp-test-watch-var))
+            :data '((tp-test-watch-var . "red"))
+            :watch '((tp-test-watch-var
                      (lambda (new old layer)
                        (push (list 'old new) tp-test-watch-log-old)))))
           ;; Re-define with new watcher
-          (tp-define-layer test-redef-watch
-            :props (face (:foreground $tp-test-watch-var))
-            :data ((tp-test-watch-var . "red"))
-            :watch ((tp-test-watch-var
+          (tp-define-layer 'test-redef-watch :props '(face (:foreground $tp-test-watch-var))
+            :data '((tp-test-watch-var . "red"))
+            :watch '((tp-test-watch-var
                      (lambda (new old layer)
                        (push (list 'new new) tp-test-watch-log-new)))))
           ;; Change variable
@@ -2879,17 +2855,17 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
         (progn
           ;; First definition with old compute
           (setq tp-test-compute-src "hello")
-          (tp-define-layer test-redef-compute
-            :props (help-echo $tp-test-compute-out)
-            :data (tp-test-compute-src)
-            :compute ((tp-test-compute-out
+          (tp-define-layer 'test-redef-compute
+            :props '(help-echo $tp-test-compute-out)
+            :data '(tp-test-compute-src)
+            :compute '((tp-test-compute-out
                        (lambda () (upcase tp-test-compute-src)))))
           (should (equal tp-test-compute-out "HELLO"))
           ;; Re-define with different compute
-          (tp-define-layer test-redef-compute
-            :props (help-echo $tp-test-compute-out)
-            :data (tp-test-compute-src)
-            :compute ((tp-test-compute-out
+          (tp-define-layer 'test-redef-compute
+            :props '(help-echo $tp-test-compute-out)
+            :data '(tp-test-compute-src)
+            :compute '((tp-test-compute-out
                        (lambda () (concat tp-test-compute-src "-suffix")))))
           ;; Check compute is updated
           (should (equal tp-test-compute-out "hello-suffix"))
@@ -2906,14 +2882,12 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition with reactive variable
-          (tp-define-layer test-reactive-to-static
-            :props (face (:foreground $tp-test-r2s-color))
-            :data ((tp-test-r2s-color . "red")))
+          (tp-define-layer 'test-reactive-to-static :props '(face (:foreground $tp-test-r2s-color))
+            :data '((tp-test-r2s-color . "red")))
           ;; Check reactive dependency is registered
           (should (assoc 'tp-test-r2s-color tp-reactive-deps))
           ;; Re-define as static (non-reactive)
-          (tp-define-layer test-reactive-to-static
-            (face bold))
+          (tp-define-layer 'test-reactive-to-static '(face bold))
           ;; Check reactive dependency is cleared
           (when-let ((deps (cdr (assoc 'tp-test-r2s-color tp-reactive-deps))))
             (should-not (assoc 'test-reactive-to-static deps)))
@@ -2929,14 +2903,14 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition
-          (tp-define-layer-group test-redef-group
-            ("layer1" :props (face (:background $tp-test-group-color))
+          (tp-define-layer-group 'test-redef-group
+            '("layer1" :props (face (:background $tp-test-group-color))
                       :data ((tp-test-group-color . "gray"))))
           ;; Check initial value
           (should (equal tp-test-group-color "gray"))
           ;; Re-define with different color
-          (tp-define-layer-group test-redef-group
-            ("layer1" :props (face (:background $tp-test-group-color))
+          (tp-define-layer-group 'test-redef-group
+            '("layer1" :props (face (:background $tp-test-group-color))
                       :data ((tp-test-group-color . "blue"))))
           ;; Check variable is updated
           (should (equal tp-test-group-color "blue"))
@@ -2952,18 +2926,16 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (unwind-protect
         (progn
           ;; First definition
-          (tp-define-layer test-redef-applied
-            :props (face (:background $tp-test-applied-color))
-            :data ((tp-test-applied-color . "gray")))
+          (tp-define-layer 'test-redef-applied :props '(face (:background $tp-test-applied-color))
+            :data '((tp-test-applied-color . "gray")))
           ;; Apply to text
           (insert "Hello World")
           (tp-set 1 6 'test-redef-applied)
           ;; Check initial color
           (should (equal (plist-get (get-text-property 1 'face) :background) "gray"))
           ;; Re-define with different color
-          (tp-define-layer test-redef-applied
-            :props (face (:background $tp-test-applied-color))
-            :data ((tp-test-applied-color . "blue")))
+          (tp-define-layer 'test-redef-applied :props '(face (:background $tp-test-applied-color))
+            :data '((tp-test-applied-color . "blue")))
           ;; The text should now have the new color
           ;; This happens because tp-define-layer calls tp--update-layer-regions
           ;; at the end to update all text regions with the new properties
