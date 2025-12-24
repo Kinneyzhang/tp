@@ -393,6 +393,12 @@ Also adds variable watchers so changes to data vars trigger computed updates."
   "Unregister data variables for LAYER-NAME."
   (setq tp-layer-data (assq-delete-all layer-name tp-layer-data)))
 
+(defmacro tp-with-current-buffer (buffer-or-name &rest body)
+  (declare (indent defun))
+  `(with-current-buffer ,buffer-or-name
+     (let ((inhibit-read-only t))
+       ,@body)))
+
 (defun tp--ensure-reactive-variables (var-symbols)
   "Ensure all VAR-SYMBOLS are defined as global variables.
 VAR-SYMBOLS can be a list of symbols or cons cells (SYMBOL . INITIAL-VALUE).
@@ -431,13 +437,13 @@ WHERE specifies which buffers to update:
                               nil)))
         (if (and where (bufferp where) (buffer-live-p where))
             ;; setq-local case: only update the specific buffer
-            (with-current-buffer where
+            (tp-with-current-buffer where
               (save-excursion
                 (tp-search-map apply-props-fn 'tp-name layer-name)))
           ;; setq case: update all buffers that have the text property
           (dolist (buf (buffer-list))
             (when (buffer-live-p buf)
-              (with-current-buffer buf
+              (tp-with-current-buffer buf
                 (save-excursion
                   (tp-search-map apply-props-fn 'tp-name layer-name))))))))))
 
@@ -1182,7 +1188,7 @@ Returns modified object or list of regions."
    ;; Buffer or nil (current buffer)
    (t
     (let ((buf (or object (current-buffer))))
-      (with-current-buffer buf
+      (tp-with-current-buffer buf
         (save-excursion
           (goto-char (point-min))
           (let (regions)
@@ -1233,7 +1239,7 @@ Returns modified object or list of regions."
    ;; Buffer or nil (current buffer)
    (t
     (let ((buf (or object (current-buffer))))
-      (with-current-buffer buf
+      (tp-with-current-buffer buf
         (save-excursion
           (goto-char (point-min))
           (let (regions)
@@ -1414,7 +1420,7 @@ Uses `tp-search-forward' for buffers and `tp-search' for strings."
      (t
       (let ((result nil)
             (buf (or object (current-buffer))))
-        (with-current-buffer buf
+        (tp-with-current-buffer buf
           (dotimes (_ count)
             (setq result (tp-search-forward property value t))))
         result)))))
@@ -1441,7 +1447,7 @@ Uses `tp-search-backward' for buffers and `tp-search' for strings."
      (t
       (let ((result nil)
             (buf (or object (current-buffer))))
-        (with-current-buffer buf
+        (tp-with-current-buffer buf
           (dotimes (_ count)
             (setq result (tp-search-backward property value))))
         result)))))
@@ -1476,7 +1482,7 @@ Returns the number of successful matches."
      (t
       (let* ((buf (or object (current-buffer)))
              (matches 0))
-        (with-current-buffer buf
+        (tp-with-current-buffer buf
           (let ((search-start (or start (point-min)))
                 (search-end (or end (point-max))))
             (save-excursion
@@ -1598,7 +1604,7 @@ Returns the number of successful matches."
      (t
       (let* ((buf (or object (current-buffer)))
              (matches 0))
-        (with-current-buffer buf
+        (tp-with-current-buffer buf
           (let ((search-start (or start (point-min)))
                 (search-end (or end (point-max))))
             (save-excursion
@@ -1759,7 +1765,7 @@ Each element contains the start position, end position, and property value."
                                pos property obj end)
                               end)))))
         ;; Buffer object
-        (with-current-buffer obj
+        (tp-with-current-buffer obj
           (while (< pos end)
             (let* ((props (text-properties-at pos))
                    (has-prop (plist-member props property))
@@ -1921,7 +1927,7 @@ Uses `object-intervals' (Emacs 28.1+)."
      ((stringp object)
       (object-intervals (substring object start end)))
      ((bufferp object)
-      (with-current-buffer (get-buffer-create object)
+      (tp-with-current-buffer (get-buffer-create object)
         (object-intervals (buffer-substring start end))))
      (t (error "Invalid format of object: %S"
                (type-of object))))))
@@ -1935,7 +1941,7 @@ Uses `object-intervals' (Emacs 28.1+)."
      ((stringp obj)
       (null (object-intervals obj)))
      ((bufferp obj)
-      (with-current-buffer obj
+      (tp-with-current-buffer obj
         (null (object-intervals (buffer-substring (point-min) (point-max))))))
      (t (error "Invalid object type: %S" (type-of obj))))))
 
@@ -3243,6 +3249,14 @@ Returns the modified object (string) or nil for buffer operations."
           (tp-add-to-layers all-indices start end plist obj))))
     (if (stringp obj) obj nil)))
 
+(defmacro tp-pop-to-buffer (buffer-or-name &rest body)
+  (declare (indent defun))
+  `(let ((buffer (get-buffer-create ,buffer-or-name)))
+     (tp-with-current-buffer buffer
+       (erase-buffer)
+       ,@body         
+       (read-only-mode 1))
+     (pop-to-buffer buffer)))
 
 (provide 'tp)
 ;;; tp.el ends here
