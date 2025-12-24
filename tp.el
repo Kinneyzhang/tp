@@ -2049,6 +2049,7 @@ the text properties explicitly.
 
 If a layer with the same NAME already exists, it will be overwritten.
 The layer is stored in `tp-layer-alist'."
+  (declare (indent defun))
   (let* ((parsed (tp--parse-define-layer-args args))
          (properties (plist-get parsed :props))
          (data (plist-get parsed :data))
@@ -2270,6 +2271,7 @@ Example:
 If a layer group with the same NAME already exists, it will be overwritten.
 Individual layers created by the group are stored in `tp-layer-alist',
 and the group itself is stored in `tp-layer-groups'."
+  (declare (indent defun))
   (let ((layer-names nil)
         (idx 0))
     (dolist (element elements)
