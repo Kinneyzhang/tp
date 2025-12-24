@@ -23,12 +23,11 @@
 ;; 应用到文本
 (with-temp-buffer
   (insert "Hello World")
-  (tp-set 1 10 `(face (:foreground ,my-color))))
-
-;; 问题来了：当你想改变颜色时...
-(setq my-color "blue")
-;; 文本不会自动更新！你必须手动重新应用：
-(with-temp-buffer
+  (tp-set 1 10 `(face (:foreground ,my-color)))
+  
+  ;; 问题来了：当你想改变颜色时...
+  (setq my-color "blue")
+  ;; 文本不会自动更新！你必须手动重新应用：
   (tp-set 1 10 `(face (:foreground ,my-color))))  ; 手动更新
 ```
 
@@ -270,10 +269,10 @@ tp.el 的响应式系统借鉴了 Vue 3 的 Composition API，提供了三个强
   (tp-push-layer 1 (point-max) 'watched-layer)
   
   ;; 改变颜色 - 触发监听器
-  (setq status-color "yellow"))
+  (setq status-color "yellow")
   ;; 消息: "【watched-layer】颜色从 green 变为 yellow"
   
-  (setq status-color "red")
+  (setq status-color "red"))
   ;; 消息: "【watched-layer】颜色从 yellow 变为 red"
 ```
 
@@ -489,8 +488,8 @@ tp.el 的响应式系统借鉴了 Vue 3 的 Composition API，提供了三个强
   '("warning" :props (face (:foreground $warning-fg :background $warning-bg))
               :data ((warning-fg . "black") (warning-bg . "yellow")))
   ;; 错误通知
-  '("error" :props (face (:foreground $error-fg :background $error-bg))
-            :data ((error-fg . "white") (error-bg . "red"))))
+  '("error"   :props (face (:foreground $error-fg :background $error-bg))
+              :data ((error-fg . "white") (error-bg . "red"))))
 
 ;; 使用层组
 (with-temp-buffer
@@ -604,4 +603,4 @@ tp.el 的响应式文本属性功能为 Emacs 开发带来了现代化的响应�
 
 ---
 
-*本文档是 tp.el 项目的一部分。更多信息请参阅 [README](../README.md) 和 [中文文档](../README_CN.md)。*
+*本文档是 tp.el 项目的一部分。更多信息请参阅 [项目主页](../README.md) 和 [完整中文文档](../README_CN.md)。*
