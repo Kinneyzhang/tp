@@ -2485,12 +2485,10 @@ For group names, includes `tp-layers' property with the full layer stack."
          ;; Parameterized layer - evaluate with the argument
          ((tp-layer-parameterized-p first-elem)
           (tp-layer-props-with-arg first-elem second-elem))
-         ;; Non-parameterized layer - arg should be t, just return the layer props
+         ;; Non-parameterized layer - arg should be t, return the layer props
+         ;; (silently ignore non-t values for flexibility)
          ((assoc first-elem tp-layer-alist)
-          (if (eq second-elem t)
-              (tp-layer-props first-elem)
-            ;; If not t, treat as parameterized but layer isn't - error or return nil
-            (tp-layer-props first-elem)))
+          (tp-layer-props first-elem))
          ;; Layer group
          ((assoc first-elem tp-layer-groups)
           (when-let ((layer-props-list (tp-group-props first-elem)))
@@ -2528,11 +2526,8 @@ For group names, includes `tp-layers' property with the full layer stack."
    ;; Symbol - check if it's a layer or group name
    ((symbolp props)
     (cond
-     ;; Check parameterized layer first - but without argument, we can't resolve it
-     ;; Just check if it's a known layer name
+     ;; Parameterized layer without argument - cannot resolve, return nil
      ((tp-layer-parameterized-p props)
-      ;; Parameterized layer without argument - return nil or error
-      ;; For now, return nil - caller should provide argument
       nil)
      ;; Check layer - use tp-layer-props which adds tp-name
      ((assoc props tp-layer-alist)
