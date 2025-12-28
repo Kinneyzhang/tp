@@ -2452,6 +2452,46 @@ Appends 'tp-name property to identify the layer."
               (tp-layer-props layer))
             layers)))
 
+(defun tp--is-layer-name-p (sym)
+  "Return non-nil if SYM is a defined layer, parameterized layer, or group name."
+  (and (symbolp sym)
+       (or (assoc sym tp-layer-alist)
+           (assoc sym tp-layer-params)
+           (assoc sym tp-layer-groups))))
+
+(defun tp--expand-layer-in-plist (props)
+  "Expand any layer names found in PROPS plist.
+Scans through PROPS treating it as a plist (key value pairs).
+When a key is a layer/group name, expands it with its properties.
+Returns the expanded plist."
+  (let ((result nil)
+        (remaining props))
+    (while remaining
+      (let ((key (car remaining))
+            (val (cadr remaining)))
+        (cond
+         ;; Key is a layer/parameterized layer/group name - expand it
+         ((tp--is-layer-name-p key)
+          (let ((layer-props
+                 (cond
+                  ;; Parameterized layer - evaluate with the argument (val)
+                  ((tp-layer-parameterized-p key)
+                   (tp-layer-props-with-arg key val))
+                  ;; Non-parameterized layer - val should be t
+                  ((assoc key tp-layer-alist)
+                   (tp-layer-props key))
+                  ;; Layer group
+                  ((assoc key tp-layer-groups)
+                   (when-let ((layer-props-list (tp-group-props key)))
+                     (tp--build-layer-props layer-props-list))))))
+            (when layer-props
+              (setq result (append result layer-props)))))
+         ;; Regular property - keep as-is
+         (t
+          (setq result (append result (list key val)))))
+        (setq remaining (cddr remaining))))
+    result))
+
 (defun tp--resolve-props (props)
   "Resolve PROPS to a property list with layer metadata.
 PROPS can be:
@@ -2461,6 +2501,7 @@ PROPS can be:
   for parameterized layers
 - A list starting with (LAYER-NAME ARG EXTRA-PROPS...) where extra properties
   are merged with the layer properties
+- A plist with layer names at any position - they will be expanded inline
 - A plist (handles anonymous layers with reactive variables)
 
 If PROPS is a symbol:
@@ -2471,6 +2512,10 @@ If PROPS is (LAYER-NAME ARG) or (LAYER-NAME ARG EXTRA-PROPS...):
 - For non-parameterized layers: if ARG is t, returns the layer properties
 - For parameterized layers: evaluates the body with ARG and returns the result
 - Extra properties after ARG are appended to the layer properties
+
+If PROPS is a plist with layer names at any position:
+- Layer names are expanded inline with their properties
+- Other properties are preserved in order
 
 If PROPS is a plist:
 - If it contains reactive variables ($...), generates a UUID for `tp-name',
@@ -2489,13 +2534,10 @@ For group names, includes `tp-layers' property with the full layer stack."
           (second-elem (cadr props))
           (extra-props (cddr props)))
       (cond
-       ;; Handle (layer-name arg ...) format for defined layers
+       ;; Handle (layer-name arg ...) format for defined layers at the START
        ;; This includes both (layer-name arg) and (layer-name arg extra-prop val ...)
        ((and (>= (length props) 2)
-             (symbolp first-elem)
-             (or (assoc first-elem tp-layer-alist)
-                 (assoc first-elem tp-layer-params)
-                 (assoc first-elem tp-layer-groups)))
+             (tp--is-layer-name-p first-elem))
         (let ((layer-props
                (cond
                 ;; Parameterized layer - evaluate with the argument
@@ -2509,9 +2551,10 @@ For group names, includes `tp-layers' property with the full layer stack."
                 ((assoc first-elem tp-layer-groups)
                  (when-let ((layer-props-list (tp-group-props first-elem)))
                    (tp--build-layer-props layer-props-list))))))
-          ;; Append extra properties if any
+          ;; Recursively resolve extra properties (they may also contain layer names)
           (if (and layer-props extra-props)
-              (append layer-props extra-props)
+              (let ((resolved-extra (tp--expand-layer-in-plist extra-props)))
+                (append layer-props resolved-extra))
             layer-props)))
        
        ;; Handle single-element list containing a layer/group name symbol.
@@ -2523,6 +2566,12 @@ For group names, includes `tp-layers' property with the full layer stack."
                  (assoc first-elem tp-layer-groups)))
         ;; It's a layer/group name wrapped in a list - recurse with the symbol
         (tp--resolve-props first-elem))
+       
+       ;; Check if any key in the plist is a layer name (layer at any position)
+       ((cl-some #'tp--is-layer-name-p
+                 (cl-loop for (key _val) on props by #'cddr collect key))
+        ;; Expand all layer names in the plist
+        (tp--expand-layer-in-plist props))
        
        ;; Normal plist processing
        (t

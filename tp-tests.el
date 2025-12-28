@@ -3258,5 +3258,46 @@ the inserted text should be that string, not the source text."
       (should (equal (get-text-property 0 'display result) '(space :width (6))))
       (should (equal (get-text-property 0 'face result) '(:foreground "green"))))))
 
+(ert-deftest tp-test-layer-at-any-position-string ()
+  "Test layer properties can be at any position in string form."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      `(display (space :width (,pixel))))
+    ;; Layer in the middle of the plist
+    (let ((result (tp-set "emacs"
+                          'face '(:foreground "green")
+                          'tp-space 6
+                          'test "test")))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (6))))
+      (should (equal (get-text-property 0 'face result) '(:foreground "green")))
+      (should (equal (get-text-property 0 'test result) "test")))))
+
+(ert-deftest tp-test-layer-at-any-position-region ()
+  "Test layer properties can be at any position in region form."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      `(display (space :width (,pixel))))
+    ;; Layer in the middle of the plist
+    (let ((result (tp-set 0 5 '(face (:foreground "green") tp-space 6 test "test") "emacs")))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (6))))
+      (should (equal (get-text-property 0 'face result) '(:foreground "green")))
+      (should (equal (get-text-property 0 'test result) "test")))))
+
+(ert-deftest tp-test-non-param-layer-at-any-position ()
+  "Test non-parameterized layer at any position."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold ()
+      '(face bold))
+    ;; Layer in the middle of the plist
+    (let ((result (tp-set "emacs"
+                          'test1 "value1"
+                          'tp-bold t
+                          'test2 "value2")))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should (equal (get-text-property 0 'test1 result) "value1"))
+      (should (equal (get-text-property 0 'test2 result) "value2")))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
