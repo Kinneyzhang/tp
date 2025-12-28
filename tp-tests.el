@@ -2248,15 +2248,17 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
 ;;; Anonymous Layer and Reactive Text Property Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-set-anonymous-layer-gets-tp-name ()
-  "Test that tp-set with anonymous plist gets a tp-name."
+(ert-deftest tp-test-set-anonymous-layer-no-tp-name-for-non-reactive ()
+  "Test that tp-set with non-reactive plist does NOT get tp-name.
+Per requirement 1: non-reactive properties should not have tp-name added,
+preserving the native text property behavior."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-set 1 6 '(face bold))
-    ;; Anonymous layer should have a generated tp-name
-    (should (tp-at 1 'tp-name))
-    ;; The tp-name should be a symbol starting with tp-anon-
-    (should (string-prefix-p "tp-anon-" (symbol-name (tp-at 1 'tp-name))))))
+    ;; Non-reactive anonymous layer should NOT have tp-name
+    (should-not (tp-at 1 'tp-name))
+    ;; But the face property should still be set
+    (should (eq (tp-at 1 'face) 'bold))))
 
 (ert-deftest tp-test-set-anonymous-reactive-layer ()
   "Test that tp-set with anonymous reactive plist works."
@@ -2942,6 +2944,121 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
           (should (equal (plist-get (get-text-property 1 'face) :background) "blue")))
       ;; Cleanup
       (ignore-errors (makunbound 'tp-test-applied-color)))))
+
+;;; ============================================================
+;;; Reactive Text (tp-text) Tests
+;;; ============================================================
+
+(ert-deftest tp-test-tp-text-nil-initializes-to-current-text ()
+  "Test that tp-text with nil value is initialized to current text."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(face bold tp-text nil))
+    ;; tp-text should be set to the current text
+    (should (equal (tp-at 1 'tp-text) "Hello"))
+    ;; face should still be bold
+    (should (eq (tp-at 1 'face) 'bold))))
+
+(ert-deftest tp-test-tp-text-string-replaces-text ()
+  "Test that tp-text with string value replaces the text in the region."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(face bold tp-text "Hi"))
+    ;; Text should be replaced
+    (should (equal (buffer-substring-no-properties 1 3) "Hi"))
+    ;; face should still be applied
+    (should (eq (tp-at 1 'face) 'bold))
+    ;; tp-text property should be set
+    (should (equal (tp-at 1 'tp-text) "Hi"))))
+
+(ert-deftest tp-test-tp-text-preserves-other-properties ()
+  "Test that tp-text replacement preserves existing properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    ;; First set some properties
+    (tp-set 1 6 '(help-echo "greeting"))
+    ;; Then set tp-text with face
+    (tp-set 1 6 '(face bold tp-text "Hi"))
+    ;; Text should be replaced
+    (should (equal (buffer-substring-no-properties 1 3) "Hi"))
+    ;; Both face and help-echo should be preserved
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "greeting"))))
+
+(ert-deftest tp-test-tp-reset-with-tp-text ()
+  "Test that tp-reset with tp-text works correctly."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-reset 1 6 '(face italic tp-text "Bye"))
+    ;; Text should be replaced
+    (should (equal (buffer-substring-no-properties 1 4) "Bye"))
+    ;; Properties should be set
+    (should (eq (tp-at 1 'face) 'italic))
+    (should (equal (tp-at 1 'tp-text) "Bye"))))
+
+(ert-deftest tp-test-tp-add-with-tp-text ()
+  "Test that tp-add with tp-text works correctly."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(help-echo "existing"))
+    (tp-add 1 6 '(face bold tp-text "Hi"))
+    ;; Text should be replaced
+    (should (equal (buffer-substring-no-properties 1 3) "Hi"))
+    ;; Both properties should be present
+    (should (eq (tp-at 1 'face) 'bold))
+    (should (equal (tp-at 1 'help-echo) "existing"))))
+
+(ert-deftest tp-test-tp-text-reactive-layer ()
+  "Test tp-text with reactive variable."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-reactive-text nil "Test variable for reactive text.")
+    (setq tp-test-reactive-text "Initial")
+    (unwind-protect
+        (progn
+          (tp-define-layer 'test-reactive-text-layer
+            :props '(face bold tp-text $tp-test-reactive-text))
+          ;; Apply layer to text
+          (insert "Hello World")
+          (tp-set 1 6 'test-reactive-text-layer)
+          ;; Initial text should be replaced
+          (should (equal (buffer-substring-no-properties 1 8) "Initial"))
+          ;; tp-text should be set
+          (should (equal (tp-at 1 'tp-text) "Initial"))
+          ;; Change the reactive variable
+          (setq tp-test-reactive-text "Changed")
+          ;; Text should be updated
+          (should (equal (buffer-substring-no-properties 1 8) "Changed"))
+          ;; face should still be applied
+          (should (eq (tp-at 1 'face) 'bold)))
+      ;; Cleanup
+      (makunbound 'tp-test-reactive-text))))
+
+(ert-deftest tp-test-tp-text-reactive-computed ()
+  "Test tp-text with computed reactive variable."
+  (tp-test-with-temp-buffer
+    (unwind-protect
+        (progn
+          (setq tp-test-name-part1 "Hello")
+          (setq tp-test-name-part2 "World")
+          (tp-define-layer 'test-computed-text-layer
+            :props '(face bold tp-text $tp-test-full-text)
+            :data '(tp-test-name-part1 tp-test-name-part2)
+            :compute '((tp-test-full-text
+                       (lambda ()
+                         (concat tp-test-name-part1 " " tp-test-name-part2)))))
+          ;; Apply layer to text
+          (insert "placeholder")
+          (tp-set 1 12 'test-computed-text-layer)
+          ;; Text should be replaced with computed value
+          (should (equal (buffer-substring-no-properties 1 12) "Hello World"))
+          ;; Change a data variable
+          (setq tp-test-name-part1 "Goodbye")
+          ;; Text should be updated with new computed value
+          (should (equal (buffer-substring-no-properties 1 14) "Goodbye World")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-name-part1))
+      (ignore-errors (makunbound 'tp-test-name-part2))
+      (ignore-errors (makunbound 'tp-test-full-text)))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

@@ -341,6 +341,120 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 
 匿名响应式层适用于简单的场景，当你不需要在多个地方复用同一个层定义时。
 
+## 响应式文本 (tp-text)
+
+除了响应式文本**属性**，tp.el 还支持响应式**文本内容**本身。通过特殊的 `tp-text` 属性，你可以让文本内容也变成响应式的——当绑定的变量改变时，文本内容会自动更新。
+
+### 基本用法
+
+`tp-text` 属性有两种使用方式：
+
+#### 1. 初始化当前文本
+
+当 `tp-text` 的值为 `nil` 时，它会被自动设置为当前区域的文本内容：
+
+```lisp
+(tp-pop-to-buffer "*tp-test*"
+  (insert "Hello World")
+  ;; tp-text 为 nil 时，自动初始化为当前文本 "Hello"
+  (tp-set 1 6 '(face bold tp-text nil))
+  ;; 现在 tp-text 的值是 "Hello"
+  (message "tp-text = %s" (tp-at 1 'tp-text)))
+;; => "Hello"
+```
+
+#### 2. 替换文本内容
+
+当 `tp-text` 的值为字符串时，它会替换区域内的文本，同时保留其他文本属性：
+
+```lisp
+(tp-pop-to-buffer "*tp-test*"
+  (insert "Hello World")
+  ;; tp-text 为字符串时，替换文本内容
+  (tp-set 1 6 '(face bold tp-text "Hi"))
+  ;; 文本变为 "Hi World"，且 "Hi" 仍然有 bold 样式
+  (message "buffer = %s" (buffer-string)))
+;; => "Hi World"
+```
+
+### 响应式文本层
+
+`tp-text` 的真正威力在于与响应式变量结合使用：
+
+```lisp
+;; 定义响应式变量
+(defvar my-dynamic-text "Loading...")
+
+;; 定义包含 tp-text 的响应式层
+(tp-define-layer 'dynamic-content
+  :props '(face (:foreground "blue") tp-text $my-dynamic-text))
+
+;; 应用到文本
+(tp-pop-to-buffer "*tp-test*"
+  (insert "placeholder")
+  (tp-set 1 12 'dynamic-content)
+  ;; 文本现在显示 "Loading..."
+  (message "初始文本: %s" (buffer-string))
+  ;; => "Loading... "
+  
+  ;; 改变变量
+  (setq my-dynamic-text "数据加载完成!")
+  ;; 文本自动更新！
+  (message "更新后: %s" (buffer-string)))
+;; => "数据加载完成! "
+```
+
+### 使用 :compute 生成动态文本
+
+`tp-text` 可以与 `:compute` 结合，创建由其他变量派生的动态文本：
+
+```lisp
+(tp-define-layer 'greeting-layer
+  :props '(face (:foreground "green") tp-text $full-greeting)
+  :data '((user-name . "访客")
+          (greeting-prefix . "欢迎"))
+  :compute '((full-greeting
+              (lambda ()
+                (format "%s, %s!" greeting-prefix user-name)))))
+
+;; 应用到文本
+(tp-pop-to-buffer "*tp-test*"
+  (insert "placeholder")
+  (tp-set 1 12 'greeting-layer)
+  ;; 显示 "欢迎, 访客!"
+  (message "初始: %s" (buffer-string))
+  
+  ;; 改变用户名
+  (setq user-name "张三")
+  ;; 文本自动更新为 "欢迎, 张三!"
+  (message "更新后: %s" (buffer-string)))
+```
+
+### 匿名响应式文本
+
+你也可以直接在属性列表中使用响应式 `tp-text`，无需定义层：
+
+```lisp
+(defvar inline-text "原始内容")
+
+(tp-pop-to-buffer "*tp-test*"
+  (insert "placeholder")
+  ;; 直接使用响应式 tp-text
+  (tp-set 1 12 '(face bold tp-text $inline-text))
+  ;; 显示 "原始内容"
+  
+  ;; 改变变量
+  (setq inline-text "新内容")
+  ;; 文本自动更新为 "新内容"
+  )
+```
+
+### 注意事项
+
+1. **tp-text 只影响缓冲区文本**：对于字符串对象，由于 Emacs 字符串长度固定，`tp-text` 不会替换字符串内容。
+2. **保留现有属性**：使用 `tp-set` 或 `tp-add` 设置 `tp-text` 时，现有的文本属性会被保留。
+3. **非响应式属性不添加 tp-name**：如果文本属性中没有响应式变量（`$` 前缀），则不会添加 `tp-name` 等响应式专用属性，保持原生文本属性行为。
+
 ## 总结
 
 tp.el 的响应式文本属性功能为 Emacs 开发带来了现代化的响应式编程体验。通过使用 `$` 前缀的响应式变量、`:data` 定义状态、`:compute` 计算派生值、`:watch` 监听变化，你可以构建出更加动态、易于维护的文本属性系统。
@@ -352,3 +466,4 @@ tp.el 的响应式文本属性功能为 Emacs 开发带来了现代化的响应�
 4. **:compute**：定义由其他变量派生的计算属性
 5. **:watch**：监听变量变化并执行副作用
 6. **自动更新**：改变变量值，所有相关文本自动更新
+7. **响应式文本 (tp-text)**：让文本内容本身也能响应式更新

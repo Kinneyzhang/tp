@@ -231,7 +231,9 @@ Only 'set' operations trigger updates because:
       (dolist (dep deps)
         (let* ((layer-name (car dep))
                ;; Get the reactive props stored directly in the dependency
-               (reactive-props (cdr dep)))
+               (reactive-props (cdr dep))
+               ;; Check if tp-text is affected by this variable
+               (tp-text-affected (plist-member reactive-props 'tp-text)))
           ;; Call user-defined watch callbacks for this layer
           (tp--invoke-layer-watchers layer-name symbol newval oldval)
           ;; Update computed properties for this layer
@@ -250,9 +252,11 @@ Only 'set' operations trigger updates because:
                                       (plist-put current-props key val)))
                     (tp--set-layer-props layer-name current-props))))))
           ;; Update text regions with this layer
-          ;; If WHERE is a buffer (setq-local), only update that buffer
-          ;; If WHERE is nil (setq), update all buffers that have the text property
-          (tp--update-layer-regions layer-name where))))))
+          ;; If tp-text is affected, use tp--update-reactive-text for text replacement
+          ;; Otherwise use tp--update-layer-regions for property-only updates
+          (if tp-text-affected
+              (tp--update-reactive-text layer-name where)
+            (tp--update-layer-regions layer-name where)))))))
 
 (defun tp--invoke-layer-watchers (layer-name symbol newval oldval)
   "Invoke all registered watcher callbacks for LAYER-NAME watching SYMBOL.
@@ -463,6 +467,118 @@ WHERE specifies which buffers to update:
   (setq tp-layer-data nil))
 
 
+;;; Reactive Text (tp-text) Functions
+
+(defun tp--update-reactive-text (layer-name &optional where)
+  "Update text regions that have tp-text property with LAYER-NAME applied.
+This is called when a reactive variable bound to tp-text changes.
+
+WHERE specifies which buffers to update:
+  - If WHERE is a buffer, only update that buffer (setq-local case).
+  - If WHERE is nil, update all buffers that have the text property (setq case)."
+  (let ((props (tp-layer-props layer-name)))
+    (when props
+      (let ((new-text (plist-get props 'tp-text)))
+        (when (and new-text (stringp new-text))
+          (if (and where (bufferp where) (buffer-live-p where))
+              ;; setq-local case: only update the specific buffer
+              (tp-with-current-buffer where
+                (save-excursion
+                  (tp--replace-reactive-text-in-buffer layer-name new-text props)))
+            ;; setq case: update all buffers that have the text property
+            (dolist (buf (buffer-list))
+              (when (buffer-live-p buf)
+                (tp-with-current-buffer buf
+                  (save-excursion
+                    (tp--replace-reactive-text-in-buffer layer-name new-text props)))))))))))
+
+(defun tp--replace-reactive-text-in-buffer (layer-name new-text props)
+  "Replace text in current buffer for reactive text with LAYER-NAME.
+NEW-TEXT is the new text to replace with.
+PROPS are the properties to apply to the new text."
+  (goto-char (point-min))
+  (let ((match t))
+    (while match
+      (setq match (text-property-search-forward 'tp-name layer-name t))
+      (when match
+        (let* ((m-start (prop-match-beginning match))
+               (m-end (prop-match-end match))
+               (old-text (buffer-substring-no-properties m-start m-end)))
+          ;; Only replace if text is different
+          (unless (equal old-text new-text)
+            ;; Delete old text and insert new
+            (delete-region m-start m-end)
+            (goto-char m-start)
+            (insert new-text)
+            ;; Apply the layer properties (including tp-text and tp-name) to new text
+            (let ((new-end (+ m-start (length new-text))))
+              (set-text-properties m-start new-end props))))))))
+
+(defun tp--handle-tp-text-property (start end props object)
+  "Handle tp-text property in PROPS for region from START to END in OBJECT.
+If tp-text is nil, initialize it to the current text in the region.
+If tp-text is a string different from current text, replace the text.
+Returns (PROPS NEW-END) where PROPS is the updated props and NEW-END is
+the new end position after any text replacement."
+  (if (not (plist-member props 'tp-text))
+      ;; tp-text not in props - return unchanged
+      (list props end)
+    (let ((tp-text-val (plist-get props 'tp-text)))
+      (cond
+       ;; tp-text is nil - initialize it to the current text
+       ((null tp-text-val)
+        (let ((current-text (if (stringp object)
+                                (substring object start end)
+                              (if object
+                                  (with-current-buffer object
+                                    (buffer-substring-no-properties start end))
+                                (buffer-substring-no-properties start end)))))
+          (list (plist-put props 'tp-text current-text) end)))
+       ;; tp-text has a string value - replace the text in the region
+       ((stringp tp-text-val)
+        (if (stringp object)
+            ;; For strings, we can't change length, so just return as-is
+            (list props end)
+          ;; For buffers: replace text and adjust end position
+          (let ((old-text (if object
+                              (with-current-buffer object
+                                (buffer-substring-no-properties start end))
+                            (buffer-substring-no-properties start end))))
+            (if (equal old-text tp-text-val)
+                ;; Same text, no replacement needed
+                (list props end)
+              ;; Need to replace text
+              (let ((existing-props (if object
+                                        (with-current-buffer object
+                                          (text-properties-at start))
+                                      (text-properties-at start))))
+                (save-excursion
+                  (if object
+                      (with-current-buffer object
+                        (let ((inhibit-read-only t))
+                          (delete-region start end)
+                          (goto-char start)
+                          (insert tp-text-val)))
+                    (let ((inhibit-read-only t))
+                      (delete-region start end)
+                      (goto-char start)
+                      (insert tp-text-val))))
+                (let ((new-end (+ start (length tp-text-val))))
+                  ;; Re-apply existing properties to new text region
+                  (when existing-props
+                    (let ((i 0)
+                          (len (length existing-props)))
+                      (while (< i len)
+                        (put-text-property start new-end
+                                           (nth i existing-props)
+                                           (nth (1+ i) existing-props)
+                                           object)
+                        (setq i (+ i 2)))))
+                  (list props new-end)))))))
+       ;; Other types - return unchanged
+       (t (list props end))))))
+
+
 ;;; Core Property Functions
 
 (defun tp--parse-args (start-or-string end-or-prop props-or-val rest)
@@ -538,10 +654,21 @@ This function supports four calling conventions:
 PROPS can also be a symbol representing a layer or group name defined
 by `define-tp' or `define-tp-group', which will be resolved to its properties.
 
+Special property `tp-text':
+  If PROPS contains `tp-text' with a nil value, it will be initialized
+  to the current text in the region, making the text reactive.
+  If `tp-text' has a string value, the text in the region will be replaced
+  with this value while preserving the text properties.
+
 This replaces only the properties specified, preserving other properties.
 Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+    ;; Handle tp-text property specially using helper function
+    (pcase-let ((`(,new-props ,new-finish)
+                 (tp--handle-tp-text-property start finish props object)))
+      (setq props new-props)
+      (setq finish new-finish))
     ;; Apply properties individually (preserves other properties)
     (let ((len (length props))
           (i 0))
@@ -579,9 +706,51 @@ PROPS can also be a symbol representing a layer or group name defined
 by `define-tp' or `define-tp-group', which will be resolved to its properties.
 
 Unlike `tp-set', this completely replaces all existing properties.
+
+Special property `tp-text':
+  If PROPS contains `tp-text' with a nil value, it will be initialized
+  to the current text in the region, making the text reactive.
+  If `tp-text' has a string value, the text in the region will be replaced
+  with this value while preserving the text properties.
+
 Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+    ;; Handle tp-text property specially using helper function
+    ;; Note: for tp-reset we don't preserve existing props on text replacement
+    ;; since tp-reset is meant to completely replace all properties
+    (when (plist-member props 'tp-text)
+      (let ((tp-text-val (plist-get props 'tp-text)))
+        (cond
+         ;; tp-text is nil - initialize it to the current text
+         ((null tp-text-val)
+          (let ((current-text (if (stringp object)
+                                  (substring object start finish)
+                                (if object
+                                    (with-current-buffer object
+                                      (buffer-substring-no-properties start finish))
+                                  (buffer-substring-no-properties start finish)))))
+            (setq props (plist-put props 'tp-text current-text))))
+         ;; tp-text has a string value - replace the text in the region
+         ((stringp tp-text-val)
+          (unless (stringp object)
+            (let ((old-text (if object
+                                (with-current-buffer object
+                                  (buffer-substring-no-properties start finish))
+                              (buffer-substring-no-properties start finish))))
+              (unless (equal old-text tp-text-val)
+                (save-excursion
+                  (if object
+                      (with-current-buffer object
+                        (let ((inhibit-read-only t))
+                          (delete-region start finish)
+                          (goto-char start)
+                          (insert tp-text-val)))
+                    (let ((inhibit-read-only t))
+                      (delete-region start finish)
+                      (goto-char start)
+                      (insert tp-text-val))))
+                (setq finish (+ start (length tp-text-val))))))))))
     ;; Completely replace all properties
     (set-text-properties start finish props object)
     (if (stringp object)
@@ -692,9 +861,20 @@ the existing face list rather than replacing.  For example:
   (tp-add str \\='face \\='shadow) with existing face \\='bold
   results in face value \\='(shadow bold).
 
+Special property `tp-text':
+  If PROPS contains `tp-text' with a nil value, it will be initialized
+  to the current text in the region, making the text reactive.
+  If `tp-text' has a string value, the text in the region will be replaced
+  with this value while preserving the text properties.
+
 Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+    ;; Handle tp-text property specially using helper function
+    (pcase-let ((`(,new-props ,new-finish)
+                 (tp--handle-tp-text-property start finish props object)))
+      (setq props new-props)
+      (setq finish new-finish))
     ;; Process each property with deep merging
     (let ((pos start))
       (while (< pos finish)
@@ -2422,11 +2602,9 @@ For group names, includes `tp-layers' property with the full layer stack."
                 (tp--register-reactive-deps layer-name reactive-syms props)
                 ;; Return resolved props with tp-name
                 (append resolved-props (list 'tp-name layer-name)))
-            ;; No reactive symbols - just add tp-name if not present
-            (if existing-tp-name
-                props
-              (let ((layer-name (tp--generate-anonymous-layer-name)))
-                (append props (list 'tp-name layer-name)))))))))
+            ;; No reactive symbols - return props as-is (no tp-name needed)
+            ;; This preserves the native text property behavior for non-reactive plists
+            props)))))
    ;; Symbol - check if it's a layer or group name
    ((symbolp props)
     (cond
