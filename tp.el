@@ -3586,9 +3586,10 @@ Example:
 PROPS is a list of property definitions.
 SLOT is the slot name symbol.
 RENDER is the render function."
-  (let ((definition (list :props props :slot slot :render render)))
-    (if (assoc name tp-twidget-alist)
-        (setf (cdr (assoc name tp-twidget-alist)) definition)
+  (let ((definition (list :props props :slot slot :render render))
+        (existing (assoc name tp-twidget-alist)))
+    (if existing
+        (setcdr existing definition)
       (push (cons name definition) tp-twidget-alist)))
   (assoc name tp-twidget-alist))
 
@@ -3614,7 +3615,12 @@ Returns nil if no default is specified."
   "Parse and render a widget invocation.
 
 WIDGET-FORM is a list starting with the widget name, followed by
-keyword-value pairs for props, and ending with the slot value.
+keyword-value pairs for props, and ending with a single slot value.
+
+The format is: (WIDGET-NAME :prop1 val1 :prop2 val2 ... SLOT-VALUE)
+
+Keyword arguments must come before the slot value. The slot value
+is the last non-keyword argument and must be exactly one value.
 
 Example:
   (tp-widget-parse
@@ -3646,9 +3652,11 @@ Returns the rendered string with text properties applied."
                 (val (cadr args)))
             (push (cons key val) collected-props)
             (setq args (cddr args))))
-        ;; The remaining argument is the slot value
+        ;; The remaining argument(s) should be the slot value (exactly one)
         (when args
-          (setq slot-value (car args)))
+          (setq slot-value (car args))
+          (when (cdr args)
+            (warn "tp-widget-parse: Extra arguments after slot value ignored: %S" (cdr args))))
         ;; Build the props plist with defaults
         (dolist (prop-def prop-defs)
           (let* ((prop-name (tp--twidget-prop-name prop-def))

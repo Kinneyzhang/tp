@@ -3506,6 +3506,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (define-tp tp-space (pixel)
       `(display (space :width (,pixel))))
     ;; Define the button widget similar to the example
+    ;; Note: Using tp-button as the property name to match problem statement
     (tp-define-twidget button
       :props '(action (bgcolor . "green"))
       :slot 'label
@@ -3516,7 +3517,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
                                   (tp-set " " 'tp-space 2)
                                   slot (tp-set " " 'tp-space 2))
                           'face `(:background ,bgcolor)
-                          'button-action `(:action ,action)))))
+                          'tp-button `(:action ,action)))))
     ;; Parse the button widget
     (let ((result (tp-widget-parse
                    '(button :action (lambda ()
@@ -3527,8 +3528,8 @@ When using tp-set (direct property setting), tp-name is NOT added."
       ;; Check that the face property is applied
       (let ((face (get-text-property 2 'face result)))
         (should (equal (plist-get face :background) "green")))
-      ;; Check that the button-action property is applied
-      (let ((action-prop (get-text-property 2 'button-action result)))
+      ;; Check that the tp-button property is applied (matches problem statement)
+      (let ((action-prop (get-text-property 2 'tp-button result)))
         (should (listp (plist-get action-prop :action)))))))
 
 (ert-deftest tp-test-twidget-reset ()
