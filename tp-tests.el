@@ -3210,5 +3210,53 @@ the inserted text should be that string, not the source text."
     (tp-layer-reset)
     (should-not tp-layer-params)))
 
+(ert-deftest tp-test-layer-with-extra-props-string ()
+  "Test layer with extra native properties on string."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold ()
+      '(face bold))
+    ;; Non-parameterized layer with extra props
+    (let ((result (tp-set "emacs" 'tp-bold t 'face '(:foreground "green"))))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      ;; Should have both face values in the plist
+      (let ((props (text-properties-at 0 result)))
+        (should (member 'face props))
+        (should (eq (plist-get props 'tp-name) 'tp-bold))))))
+
+(ert-deftest tp-test-parameterized-layer-with-extra-props-string ()
+  "Test parameterized layer with extra native properties on string."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      `(display (space :width (,pixel))))
+    ;; Parameterized layer with extra props
+    (let ((result (tp-set "emacs" 'tp-space 6 'face '(:foreground "green"))))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (6))))
+      (should (equal (get-text-property 0 'face result) '(:foreground "green"))))))
+
+(ert-deftest tp-test-layer-with-extra-props-region ()
+  "Test layer with extra native properties on region."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold ()
+      '(face bold))
+    ;; Region form with extra props
+    (let ((result (tp-set 0 5 '(tp-bold t face (:foreground "green")) "emacs")))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      ;; Should have both face values in the plist
+      (let ((props (text-properties-at 0 result)))
+        (should (member 'face props))
+        (should (eq (plist-get props 'tp-name) 'tp-bold))))))
+
+(ert-deftest tp-test-parameterized-layer-with-extra-props-region ()
+  "Test parameterized layer with extra native properties on region."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      `(display (space :width (,pixel))))
+    ;; Region form with extra props
+    (let ((result (tp-set 0 5 '(tp-space 6 face (:foreground "green")) "emacs")))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (6))))
+      (should (equal (get-text-property 0 'face result) '(:foreground "green"))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

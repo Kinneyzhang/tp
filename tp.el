@@ -737,7 +737,8 @@ Supports multiple calling conventions:
 2. Buffer region with object: (START END PROPS OBJECT)
 3. String region: (START END PROPS STRING)
 4. Entire string with plist: (STRING PROP VAL ...)
-5. Entire string with layer: (STRING LAYER-NAME ARG)"
+5. Entire string with layer: (STRING LAYER-NAME ARG)
+6. Entire string with layer and extra props: (STRING LAYER-NAME ARG PROP VAL ...)"
   (let (object start finish props)
     (cond
      ;; First arg is a string - apply to entire string
@@ -747,14 +748,14 @@ Supports multiple calling conventions:
             finish (length start-or-string))
       ;; Check if second arg is a layer/group name or parameterized layer
       (cond
-       ;; (tp-set "str" 'layer-name arg) - layer with argument
+       ;; (tp-set "str" 'layer-name arg ...) - layer with argument and optional extra props
        ((and (symbolp end-or-prop)
              (or (assoc end-or-prop tp-layer-alist)
                  (assoc end-or-prop tp-layer-groups)
                  (assoc end-or-prop tp-layer-params))
-             props-or-val
-             (null rest))
-        (setq props (list end-or-prop props-or-val)))
+             props-or-val)
+        ;; Build props: (layer-name arg extra-prop1 val1 ...)
+        (setq props (cons end-or-prop (cons props-or-val rest))))
        ;; (tp-set "str" 'layer-name) - layer without argument (legacy)
        ((and (symbolp end-or-prop)
              (or (assoc end-or-prop tp-layer-alist)
@@ -810,9 +811,18 @@ Returns modified string or (START . END) cons for buffer."
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
-    ;; Apply properties individually
-    (cl-loop for (key val) on props by #'cddr
-             do (put-text-property start finish key val object))
+    ;; Check if we have any existing properties in the range
+    (let ((has-existing-props (text-properties-at start object)))
+      (if (and (not has-existing-props)
+               ;; Also check if this is a uniform range (no intervals)
+               (or (stringp object)
+                   (= start (or (next-single-property-change start nil object finish) finish))))
+          ;; No existing properties - can use set-text-properties to preserve duplicate keys
+          (set-text-properties start finish props object)
+        ;; Has existing properties - use put-text-property for proper interval handling
+        ;; This may lose duplicate keys but correctly handles overlapping regions
+        (cl-loop for (key val) on props by #'cddr
+                 do (put-text-property start finish key val object))))
     (if (stringp object) object (cons start finish))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
@@ -2449,15 +2459,18 @@ PROPS can be:
 - A two-element list (LAYER-NAME ARG) where LAYER-NAME is a defined layer
   and ARG is either `t' for non-parameterized layers or the argument value
   for parameterized layers
+- A list starting with (LAYER-NAME ARG EXTRA-PROPS...) where extra properties
+  are merged with the layer properties
 - A plist (handles anonymous layers with reactive variables)
 
 If PROPS is a symbol:
 - First checks `tp-layer-alist' and returns the layer properties WITH `tp-name'
 - Then checks `tp-layer-groups' and returns properties WITH `tp-layers'
 
-If PROPS is (LAYER-NAME ARG):
+If PROPS is (LAYER-NAME ARG) or (LAYER-NAME ARG EXTRA-PROPS...):
 - For non-parameterized layers: if ARG is t, returns the layer properties
 - For parameterized layers: evaluates the body with ARG and returns the result
+- Extra properties after ARG are appended to the layer properties
 
 If PROPS is a plist:
 - If it contains reactive variables ($...), generates a UUID for `tp-name',
@@ -2473,26 +2486,33 @@ For group names, includes `tp-layers' property with the full layer stack."
    ;; Already a plist - check for reactive variables and add tp-name
    ((listp props)
     (let ((first-elem (car-safe props))
-          (second-elem (cadr props)))
+          (second-elem (cadr props))
+          (extra-props (cddr props)))
       (cond
-       ;; Handle (layer-name arg) format for defined layers
-       ((and (= (length props) 2)
+       ;; Handle (layer-name arg ...) format for defined layers
+       ;; This includes both (layer-name arg) and (layer-name arg extra-prop val ...)
+       ((and (>= (length props) 2)
              (symbolp first-elem)
              (or (assoc first-elem tp-layer-alist)
                  (assoc first-elem tp-layer-params)
                  (assoc first-elem tp-layer-groups)))
-        (cond
-         ;; Parameterized layer - evaluate with the argument
-         ((tp-layer-parameterized-p first-elem)
-          (tp-layer-props-with-arg first-elem second-elem))
-         ;; Non-parameterized layer - arg should be t, return the layer props
-         ;; (silently ignore non-t values for flexibility)
-         ((assoc first-elem tp-layer-alist)
-          (tp-layer-props first-elem))
-         ;; Layer group
-         ((assoc first-elem tp-layer-groups)
-          (when-let ((layer-props-list (tp-group-props first-elem)))
-            (tp--build-layer-props layer-props-list)))))
+        (let ((layer-props
+               (cond
+                ;; Parameterized layer - evaluate with the argument
+                ((tp-layer-parameterized-p first-elem)
+                 (tp-layer-props-with-arg first-elem second-elem))
+                ;; Non-parameterized layer - arg should be t, return the layer props
+                ;; (silently ignore non-t values for flexibility)
+                ((assoc first-elem tp-layer-alist)
+                 (tp-layer-props first-elem))
+                ;; Layer group
+                ((assoc first-elem tp-layer-groups)
+                 (when-let ((layer-props-list (tp-group-props first-elem)))
+                   (tp--build-layer-props layer-props-list))))))
+          ;; Append extra properties if any
+          (if (and layer-props extra-props)
+              (append layer-props extra-props)
+            layer-props)))
        
        ;; Handle single-element list containing a layer/group name symbol.
        ;; This can happen when tp-set is called with string form: (tp-set str 'layer-name)
