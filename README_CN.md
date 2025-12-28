@@ -57,6 +57,7 @@
   - [属性层定义](#属性层定义)
     - [tp-define-layer](#tp-define-layer---定义单个属性层)
     - [tp-define-layer-group](#tp-define-layer-group---定义属性层组)
+    - [define-tp / define-tp-group](#define-tp--define-tp-group---便捷宏)
     - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
     - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
     - [tp-layer-reset](#tp-layer-reset)
@@ -337,6 +338,8 @@ tp.el 所有函数按类别组织的完整概览：
 |------|------|
 | [`tp-define-layer`](#tp-define-layer---定义单个属性层) | 定义单个属性层，支持响应式特性（:props、:data、:watch、:compute） |
 | [`tp-define-layer-group`](#tp-define-layer-group---定义属性层组) | 定义属性层组，支持响应式特性 |
+| [`define-tp`](#define-tp--define-tp-group---便捷宏) | 定义属性层的便捷宏（支持参数化属性层） |
+| [`define-tp-group`](#define-tp--define-tp-group---便捷宏) | 定义属性层组的便捷宏 |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取属性层的属性 |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取属性层组中所有属性层的属性 |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | 移除属性层定义 |
@@ -1464,6 +1467,66 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
 ;; => (display "🌕" tp-name moon-phases-full)
+```
+
+---
+
+#### `define-tp` / `define-tp-group` - 便捷宏
+
+`define-tp` 和 `define-tp-group` 是便捷宏，为 `tp-define-layer` 和 `tp-define-layer-group` 提供更简洁的语法。
+
+**`define-tp` - 定义单个属性层**
+
+支持两种格式：
+
+**格式一 - 无参数（空参数列表）：**
+
+```elisp
+(define-tp tp-bold ()
+  '(face bold))
+```
+
+**格式二 - 有参数（带单个参数）：**
+
+```elisp
+(define-tp tp-space (pixel)
+  `(display (space :width (,pixel))))
+```
+
+**`tp-set` 用法：**
+
+对于无参数属性层，使用 `t` 作为值：
+
+```elisp
+;; 整个字符串
+(tp-set "emacs" 'tp-bold t)
+;; => #("emacs" 0 5 (tp-name tp-bold face bold))
+
+;; 区域（使用类似 plist 的格式）
+(tp-set 0 5 '(tp-bold t) "emacs")
+;; => #("emacs" 0 5 (tp-name tp-bold face bold))
+```
+
+对于有参数属性层，传递参数值：
+
+```elisp
+;; 整个字符串
+(tp-set "emacs" 'tp-space 2)
+;; => #("emacs" 0 5 (tp-name tp-space display (space :width (2))))
+
+;; 区域（使用类似 plist 的格式）
+(tp-set 0 5 '(tp-space 2) "emacs")
+;; => #("emacs" 0 5 (tp-name tp-space display (space :width (2))))
+```
+
+**`define-tp-group` - 定义属性层组**
+
+包装 `tp-define-layer-group` 的便捷宏：
+
+```elisp
+(define-tp-group tp-moon-phases
+  '(display "🌑")
+  '(display "🌕"))
 ```
 
 ---

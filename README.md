@@ -58,6 +58,7 @@
   - [Property Layer Definition](#property-layer-definition)
     - [tp-define-layer](#tp-define-layer---define-single-layer)
     - [tp-define-layer-group](#tp-define-layer-group---define-layer-group)
+    - [define-tp / define-tp-group](#define-tp--define-tp-group---convenience-macros)
     - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
     - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
     - [tp-layer-reset](#tp-layer-reset)
@@ -338,6 +339,8 @@ A complete overview of all tp.el functions organized by category:
 |----------|-------------|
 | [`tp-define-layer`](#tp-define-layer---define-single-layer) | Define a single layer with optional reactive features (:props, :data, :watch, :compute) |
 | [`tp-define-layer-group`](#tp-define-layer-group---define-layer-group) | Define a group of layers with optional reactive features |
+| [`define-tp`](#define-tp--define-tp-group---convenience-macros) | Convenience macro for defining layers (supports parameterized layers) |
+| [`define-tp-group`](#define-tp--define-tp-group---convenience-macros) | Convenience macro for defining layer groups |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | Remove layer definition |
@@ -1475,6 +1478,66 @@ The first layer in the definition is the top layer (visible by default).
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
 ;; => (display "🌕" tp-name moon-phases-full)
+```
+
+---
+
+#### `define-tp` / `define-tp-group` - Convenience Macros
+
+`define-tp` and `define-tp-group` are convenience macros that provide a more concise syntax for `tp-define-layer` and `tp-define-layer-group`.
+
+**`define-tp` - Define Single Layer**
+
+Supports two formats:
+
+**Format 1 - Non-parameterized (empty arglist):**
+
+```elisp
+(define-tp tp-bold ()
+  '(face bold))
+```
+
+**Format 2 - Parameterized (with a single parameter):**
+
+```elisp
+(define-tp tp-space (pixel)
+  `(display (space :width (,pixel))))
+```
+
+**Usage with `tp-set`:**
+
+For non-parameterized layers, use `t` as the value:
+
+```elisp
+;; Entire string
+(tp-set "emacs" 'tp-bold t)
+;; => #("emacs" 0 5 (tp-name tp-bold face bold))
+
+;; Region (with plist-like format)
+(tp-set 0 5 '(tp-bold t) "emacs")
+;; => #("emacs" 0 5 (tp-name tp-bold face bold))
+```
+
+For parameterized layers, pass the argument value:
+
+```elisp
+;; Entire string
+(tp-set "emacs" 'tp-space 2)
+;; => #("emacs" 0 5 (tp-name tp-space display (space :width (2))))
+
+;; Region (with plist-like format)
+(tp-set 0 5 '(tp-space 2) "emacs")
+;; => #("emacs" 0 5 (tp-name tp-space display (space :width (2))))
+```
+
+**`define-tp-group` - Define Layer Group**
+
+Convenience macro wrapping `tp-define-layer-group`:
+
+```elisp
+(define-tp-group tp-moon-phases
+  '(display "🌑")
+  '(display "🌕"))
 ```
 
 ---

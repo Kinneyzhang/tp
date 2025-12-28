@@ -3123,12 +3123,33 @@ the inserted text should be that string, not the source text."
 ;;; ============================================================
 
 (ert-deftest tp-test-define-tp-non-parameterized ()
-  "Test define-tp with non-parameterized format."
+  "Test define-tp with non-parameterized format (empty arglist)."
   (tp-test-with-temp-buffer
-    (define-tp tp-bold
+    (define-tp tp-bold ()
       '(face bold))
     (should (assoc 'tp-bold tp-layer-alist))
     (should (equal (cdr (assoc 'tp-bold tp-layer-alist)) '(face bold)))))
+
+(ert-deftest tp-test-define-tp-non-parameterized-usage-string ()
+  "Test non-parameterized layer usage with string: (tp-set string 'layer-name t)."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold ()
+      '(face bold))
+    (let ((result (tp-set "emacs" 'tp-bold t)))
+      ;; Result should have the correct properties
+      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should (eq (get-text-property 0 'face result) 'bold)))))
+
+(ert-deftest tp-test-define-tp-non-parameterized-usage-region ()
+  "Test non-parameterized layer usage with region: (tp-set start end '(layer-name t))."
+  (tp-test-with-temp-buffer
+    (insert "emacs")
+    (define-tp tp-bold ()
+      '(face bold))
+    (tp-set 1 6 '(tp-bold t))
+    ;; Check properties in buffer
+    (should (eq (tp-at 1 'tp-name) 'tp-bold))
+    (should (eq (tp-at 1 'face) 'bold))))
 
 (ert-deftest tp-test-define-tp-parameterized ()
   "Test define-tp with parameterized format."
@@ -3161,27 +3182,6 @@ the inserted text should be that string, not the source text."
     ;; Check properties in buffer
     (should (eq (tp-at 1 'tp-name) 'tp-space))
     (should (equal (tp-at 1 'display) '(space :width (5))))))
-
-(ert-deftest tp-test-define-tp-non-parameterized-usage-string ()
-  "Test non-parameterized layer usage with string: (tp-set string 'layer-name t)."
-  (tp-test-with-temp-buffer
-    (define-tp tp-bold
-      '(face bold))
-    (let ((result (tp-set "emacs" 'tp-bold t)))
-      ;; Result should have the correct properties
-      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
-      (should (eq (get-text-property 0 'face result) 'bold)))))
-
-(ert-deftest tp-test-define-tp-non-parameterized-usage-region ()
-  "Test non-parameterized layer usage with region: (tp-set start end '(layer-name t))."
-  (tp-test-with-temp-buffer
-    (insert "emacs")
-    (define-tp tp-bold
-      '(face bold))
-    (tp-set 1 6 '(tp-bold t))
-    ;; Check properties in buffer
-    (should (eq (tp-at 1 'tp-name) 'tp-bold))
-    (should (eq (tp-at 1 'face) 'bold))))
 
 (ert-deftest tp-test-define-tp-parameterized-backquote ()
   "Test parameterized layer with backquote syntax."

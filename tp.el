@@ -2130,14 +2130,13 @@ The layer is stored in `tp-layer-alist'."
         (tp--update-layer-regions name)
         (assoc name tp-layer-alist)))))
 
-(defmacro define-tp (name &rest args)
-  "Define a single text property layer named NAME.
+(defmacro define-tp (name arglist body)
+  "Define a text property layer named NAME.
 
-This macro provides a convenient syntax for `tp-define-layer'.
-Supports two formats: with parameters and without parameters.
+This macro supports two formats:
 
-Format 1 - Without parameters (static properties):
-  (define-tp tp-bold
+Format 1 - Non-parameterized (empty arglist):
+  (define-tp tp-bold ()
     \\='(face bold))
 
 Usage:
@@ -2145,7 +2144,7 @@ Usage:
   (tp-set 0 5 \\='(tp-bold t) \"emacs\")
   ;; => #(\"emacs\" 0 5 (tp-name tp-bold face bold))
 
-Format 2 - With a single parameter:
+Format 2 - Parameterized (single argument):
   (define-tp tp-space (pixel)
     \\=`(display (space :width (,pixel))))
 
@@ -2154,19 +2153,25 @@ Usage:
   (tp-set 0 5 \\='(tp-space 2) \"emacs\")
   ;; => #(\"emacs\" 0 5 (tp-name tp-space display (space :width (2))))
 
-Note: The parameterized form stores the body as a function that takes
-the parameter and returns the resolved property list."
+ARGLIST must be either:
+- An empty list () for non-parameterized layers
+- A list containing exactly one symbol for parameterized layers
+
+BODY is the property list expression. For parameterized layers,
+it will be evaluated with the argument bound."
   (declare (indent defun))
-  (if (and (car args) (listp (car args)) (not (eq (caar args) 'quote)))
-      ;; Parameterized form: (define-tp name (arg) body)
-      (let ((arglist (car args))
-            (body (cadr args)))
-        (unless (and (= (length arglist) 1)
-                     (symbolp (car arglist)))
-          (error "define-tp with parameters only supports exactly one argument"))
-        `(tp--define-parameterized-layer ',name ',arglist ',body))
-    ;; Non-parameterized form: (define-tp name 'props) or (define-tp name :props 'props ...)
-    `(tp-define-layer ',name ,@args)))
+  (unless (listp arglist)
+    (error "define-tp ARGLIST must be a list"))
+  (cond
+   ;; Non-parameterized: empty arglist
+   ((null arglist)
+    `(tp-define-layer ',name ,body))
+   ;; Parameterized: single argument
+   ((and (= (length arglist) 1)
+         (symbolp (car arglist)))
+    `(tp--define-parameterized-layer ',name ',arglist ',body))
+   (t
+    (error "define-tp ARGLIST must be empty or contain exactly one symbol"))))
 
 (defun tp--define-parameterized-layer (name arglist body)
   "Define a parameterized layer NAME with ARGLIST and BODY.
