@@ -668,13 +668,16 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
           ;; This ensures the reactive variable and buffer text stay in sync
           (when-let ((layer-name (plist-get props 'tp-name)))
             (when-let ((reactive-var (tp--find-tp-text-reactive-var layer-name)))
-              ;; Update the reactive variable with the current text (buffer-local)
+              ;; Update the reactive variable with the current text
+              ;; Note: Using global `set` here because the layer definition is global.
+              ;; When the variable is changed, the reactive watcher will update all
+              ;; buffers that have this layer applied.
               (set reactive-var current-text)
               ;; Also update the layer definition so future accesses see the new value
               (let ((layer-props (cdr (assoc layer-name tp-layer-alist))))
                 (when layer-props
-                  (setf (cdr (assoc layer-name tp-layer-alist))
-                        (plist-put layer-props 'tp-text current-text))))))
+                  (tp--set-layer-props layer-name
+                                       (plist-put layer-props 'tp-text current-text))))))
           (list (plist-put props 'tp-text current-text) end object)))
        ;; tp-text has a string value - replace the text in the region
        ((stringp tp-text-val)

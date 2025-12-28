@@ -3066,7 +3066,10 @@ the source text should be used and the reactive variable should be updated."
             (should (equal (tp-at 0 'tp-text result) "2")))
           ;; Now set the variable to a different value and test again
           (setq tp-test-text-var "18")
-          ;; Redefine layer to reset resolved props
+          ;; Redefine layer to reset resolved props to the new variable value.
+          ;; This is necessary because the layer definition caches the resolved
+          ;; tp-text value, and we want to test the behavior when the variable
+          ;; already has a non-nil value at layer application time.
           (tp-define-layer 'test-init-text-layer
             :props '(face bold tp-text $tp-test-text-var))
           (let ((result (tp-set "2" 'test-init-text-layer)))
