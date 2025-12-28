@@ -253,10 +253,15 @@
                    '(face underline)))))
 
 (ert-deftest tp-test-layer-props ()
-  "Test tp-layer-props returns properties with tp-name."
+  "Test tp-layer-props returns properties, and tp-name when requested."
   (tp-test-with-temp-buffer
     (tp-define-layer 'my-layer '(face bold))
+    ;; Without tp-name (default for direct property setting)
     (let ((props (tp-layer-props 'my-layer)))
+      (should (eq (plist-get props 'face) 'bold))
+      (should-not (plist-get props 'tp-name)))
+    ;; With tp-name (for layer stack functions)
+    (let ((props (tp-layer-props 'my-layer t)))
       (should (eq (plist-get props 'face) 'bold))
       (should (eq (plist-get props 'tp-name) 'my-layer)))))
 
@@ -2036,7 +2041,8 @@ Returns list of (START END VALUE) intervals."
 ;;; ============================================================
 
 (ert-deftest tp-test-set-with-layer-name ()
-  "Test tp-set accepts a layer name defined by define-tp."
+  "Test tp-set accepts a layer name defined by tp-define-layer.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-define-layer 'my-style '(face bold help-echo "tip"))
@@ -2044,19 +2050,20 @@ Returns list of (START END VALUE) intervals."
     (tp-set 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "tip"))
-    ;; tp-name should be preserved for reactive text property support
-    (should (eq (tp-at 1 'tp-name) 'my-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-set-with-layer-name-on-string ()
-  "Test tp-set accepts a layer name on string."
+  "Test tp-set accepts a layer name on string.
+When using tp-set (direct property setting), tp-name is NOT added."
   (let ((str (copy-sequence "Hello World")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
     (tp-define-layer 'my-style '(face italic))
     (tp-set 0 5 'my-style str)
     (should (eq (get-text-property 0 'face str) 'italic))
-    ;; tp-name should be preserved for reactive text property support
-    (should (eq (get-text-property 0 'tp-name str) 'my-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (get-text-property 0 'tp-name str))))
 
 (ert-deftest tp-test-set-entire-string-with-layer-name ()
   "Test tp-set with layer name on entire string (string form).
@@ -2073,7 +2080,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
       (should (equal (plist-get (get-text-property 0 'face str) :background) "blue")))))
 
 (ert-deftest tp-test-reset-with-layer-name ()
-  "Test tp-reset accepts a layer name defined by define-tp."
+  "Test tp-reset accepts a layer name defined by tp-define-layer.
+When using tp-reset (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-set 1 6 '(mouse-face highlight))
@@ -2082,11 +2090,12 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (tp-reset 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'underline))
     (should (null (tp-at 1 'mouse-face)))
-    ;; tp-name should be preserved
-    (should (eq (tp-at 1 'tp-name) 'my-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-add-with-layer-name ()
-  "Test tp-add accepts a layer name defined by define-tp."
+  "Test tp-add accepts a layer name defined by tp-define-layer.
+When using tp-add (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-set 1 6 '(help-echo "existing"))
@@ -2095,11 +2104,12 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (tp-add 1 6 'my-style)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "existing"))
-    ;; tp-name should be preserved
-    (should (eq (tp-at 1 'tp-name) 'my-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-match-set-with-layer-name ()
-  "Test tp-match-set accepts a layer name."
+  "Test tp-match-set accepts a layer name.
+When using tp-match-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
     (tp-define-layer 'match-style '(face bold help-echo "matched"))
@@ -2107,11 +2117,12 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "matched"))
     (should (eq (tp-at 13 'face) 'bold))
-    ;; tp-name should be preserved
-    (should (eq (tp-at 1 'tp-name) 'match-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-match-set-with-layer-name-on-string ()
-  "Test tp-match-set accepts a layer name on string."
+  "Test tp-match-set accepts a layer name on string.
+When using tp-match-set (direct property setting), tp-name is NOT added."
   (let ((str (copy-sequence "Hello World Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
@@ -2119,8 +2130,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (tp-match-set "Hello" 'match-style str)
     (should (eq (get-text-property 0 'face str) 'italic))
     (should (eq (get-text-property 12 'face str) 'italic))
-    ;; tp-name should be preserved
-    (should (eq (get-text-property 0 'tp-name str) 'match-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (get-text-property 0 'tp-name str))))
 
 (ert-deftest tp-test-match-reset-with-layer-name ()
   "Test tp-match-reset accepts a layer name."
@@ -2173,7 +2184,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (should (null (tp-at 5 'mouse-face)))))
 
 (ert-deftest tp-test-regexp-add-with-layer-name ()
-  "Test tp-regexp-add accepts a layer name."
+  "Test tp-regexp-add accepts a layer name.
+When using tp-regexp-add (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "abc 123 def 456")
     (tp-set 5 8 '(help-echo "original"))
@@ -2181,42 +2193,44 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (tp-regexp-add "[0-9]+" 'number-style)
     (should (eq (tp-at 5 'face) 'bold))
     (should (equal (tp-at 5 'help-echo) "original"))
-    ;; tp-name should be preserved
-    (should (eq (tp-at 5 'tp-name) 'number-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 5 'tp-name))))
 
 (ert-deftest tp-test-set-with-group-name ()
-  "Test tp-set accepts a group name defined by define-tp-group."
+  "Test tp-set accepts a group name defined by define-tp-group.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-define-layer-group 'my-group
       '("style" . (face bold help-echo "grouped")))
-    ;; Use group name - should include tp-name for top layer
+    ;; Use group name
     (tp-set 1 6 'my-group)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "grouped"))
-    ;; tp-name should be preserved for the top layer
-    (should (eq (tp-at 1 'tp-name) 'my-group-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-set-with-group-name-multiple-layers ()
-  "Test tp-set with group containing multiple layers preserves tp-layers."
+  "Test tp-set with group containing multiple layers.
+When using tp-set (direct property setting), tp-name and tp-layers are NOT added.
+Only the first layer's properties are applied."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (tp-define-layer-group 'my-group
       '("first" . (face bold))
       '("second" . (face italic)))
-    ;; Use group name - should include tp-layers for multiple layers
+    ;; Use group name - only first layer is applied (no layer stacking for direct setting)
     (tp-set 1 6 'my-group)
-    ;; First layer is on top
+    ;; First layer's properties are applied
     (should (eq (tp-at 1 'face) 'bold))
-    (should (eq (tp-at 1 'tp-name) 'my-group-first))
-    ;; tp-layers should contain the second layer
-    (let ((layers (tp-at 1 'tp-layers)))
-      (should layers)
-      (should (= (length layers) 1))
-      (should (eq (plist-get (car layers) 'tp-name) 'my-group-second)))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))
+    ;; tp-layers should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-layers))))
 
 (ert-deftest tp-test-match-set-with-group-name ()
-  "Test tp-match-set accepts a group name."
+  "Test tp-match-set accepts a group name.
+When using tp-match-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
     (tp-define-layer-group 'my-group
@@ -2224,8 +2238,8 @@ incorrectly generate an anonymous tp-name instead of using the layer name."
     (tp-match-set "Hello" 'my-group)
     (should (eq (tp-at 1 'face) 'italic))
     (should (eq (tp-at 13 'face) 'italic))
-    ;; tp-name should be preserved
-    (should (eq (tp-at 1 'tp-name) 'my-group-style))))
+    ;; tp-name should NOT be set for direct property setting
+    (should-not (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-resolve-props-returns-nil-for-unknown ()
   "Test tp--resolve-props returns nil for unknown layer name."
@@ -2285,15 +2299,16 @@ preserving the native text property behavior."
       (makunbound 'tp-test-anon-color))))
 
 (ert-deftest tp-test-set-anonymous-layer-preserves-existing-tp-name ()
-  "Test that tp-set with anonymous plist preserves existing tp-name."
+  "Test that tp-set with anonymous plist preserves existing tp-name property."
   (tp-test-with-temp-buffer
     (insert "Hello World")
-    ;; First set with a layer name
+    ;; First set with a layer name - this does NOT set tp-name
     (tp-define-layer 'my-existing-layer '(face bold))
     (tp-set 1 6 'my-existing-layer)
-    (should (eq (tp-at 1 'tp-name) 'my-existing-layer))
-    ;; Now set with anonymous plist that already has tp-name
+    (should-not (tp-at 1 'tp-name))  ; no tp-name for direct setting
+    ;; Now set with anonymous plist that has explicit tp-name
     (tp-set 1 6 '(face italic tp-name my-custom-name))
+    ;; Explicit tp-name in plist should be preserved
     (should (eq (tp-at 1 'tp-name) 'my-custom-name))))
 
 (ert-deftest tp-test-match-set-anonymous-reactive-layer ()
@@ -3134,24 +3149,26 @@ the inserted text should be that string, not the source text."
       (should (equal (eval (cadr entry)) '(face bold))))))
 
 (ert-deftest tp-test-define-tp-non-parameterized-usage-string ()
-  "Test non-parameterized layer usage with string: (tp-set string 'layer-name t)."
+  "Test non-parameterized layer usage with string: (tp-set string 'layer-name t).
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-bold ()
       '(face bold))
     (let ((result (tp-set "emacs" 'tp-bold t)))
       ;; Result should have the correct properties
-      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (eq (get-text-property 0 'face result) 'bold)))))
 
 (ert-deftest tp-test-define-tp-non-parameterized-usage-region ()
-  "Test non-parameterized layer usage with region: (tp-set start end '(layer-name t))."
+  "Test non-parameterized layer usage with region: (tp-set start end '(layer-name t)).
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "emacs")
     (define-tp tp-bold ()
       '(face bold))
     (tp-set 1 6 '(tp-bold t))
     ;; Check properties in buffer
-    (should (eq (tp-at 1 'tp-name) 'tp-bold))
+    (should-not (tp-at 1 'tp-name))  ; no tp-name for direct setting
     (should (eq (tp-at 1 'face) 'bold))))
 
 (ert-deftest tp-test-define-tp-parameterized ()
@@ -3168,33 +3185,36 @@ the inserted text should be that string, not the source text."
       (should (equal (car entry) '(pixel))))))
 
 (ert-deftest tp-test-define-tp-parameterized-usage-string ()
-  "Test parameterized layer usage with string: (tp-set string 'layer-name arg)."
+  "Test parameterized layer usage with string: (tp-set string 'layer-name arg).
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-space (pixel)
       (list 'display (list 'space :width (list pixel))))
     (let ((result (tp-set "emacs" 'tp-space 2)))
       ;; Result should have the correct properties
-      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'display result) '(space :width (2)))))))
 
 (ert-deftest tp-test-define-tp-parameterized-usage-region ()
-  "Test parameterized layer usage with region: (tp-set start end '(layer-name arg))."
+  "Test parameterized layer usage with region: (tp-set start end '(layer-name arg)).
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (insert "emacs")
     (define-tp tp-space (pixel)
       (list 'display (list 'space :width (list pixel))))
     (tp-set 1 6 '(tp-space 5))
     ;; Check properties in buffer
-    (should (eq (tp-at 1 'tp-name) 'tp-space))
+    (should-not (tp-at 1 'tp-name))  ; no tp-name for direct setting
     (should (equal (tp-at 1 'display) '(space :width (5))))))
 
 (ert-deftest tp-test-define-tp-parameterized-backquote ()
-  "Test parameterized layer with backquote syntax."
+  "Test parameterized layer with backquote syntax.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-test-space (pixel)
       `(display (space :width (,pixel))))
     (let ((result (tp-set "emacs" 'tp-test-space 10)))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-test-space))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'display result) '(space :width (10)))))))
 
 (ert-deftest tp-test-define-tp-parameterized-undefine ()
@@ -3217,55 +3237,58 @@ the inserted text should be that string, not the source text."
     (should-not tp-layer-alist)))
 
 (ert-deftest tp-test-layer-with-extra-props-string ()
-  "Test layer with extra native properties on string."
+  "Test layer with extra native properties on string.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-bold ()
       '(face bold))
     ;; Non-parameterized layer with extra props
     (let ((result (tp-set "emacs" 'tp-bold t 'face '(:foreground "green"))))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       ;; Should have both face values in the plist
       (let ((props (text-properties-at 0 result)))
-        (should (member 'face props))
-        (should (eq (plist-get props 'tp-name) 'tp-bold))))))
+        (should (member 'face props))))))
 
 (ert-deftest tp-test-parameterized-layer-with-extra-props-string ()
-  "Test parameterized layer with extra native properties on string."
+  "Test parameterized layer with extra native properties on string.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-space (pixel)
       `(display (space :width (,pixel))))
     ;; Parameterized layer with extra props
     (let ((result (tp-set "emacs" 'tp-space 6 'face '(:foreground "green"))))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'display result) '(space :width (6))))
       (should (equal (get-text-property 0 'face result) '(:foreground "green"))))))
 
 (ert-deftest tp-test-layer-with-extra-props-region ()
-  "Test layer with extra native properties on region."
+  "Test layer with extra native properties on region.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-bold ()
       '(face bold))
     ;; Region form with extra props
     (let ((result (tp-set 0 5 '(tp-bold t face (:foreground "green")) "emacs")))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       ;; Should have both face values in the plist
       (let ((props (text-properties-at 0 result)))
-        (should (member 'face props))
-        (should (eq (plist-get props 'tp-name) 'tp-bold))))))
+        (should (member 'face props))))))
 
 (ert-deftest tp-test-parameterized-layer-with-extra-props-region ()
-  "Test parameterized layer with extra native properties on region."
+  "Test parameterized layer with extra native properties on region.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-space (pixel)
       `(display (space :width (,pixel))))
     ;; Region form with extra props
     (let ((result (tp-set 0 5 '(tp-space 6 face (:foreground "green")) "emacs")))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'display result) '(space :width (6))))
       (should (equal (get-text-property 0 'face result) '(:foreground "green"))))))
 
 (ert-deftest tp-test-layer-at-any-position-string ()
-  "Test layer properties can be at any position in string form."
+  "Test layer properties can be at any position in string form.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-space (pixel)
       `(display (space :width (,pixel))))
@@ -3274,25 +3297,27 @@ the inserted text should be that string, not the source text."
                           'face '(:foreground "green")
                           'tp-space 6
                           'test "test")))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'display result) '(space :width (6))))
       (should (equal (get-text-property 0 'face result) '(:foreground "green")))
       (should (equal (get-text-property 0 'test result) "test")))))
 
 (ert-deftest tp-test-layer-at-any-position-region ()
-  "Test layer properties can be at any position in region form."
+  "Test layer properties can be at any position in region form.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-space (pixel)
       `(display (space :width (,pixel))))
     ;; Layer in the middle of the plist
     (let ((result (tp-set 0 5 '(face (:foreground "green") tp-space 6 test "test") "emacs")))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'display result) '(space :width (6))))
       (should (equal (get-text-property 0 'face result) '(:foreground "green")))
       (should (equal (get-text-property 0 'test result) "test")))))
 
 (ert-deftest tp-test-non-param-layer-at-any-position ()
-  "Test non-parameterized layer at any position."
+  "Test non-parameterized layer at any position.
+When using tp-set (direct property setting), tp-name is NOT added."
   (tp-test-with-temp-buffer
     (define-tp tp-bold ()
       '(face bold))
@@ -3301,7 +3326,7 @@ the inserted text should be that string, not the source text."
                           'test1 "value1"
                           'tp-bold t
                           'test2 "value2")))
-      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should-not (get-text-property 0 'tp-name result))  ; no tp-name for direct setting
       (should (equal (get-text-property 0 'test1 result) "value1"))
       (should (equal (get-text-property 0 'test2 result) "value2")))))
 

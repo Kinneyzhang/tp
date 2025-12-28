@@ -319,6 +319,13 @@ Only the reactive portions of the properties are stored for each variable."
   (tp--unregister-layer-computed layer-name)
   (tp--unregister-layer-data layer-name))
 
+(defun tp--layer-has-reactive-deps-p (layer-name)
+  "Return non-nil if LAYER-NAME has reactive dependencies registered.
+Layers with reactive deps need tp-name for reactive tracking."
+  (cl-some (lambda (dep)
+             (assoc layer-name (cdr dep)))
+           tp-reactive-deps))
+
 (defun tp--reactive-variable-watcher (symbol newval operation where)
   "Watcher function called when a reactive variable changes.
 SYMBOL is the variable that changed.
@@ -539,7 +546,7 @@ Re-applies the layer properties using tp-search-map and tp-add.
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
   - If WHERE is nil, update all buffers that have the text property (setq case)."
-  (let ((props (tp-layer-props layer-name)))
+  (let ((props (tp-layer-props layer-name t)))  ; include tp-name for reactive tracking
     (when props
       ;; Callback for tp-search-map: applies props to matched region.
       ;; _TEXT is unused (the matched text), START and END are buffer positions.
@@ -603,7 +610,7 @@ This is called when a reactive variable bound to tp-text changes.
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
   - If WHERE is nil, update all buffers that have the text property (setq case)."
-  (let ((props (tp-layer-props layer-name)))
+  (let ((props (tp-layer-props layer-name t)))  ; include tp-name for reactive tracking
     (when props
       (let ((new-text (plist-get props 'tp-text)))
         (when (and new-text (stringp new-text))
@@ -2418,33 +2425,41 @@ This is an internal function used by group definition macros."
       (setf (cdr (assoc group-name tp-layer-groups)) layer-names)
     (push (cons group-name layer-names) tp-layer-groups)))
 
-(defun tp-layer-props (layer-name)
+(defun tp-layer-props (layer-name &optional include-tp-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.
-Appends 'tp-name property to identify the layer.
+If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer.
+Also includes tp-name automatically if the layer has reactive dependencies registered.
 Handles two storage formats:
 1. Old format (from tp--set-layer-props): (LAYER-NAME . PLIST) - flat plist
 2. Unified format (from define-tp): (LAYER-NAME ARGLIST BODY-FORM)
 For parameterized layers (ARGLIST non-nil), returns nil - use `tp-layer-props-with-arg'."
   (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
-    (cond
-     ;; Unified format: entry is (ARGLIST BODY-FORM) where first elem is nil or a list
-     ;; Check: exactly 2 elements and first is nil or a list of symbols
-     ((and (= (length entry) 2)
-           (or (null (car entry))
-               (and (listp (car entry))
-                    (cl-every #'symbolp (car entry)))))
-      (let ((arglist (car entry))
-            (body (cadr entry)))
-        (if arglist
-            ;; Parameterized - needs argument, return nil
-            nil
-          ;; Non-parameterized - evaluate body and return props
-          (let ((plist (eval body)))
-            (when plist
-              (append plist (list 'tp-name layer-name)))))))
-     ;; Old format: entry is just a flat plist
-     (t
-      (append entry (list 'tp-name layer-name))))))
+    ;; Auto-include tp-name for layers with reactive deps
+    (let ((needs-tp-name (or include-tp-name
+                              (tp--layer-has-reactive-deps-p layer-name))))
+      (cond
+       ;; Unified format: entry is (ARGLIST BODY-FORM) where first elem is nil or a list
+       ;; Check: exactly 2 elements and first is nil or a list of symbols
+       ((and (= (length entry) 2)
+             (or (null (car entry))
+                 (and (listp (car entry))
+                      (cl-every #'symbolp (car entry)))))
+        (let ((arglist (car entry))
+              (body (cadr entry)))
+          (if arglist
+              ;; Parameterized - needs argument, return nil
+              nil
+            ;; Non-parameterized - evaluate body and return props
+            (let ((plist (eval body)))
+              (when plist
+                (if needs-tp-name
+                    (append plist (list 'tp-name layer-name))
+                  plist))))))
+       ;; Old format: entry is just a flat plist
+       (t
+        (if needs-tp-name
+            (append entry (list 'tp-name layer-name))
+          entry))))))
 
 (defun tp-layer-parameterized-p (layer-name)
   "Return non-nil if LAYER-NAME is a parameterized layer.
@@ -2458,10 +2473,10 @@ where ARGLIST is a non-nil list of argument symbols."
          (not (null (car entry)))
          (cl-every #'symbolp (car entry)))))
 
-(defun tp-layer-props-with-arg (layer-name arg)
+(defun tp-layer-props-with-arg (layer-name arg &optional include-tp-name)
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
-Appends 'tp-name property to identify the layer."
+If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer."
   (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
     ;; entry is (ARGLIST BODY-FORM)
     (let ((arglist (car entry))
@@ -2471,13 +2486,16 @@ Appends 'tp-name property to identify the layer."
                ;; Evaluate the body with the argument bound
                (plist (eval `(let ((,arg-sym ',arg)) ,body))))
           (when plist
-            (append plist (list 'tp-name layer-name))))))))
+            (if include-tp-name
+                (append plist (list 'tp-name layer-name))
+              plist)))))))
 
-(defun tp-group-props (group-name)
-  "Return list of properties for all layers in GROUP-NAME."
+(defun tp-group-props (group-name &optional include-tp-name)
+  "Return list of properties for all layers in GROUP-NAME.
+If INCLUDE-TP-NAME is non-nil, each layer's props will include tp-name."
   (when-let ((layers (cdr (assoc group-name tp-layer-groups))))
     (mapcar (lambda (layer)
-              (tp-layer-props layer))
+              (tp-layer-props layer include-tp-name))
             layers)))
 
 (defun tp--is-layer-name-p (sym)
@@ -2490,6 +2508,7 @@ Appends 'tp-name property to identify the layer."
   "Expand any layer names found in PROPS plist.
 Scans through PROPS treating it as a plist (key value pairs).
 When a key is a layer/group name, expands it with its properties.
+Does NOT add tp-name - this is for direct property setting (tp-set/add/reset).
 Returns the expanded plist."
   (let ((result nil)
         (remaining props))
@@ -2503,14 +2522,17 @@ Returns the expanded plist."
                  (cond
                   ;; Parameterized layer - evaluate with the argument (val)
                   ((tp-layer-parameterized-p key)
-                   (tp-layer-props-with-arg key val))
+                   (tp-layer-props-with-arg key val nil))  ; no tp-name
                   ;; Non-parameterized layer - val should be t
                   ((assoc key tp-layer-alist)
-                   (tp-layer-props key))
-                  ;; Layer group
+                   (tp-layer-props key nil))  ; no tp-name
+                  ;; Layer group - merge all layers' properties for direct setting
                   ((assoc key tp-layer-groups)
                    (when-let ((layer-props-list (tp-group-props key)))
-                     (tp--build-layer-props layer-props-list))))))
+                     ;; For direct property setting, merge all layers' properties
+                     ;; without the tp-layers structure.
+                     ;; Reverse so first layer's properties are applied last (take precedence)
+                     (apply #'append (reverse layer-props-list)))))))
             (when layer-props
               (setq result (append result layer-props)))))
          ;; Regular property - keep as-is
@@ -2569,15 +2591,18 @@ For group names, includes `tp-layers' property with the full layer stack."
                (cond
                 ;; Parameterized layer - evaluate with the argument
                 ((tp-layer-parameterized-p first-elem)
-                 (tp-layer-props-with-arg first-elem second-elem))
+                 (tp-layer-props-with-arg first-elem second-elem nil))  ; no tp-name
                 ;; Non-parameterized layer - arg should be t, return the layer props
                 ;; (silently ignore non-t values for flexibility)
                 ((assoc first-elem tp-layer-alist)
-                 (tp-layer-props first-elem))
-                ;; Layer group
+                 (tp-layer-props first-elem nil))  ; no tp-name
+                ;; Layer group - merge all layers' properties for direct setting
                 ((assoc first-elem tp-layer-groups)
                  (when-let ((layer-props-list (tp-group-props first-elem)))
-                   (tp--build-layer-props layer-props-list))))))
+                   ;; For direct property setting, merge all layers' properties
+                   ;; without the tp-layers structure.
+                   ;; Reverse so first layer's properties are applied last (take precedence)
+                   (apply #'append (reverse layer-props-list)))))))
           ;; Recursively resolve extra properties (they may also contain layer names)
           (if (and layer-props extra-props)
               (let ((resolved-extra (tp--expand-layer-in-plist extra-props)))
@@ -2614,7 +2639,7 @@ For group names, includes `tp-layers' property with the full layer stack."
                 (tp--set-layer-props layer-name resolved-props)
                 ;; Register reactive dependencies with the original props
                 (tp--register-reactive-deps layer-name reactive-syms props)
-                ;; Return resolved props with tp-name
+                ;; Return resolved props with tp-name for reactive tracking
                 (append resolved-props (list 'tp-name layer-name)))
             ;; No reactive symbols - return props as-is (no tp-name needed)
             ;; This preserves the native text property behavior for non-reactive plists
@@ -2625,14 +2650,16 @@ For group names, includes `tp-layers' property with the full layer stack."
      ;; Parameterized layer without argument - cannot resolve, return nil
      ((tp-layer-parameterized-p props)
       nil)
-     ;; Check layer - use tp-layer-props which adds tp-name
+     ;; Check layer - get props without tp-name for direct property setting
      ((assoc props tp-layer-alist)
-      (tp-layer-props props))
-     ;; Check group - build layer stack with tp-layers
+      (tp-layer-props props nil))  ; no tp-name
+     ;; Check group - merge all layers' properties for direct setting
      ((assoc props tp-layer-groups)
       (when-let ((layer-props-list (tp-group-props props)))
-        ;; Build the layer stack: first layer on top, rest in tp-layers
-        (tp--build-layer-props layer-props-list)))
+        ;; For direct property setting, merge all layers' properties
+        ;; without the tp-layers structure.
+        ;; Reverse so first layer's properties are applied last (take precedence)
+        (apply #'append (reverse layer-props-list))))
      ;; Not found - return nil (let caller decide how to handle)
      (t nil)))
    (t nil)))
@@ -2705,11 +2732,12 @@ Returns a list of (START END PROPERTIES) for matching intervals."
 ;;; --- Layer Stack Utilities ---
 
 (defun tp--normalize-layer-spec (layer-spec)
-  "Normalize LAYER-SPEC to a plist with tp-name."
+  "Normalize LAYER-SPEC to a plist with tp-name.
+Used by layer stack functions that need tp-name for identification."
   (cond
    ;; Symbol - look up in tp-layer-alist
    ((symbolp layer-spec)
-    (or (tp-layer-props layer-spec)
+    (or (tp-layer-props layer-spec t)  ; include tp-name for layer stack
         (error "Layer %S not found in tp-layer-alist" layer-spec)))
    ;; List starting with symbol followed by plist - named inline layer (name &rest plist)
    ((and (listp layer-spec)
@@ -2827,7 +2855,7 @@ OBJECT defaults to current buffer for region form."
             ;; Check if it's a group name
             ((and (symbolp layer-spec)
                   (assoc layer-spec tp-layer-groups))
-             (tp-group-props layer-spec))
+             (tp-group-props layer-spec t))  ; include tp-name for layer stack
             ;; Single layer spec
             ((or (symbolp layer-spec)
                  (and (listp layer-spec)
