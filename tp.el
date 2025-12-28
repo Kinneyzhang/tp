@@ -862,7 +862,7 @@ Returns modified string or (START . END) cons for buffer."
 (defun tp-get (start-or-string &optional end-or-property &rest args)
   "Get text property value(s) with support for nested sub-properties.
 Returns list of (START END VALUE) intervals.
-Use `tp-at' for single position queries."
+Use `tp-at' for single position queries.
 OBJECT defaults to current buffer."
   (cond
    ;; (tp-get STRING ...) - entire string
@@ -1946,7 +1946,7 @@ Example:
 
 (defun tp--parse-define-layer-args (args)
   "Parse ARGS for tp-define-layer function.
-Returns plist with keys :props, :data, :watch, :compute."
+Returns plist with keys :props, :data, :watch, :compute.
 - Keyword arguments: :props PLIST [:data DATA] [:watch WATCH] [:compute COMPUTE]"
   (let (props data watch compute has-keywords)
     (cond
@@ -3077,7 +3077,7 @@ OBJECT defaults to current buffer."
 ;;; --- Layer Property Manipulation Functions ---
 
 (defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object &rest rest)
-  "Add/merge properties to specified layers."
+  "Add/merge properties to specified layers.
 
 IDX-OR-LAYER-NAME-LIST is a list of layer indices (integers) or
 layer names (symbols) specifying which layers to add properties to.
