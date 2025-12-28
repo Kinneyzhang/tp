@@ -3036,11 +3036,10 @@ NAME can be nil for an unnamed layer."
      start end obj)
     nil))
 
-;;; Layer query functions
+;;; --- Layer Query Functions ---
 
 (defun tp-layer-list (start end &optional object)
-  "Return list of all layer names in region from START to END.
-OBJECT defaults to current buffer."
+  "Return list of all layer names in region from START to END."
   (let ((layers nil))
     (tp-intervals-map
      (lambda (_i-start _i-end top belows)
@@ -3075,18 +3074,10 @@ OBJECT defaults to current buffer."
   (when-let ((intervals (tp-intervals start end object)))
     (plist-get (nth 2 (car intervals)) 'tp-name)))
 
-;;; Layer property manipulation functions
+;;; --- Layer Property Manipulation Functions ---
 
 (defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object &rest rest)
-  "Add/merge properties to specified layers.
-
-This function supports two calling conventions:
-
-1. Buffer/string region:
-   (tp-add-to-layers IDX-OR-LAYER-NAME-LIST START END PLIST OBJECT)
-
-2. Entire string:
-   (tp-add-to-layers IDX-OR-LAYER-NAME-LIST STRING PROP VAL ...)
+  "Add/merge properties to specified layers."
 
 IDX-OR-LAYER-NAME-LIST is a list of layer indices (integers) or
 layer names (symbols) specifying which layers to add properties to.
