@@ -528,13 +528,14 @@ the new end position after any text replacement."
     (let ((tp-text-val (plist-get props 'tp-text)))
       (cond
        ;; tp-text is nil - initialize it to the current text
-       ((null tp-text-val)
-        (let ((current-text (if (stringp object)
-                                (substring object start end)
-                              (if object
-                                  (with-current-buffer object
-                                    (buffer-substring-no-properties start end))
-                                (buffer-substring-no-properties start end)))))
+       ((not (null tp-text-val))
+        (let ((current-text
+               (if (stringp object)
+                   (substring object start end)
+                 (if object
+                     (with-current-buffer object
+                       (buffer-substring-no-properties start end))
+                   (buffer-substring-no-properties start end)))))
           (list (plist-put props 'tp-text current-text) end)))
        ;; tp-text has a string value - replace the text in the region
        ((stringp tp-text-val)
@@ -569,8 +570,9 @@ the new end position after any text replacement."
                 (let ((new-end (+ start (length tp-text-val))))
                   ;; Re-apply existing properties to new text region if preserving
                   (when existing-props
-                    (cl-loop for (key val) on existing-props by #'cddr
-                             do (put-text-property start new-end key val object)))
+                    (cl-loop
+                     for (key val) on existing-props by #'cddr
+                     do (put-text-property start new-end key val object)))
                   (list props new-end)))))))
        ;; Other types - return unchanged
        (t (list props end))))))
