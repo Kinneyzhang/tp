@@ -66,6 +66,11 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
 (defvar tp-layer-data nil
   "Alist of data variables: (LAYER-NAME . (VAR-SYMBOL ...)).")
 
+(defvar tp-layer-params nil
+  "Alist of layer parameter info: (LAYER-NAME . (ARGLIST . BODY-FORM)).
+ARGLIST is a list of argument symbols (currently only single argument is supported).
+BODY-FORM is the unevaluated body form that uses the argument.")
+
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
@@ -727,23 +732,43 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
 
 (defun tp--parse-args (start-or-string end-or-prop props-or-val rest)
   "Parse flexible function arguments and return (OBJECT START END PROPS).
-Supports four calling conventions:
+Supports multiple calling conventions:
 1. Buffer region: (START END PROPS)
 2. Buffer region with object: (START END PROPS OBJECT)
 3. String region: (START END PROPS STRING)
-4. Entire string: (STRING PROP VAL ...)"
+4. Entire string with plist: (STRING PROP VAL ...)
+5. Entire string with layer: (STRING LAYER-NAME ARG)"
   (let (object start finish props)
     (cond
      ;; First arg is a string - apply to entire string
      ((stringp start-or-string)
       (setq object start-or-string
             start 0
-            finish (length start-or-string)
-            props (if end-or-prop
-                      (if props-or-val
-                          (cons end-or-prop (cons props-or-val rest))
-                        (list end-or-prop))
-                    nil)))
+            finish (length start-or-string))
+      ;; Check if second arg is a layer/group name or parameterized layer
+      (cond
+       ;; (tp-set "str" 'layer-name arg) - layer with argument
+       ((and (symbolp end-or-prop)
+             (or (assoc end-or-prop tp-layer-alist)
+                 (assoc end-or-prop tp-layer-groups)
+                 (assoc end-or-prop tp-layer-params))
+             props-or-val
+             (null rest))
+        (setq props (list end-or-prop props-or-val)))
+       ;; (tp-set "str" 'layer-name) - layer without argument (legacy)
+       ((and (symbolp end-or-prop)
+             (or (assoc end-or-prop tp-layer-alist)
+                 (assoc end-or-prop tp-layer-groups))
+             (null props-or-val)
+             (null rest))
+        (setq props (list end-or-prop)))
+       ;; Standard flat plist: (tp-set "str" 'prop1 val1 'prop2 val2 ...)
+       (t
+        (setq props (if end-or-prop
+                        (if props-or-val
+                            (cons end-or-prop (cons props-or-val rest))
+                          (list end-or-prop))
+                      nil)))))
      ;; First arg is a number - region convention
      ((numberp start-or-string)
       (setq start start-or-string
@@ -2109,22 +2134,52 @@ The layer is stored in `tp-layer-alist'."
   "Define a single text property layer named NAME.
 
 This macro provides a convenient syntax for `tp-define-layer'.
-All arguments use quoted list format.
+Supports two formats: with parameters and without parameters.
 
-Format 1 - Direct plist (no :watch/:compute/:data support):
-  (define-tp tp-process-bar-done
-    \\='(display (space :width ($tp-done-pixel))
-              face (:background $tp-done-color)))
+Format 1 - Without parameters (static properties):
+  (define-tp tp-bold
+    \\='(face bold))
 
-Format 2 - With :props, :data, :watch, and/or :compute:
-  (define-tp tp-process-bar-done
-    :props \\='(display (space :width ($tp-done-pixel))
-                     face (:background $tp-done-color))
-    :data \\=`((tp-done-color . ,tp-success-color)))
+Usage:
+  (tp-set \"emacs\" \\='tp-bold t)
+  (tp-set 0 5 \\='(tp-bold t) \"emacs\")
+  ;; => #(\"emacs\" 0 5 (tp-name tp-bold face bold))
 
-See `tp-define-layer' for full documentation."
+Format 2 - With a single parameter:
+  (define-tp tp-space (pixel)
+    \\=`(display (space :width (,pixel))))
+
+Usage:
+  (tp-set \"emacs\" \\='tp-space 2)
+  (tp-set 0 5 \\='(tp-space 2) \"emacs\")
+  ;; => #(\"emacs\" 0 5 (tp-name tp-space display (space :width (2))))
+
+Note: The parameterized form stores the body as a function that takes
+the parameter and returns the resolved property list."
   (declare (indent defun))
-  `(tp-define-layer ',name ,@args))
+  (if (and (car args) (listp (car args)) (not (eq (caar args) 'quote)))
+      ;; Parameterized form: (define-tp name (arg) body)
+      (let ((arglist (car args))
+            (body (cadr args)))
+        (unless (and (= (length arglist) 1)
+                     (symbolp (car arglist)))
+          (error "define-tp with parameters only supports exactly one argument"))
+        `(tp--define-parameterized-layer ',name ',arglist ',body))
+    ;; Non-parameterized form: (define-tp name 'props) or (define-tp name :props 'props ...)
+    `(tp-define-layer ',name ,@args)))
+
+(defun tp--define-parameterized-layer (name arglist body)
+  "Define a parameterized layer NAME with ARGLIST and BODY.
+ARGLIST must have exactly one element.
+BODY is a form that will be evaluated with the argument bound."
+  ;; Store the parameter info
+  (if (assoc name tp-layer-params)
+      (setf (cdr (assoc name tp-layer-params)) (cons arglist body))
+    (push (cons name (cons arglist body)) tp-layer-params))
+  ;; Also store a placeholder in tp-layer-alist so the layer is recognized
+  ;; The actual properties will be computed at usage time
+  (tp--set-layer-props name nil)
+  (assoc name tp-layer-alist))
 
 (defun tp--layer-group-element-format (element)
   "Determine the format type of ELEMENT.
@@ -2358,6 +2413,23 @@ Appends 'tp-name property to identify the layer."
   (when-let ((plist (cdr (assoc layer-name tp-layer-alist))))
     (append plist (list 'tp-name layer-name))))
 
+(defun tp-layer-parameterized-p (layer-name)
+  "Return non-nil if LAYER-NAME is a parameterized layer."
+  (assoc layer-name tp-layer-params))
+
+(defun tp-layer-props-with-arg (layer-name arg)
+  "Return properties for parameterized layer LAYER-NAME with ARG.
+Evaluates the body form with the argument bound to the parameter.
+Appends 'tp-name property to identify the layer."
+  (when-let ((param-info (cdr (assoc layer-name tp-layer-params))))
+    (let* ((arglist (car param-info))
+           (body (cdr param-info))
+           (arg-sym (car arglist))
+           ;; Evaluate the body with the argument bound
+           (plist (eval `(let ((,arg-sym ',arg)) ,body))))
+      (when plist
+        (append plist (list 'tp-name layer-name))))))
+
 (defun tp-group-props (group-name)
   "Return list of properties for all layers in GROUP-NAME."
   (when-let ((layers (cdr (assoc group-name tp-layer-groups))))
@@ -2369,18 +2441,24 @@ Appends 'tp-name property to identify the layer."
   "Resolve PROPS to a property list with layer metadata.
 PROPS can be:
 - A symbol (layer name from `tp-layer-alist' or group name from `tp-layer-groups')
-- A single-element list containing a layer/group symbol (from string form of tp-set)
+- A two-element list (LAYER-NAME ARG) where LAYER-NAME is a defined layer
+  and ARG is either `t' for non-parameterized layers or the argument value
+  for parameterized layers
 - A plist (handles anonymous layers with reactive variables)
 
 If PROPS is a symbol:
 - First checks `tp-layer-alist' and returns the layer properties WITH `tp-name'
 - Then checks `tp-layer-groups' and returns properties WITH `tp-layers'
 
+If PROPS is (LAYER-NAME ARG):
+- For non-parameterized layers: if ARG is t, returns the layer properties
+- For parameterized layers: evaluates the body with ARG and returns the result
+
 If PROPS is a plist:
 - If it contains reactive variables ($...), generates a UUID for `tp-name',
   registers reactive dependencies, and returns the resolved props with `tp-name'.
   If the plist already has a `tp-name', uses that instead of generating a new one.
-- If no reactive variables, adds a `tp-name' for the anonymous layer.
+- If no reactive variables, returns props as-is (no tp-name added).
 
 Returns nil if PROPS is a symbol but no matching layer/group is found.
 
@@ -2389,17 +2467,42 @@ For group names, includes `tp-layers' property with the full layer stack."
   (cond
    ;; Already a plist - check for reactive variables and add tp-name
    ((listp props)
-    ;; Handle single-element list containing a layer/group name symbol.
-    ;; This can happen when tp-set is called with string form: (tp-set str 'layer-name)
-    ;; which produces props = (layer-name) in tp--parse-args.
-    (let ((first-elem (car-safe props)))
-      (if (and (= (length props) 1)
-               (symbolp first-elem)
-               (or (assoc first-elem tp-layer-alist)
-                   (assoc first-elem tp-layer-groups)))
-          ;; It's a layer/group name wrapped in a list - recurse with the symbol
-          (tp--resolve-props first-elem)
-        ;; Normal plist processing
+    (let ((first-elem (car-safe props))
+          (second-elem (cadr props)))
+      (cond
+       ;; Handle (layer-name arg) format for defined layers
+       ((and (= (length props) 2)
+             (symbolp first-elem)
+             (or (assoc first-elem tp-layer-alist)
+                 (assoc first-elem tp-layer-params)
+                 (assoc first-elem tp-layer-groups)))
+        (cond
+         ;; Parameterized layer - evaluate with the argument
+         ((tp-layer-parameterized-p first-elem)
+          (tp-layer-props-with-arg first-elem second-elem))
+         ;; Non-parameterized layer - arg should be t, just return the layer props
+         ((assoc first-elem tp-layer-alist)
+          (if (eq second-elem t)
+              (tp-layer-props first-elem)
+            ;; If not t, treat as parameterized but layer isn't - error or return nil
+            (tp-layer-props first-elem)))
+         ;; Layer group
+         ((assoc first-elem tp-layer-groups)
+          (when-let ((layer-props-list (tp-group-props first-elem)))
+            (tp--build-layer-props layer-props-list)))))
+       
+       ;; Handle single-element list containing a layer/group name symbol.
+       ;; This can happen when tp-set is called with string form: (tp-set str 'layer-name)
+       ;; which produces props = (layer-name) in tp--parse-args.
+       ((and (= (length props) 1)
+             (symbolp first-elem)
+             (or (assoc first-elem tp-layer-alist)
+                 (assoc first-elem tp-layer-groups)))
+        ;; It's a layer/group name wrapped in a list - recurse with the symbol
+        (tp--resolve-props first-elem))
+       
+       ;; Normal plist processing
+       (t
         (let* ((existing-tp-name (plist-get props 'tp-name))
                (reactive-syms (tp--collect-reactive-symbols props)))
           (if reactive-syms
@@ -2416,11 +2519,17 @@ For group names, includes `tp-layers' property with the full layer stack."
                 (append resolved-props (list 'tp-name layer-name)))
             ;; No reactive symbols - return props as-is (no tp-name needed)
             ;; This preserves the native text property behavior for non-reactive plists
-            props)))))
+            props))))))
    ;; Symbol - check if it's a layer or group name
    ((symbolp props)
     (cond
-     ;; Check layer first - use tp-layer-props which adds tp-name
+     ;; Check parameterized layer first - but without argument, we can't resolve it
+     ;; Just check if it's a known layer name
+     ((tp-layer-parameterized-p props)
+      ;; Parameterized layer without argument - return nil or error
+      ;; For now, return nil - caller should provide argument
+      nil)
+     ;; Check layer - use tp-layer-props which adds tp-name
      ((assoc props tp-layer-alist)
       (tp-layer-props props))
      ;; Check group - build layer stack with tp-layers
@@ -2442,18 +2551,20 @@ If resolution fails, return PLIST unchanged (for backward compatibility)."
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
-Clears both `tp-layer-alist' and `tp-layer-groups'.
+Clears both `tp-layer-alist' and `tp-layer-groups' and `tp-layer-params'.
 Also resets all reactive text property watchers and dependencies."
   (interactive)
   (tp-reactive-reset)
   (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil))
+  (setq tp-layer-groups nil)
+  (setq tp-layer-params nil))
 
 (defun tp-undefine-layer (name)
   "Remove layer NAME from `tp-layer-alist'.
 Also unregisters any reactive dependencies for this layer."
   (tp--unregister-reactive-deps name)
-  (setq tp-layer-alist (assq-delete-all name tp-layer-alist)))
+  (setq tp-layer-alist (assq-delete-all name tp-layer-alist))
+  (setq tp-layer-params (assq-delete-all name tp-layer-params)))
 
 (defun tp-undefine-group (name)
   "Remove layer group NAME from `tp-layer-groups'."

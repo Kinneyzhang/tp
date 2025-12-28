@@ -27,6 +27,7 @@
   `(with-temp-buffer
      (setq tp-layer-alist nil)
      (setq tp-layer-groups nil)
+     (setq tp-layer-params nil)
      (tp-reactive-reset)
      ,@body))
 
@@ -3116,6 +3117,98 @@ the inserted text should be that string, not the source text."
       (ignore-errors (makunbound 'tp-test-name-part1))
       (ignore-errors (makunbound 'tp-test-name-part2))
       (ignore-errors (makunbound 'tp-test-full-text)))))
+
+;;; ============================================================
+;;; New define-tp Format Tests (Parameterized and Non-Parameterized)
+;;; ============================================================
+
+(ert-deftest tp-test-define-tp-non-parameterized ()
+  "Test define-tp with non-parameterized format."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold
+      '(face bold))
+    (should (assoc 'tp-bold tp-layer-alist))
+    (should (equal (cdr (assoc 'tp-bold tp-layer-alist)) '(face bold)))))
+
+(ert-deftest tp-test-define-tp-parameterized ()
+  "Test define-tp with parameterized format."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      (list 'display (list 'space :width (list pixel))))
+    ;; Check it's registered as a parameterized layer
+    (should (assoc 'tp-space tp-layer-params))
+    ;; Check the arglist is correct
+    (let ((param-info (cdr (assoc 'tp-space tp-layer-params))))
+      (should (equal (car param-info) '(pixel))))))
+
+(ert-deftest tp-test-define-tp-parameterized-usage-string ()
+  "Test parameterized layer usage with string: (tp-set string 'layer-name arg)."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      (list 'display (list 'space :width (list pixel))))
+    (let ((result (tp-set "emacs" 'tp-space 2)))
+      ;; Result should have the correct properties
+      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (2)))))))
+
+(ert-deftest tp-test-define-tp-parameterized-usage-region ()
+  "Test parameterized layer usage with region: (tp-set start end '(layer-name arg))."
+  (tp-test-with-temp-buffer
+    (insert "emacs")
+    (define-tp tp-space (pixel)
+      (list 'display (list 'space :width (list pixel))))
+    (tp-set 1 6 '(tp-space 5))
+    ;; Check properties in buffer
+    (should (eq (tp-at 1 'tp-name) 'tp-space))
+    (should (equal (tp-at 1 'display) '(space :width (5))))))
+
+(ert-deftest tp-test-define-tp-non-parameterized-usage-string ()
+  "Test non-parameterized layer usage with string: (tp-set string 'layer-name t)."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold
+      '(face bold))
+    (let ((result (tp-set "emacs" 'tp-bold t)))
+      ;; Result should have the correct properties
+      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should (eq (get-text-property 0 'face result) 'bold)))))
+
+(ert-deftest tp-test-define-tp-non-parameterized-usage-region ()
+  "Test non-parameterized layer usage with region: (tp-set start end '(layer-name t))."
+  (tp-test-with-temp-buffer
+    (insert "emacs")
+    (define-tp tp-bold
+      '(face bold))
+    (tp-set 1 6 '(tp-bold t))
+    ;; Check properties in buffer
+    (should (eq (tp-at 1 'tp-name) 'tp-bold))
+    (should (eq (tp-at 1 'face) 'bold))))
+
+(ert-deftest tp-test-define-tp-parameterized-backquote ()
+  "Test parameterized layer with backquote syntax."
+  (tp-test-with-temp-buffer
+    (define-tp tp-test-space (pixel)
+      `(display (space :width (,pixel))))
+    (let ((result (tp-set "emacs" 'tp-test-space 10)))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-test-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (10)))))))
+
+(ert-deftest tp-test-define-tp-parameterized-undefine ()
+  "Test tp-undefine-layer clears parameterized layer info."
+  (tp-test-with-temp-buffer
+    (define-tp tp-test-param (arg)
+      (list 'display arg))
+    (should (assoc 'tp-test-param tp-layer-params))
+    (tp-undefine-layer 'tp-test-param)
+    (should-not (assoc 'tp-test-param tp-layer-params))))
+
+(ert-deftest tp-test-layer-reset-clears-params ()
+  "Test tp-layer-reset clears parameterized layers."
+  (tp-test-with-temp-buffer
+    (define-tp tp-test-param (arg)
+      (list 'display arg))
+    (should tp-layer-params)
+    (tp-layer-reset)
+    (should-not tp-layer-params)))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
