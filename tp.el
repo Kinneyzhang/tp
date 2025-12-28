@@ -2604,10 +2604,27 @@ For group names, includes `tp-layers' property with the full layer stack."
                    ;; Reverse so first layer's properties are applied last (take precedence)
                    (apply #'append (reverse layer-props-list)))))))
           ;; Recursively resolve extra properties (they may also contain layer names)
-          (if (and layer-props extra-props)
-              (let ((resolved-extra (tp--expand-layer-in-plist extra-props)))
-                (append layer-props resolved-extra))
-            layer-props)))
+          (let ((expanded-props
+                 (if (and layer-props extra-props)
+                     (let ((resolved-extra (tp--expand-layer-in-plist extra-props)))
+                       (append layer-props resolved-extra))
+                   layer-props)))
+            ;; After expansion, check for reactive symbols in the merged props
+            ;; (original props may contain $vars that need reactive tracking)
+            (let ((reactive-syms (tp--collect-reactive-symbols props)))
+              (if reactive-syms
+                  ;; Has reactive symbols - need anonymous tp-name for reactive tracking
+                  (let* ((existing-tp-name (plist-get props 'tp-name))
+                         (layer-name (or existing-tp-name
+                                         (tp--generate-anonymous-layer-name)))
+                         ;; Resolve reactive symbols in expanded props
+                         (resolved-props (tp--resolve-reactive-symbols expanded-props)))
+                    ;; Register reactive dependencies
+                    (tp--set-layer-props layer-name resolved-props)
+                    (tp--register-reactive-deps layer-name reactive-syms props)
+                    (append resolved-props (list 'tp-name layer-name)))
+                ;; No reactive symbols - return expanded props as-is (no tp-name)
+                expanded-props)))))
        
        ;; Handle single-element list containing a layer/group name symbol.
        ;; This can happen when tp-set is called with string form: (tp-set str 'layer-name)
@@ -2623,7 +2640,23 @@ For group names, includes `tp-layers' property with the full layer stack."
        ((cl-some #'tp--is-layer-name-p
                  (cl-loop for (key _val) on props by #'cddr collect key))
         ;; Expand all layer names in the plist
-        (tp--expand-layer-in-plist props))
+        (let ((expanded-props (tp--expand-layer-in-plist props)))
+          ;; After expansion, check for reactive symbols in the original props
+          ;; (they may contain $vars that need reactive tracking)
+          (let ((reactive-syms (tp--collect-reactive-symbols props)))
+            (if reactive-syms
+                ;; Has reactive symbols - need anonymous tp-name for reactive tracking
+                (let* ((existing-tp-name (plist-get props 'tp-name))
+                       (layer-name (or existing-tp-name
+                                       (tp--generate-anonymous-layer-name)))
+                       ;; Resolve reactive symbols in expanded props
+                       (resolved-props (tp--resolve-reactive-symbols expanded-props)))
+                  ;; Register reactive dependencies
+                  (tp--set-layer-props layer-name resolved-props)
+                  (tp--register-reactive-deps layer-name reactive-syms props)
+                  (append resolved-props (list 'tp-name layer-name)))
+              ;; No reactive symbols - return expanded props as-is (no tp-name)
+              expanded-props))))
        
        ;; Normal plist processing
        (t
