@@ -27,7 +27,6 @@
   `(with-temp-buffer
      (setq tp-layer-alist nil)
      (setq tp-layer-groups nil)
-     (setq tp-layer-params nil)
      (tp-reactive-reset)
      ,@body))
 
@@ -3128,7 +3127,11 @@ the inserted text should be that string, not the source text."
     (define-tp tp-bold ()
       '(face bold))
     (should (assoc 'tp-bold tp-layer-alist))
-    (should (equal (cdr (assoc 'tp-bold tp-layer-alist)) '(face bold)))))
+    ;; Unified structure: (LAYER-NAME nil BODY-FORM) where BODY-FORM is quoted
+    (let ((entry (cdr (assoc 'tp-bold tp-layer-alist))))
+      (should (= (length entry) 2))
+      (should (null (car entry)))  ; arglist is nil
+      (should (equal (eval (cadr entry)) '(face bold))))))
 
 (ert-deftest tp-test-define-tp-non-parameterized-usage-string ()
   "Test non-parameterized layer usage with string: (tp-set string 'layer-name t)."
@@ -3156,11 +3159,13 @@ the inserted text should be that string, not the source text."
   (tp-test-with-temp-buffer
     (define-tp tp-space (pixel)
       (list 'display (list 'space :width (list pixel))))
-    ;; Check it's registered as a parameterized layer
-    (should (assoc 'tp-space tp-layer-params))
-    ;; Check the arglist is correct
-    (let ((param-info (cdr (assoc 'tp-space tp-layer-params))))
-      (should (equal (car param-info) '(pixel))))))
+    ;; Check it's registered as a parameterized layer in tp-layer-alist
+    (should (assoc 'tp-space tp-layer-alist))
+    (should (tp-layer-parameterized-p 'tp-space))
+    ;; Check the structure is correct (ARGLIST BODY-FORM)
+    (let ((entry (cdr (assoc 'tp-space tp-layer-alist))))
+      ;; entry is (ARGLIST BODY-FORM)
+      (should (equal (car entry) '(pixel))))))
 
 (ert-deftest tp-test-define-tp-parameterized-usage-string ()
   "Test parameterized layer usage with string: (tp-set string 'layer-name arg)."
@@ -3197,18 +3202,19 @@ the inserted text should be that string, not the source text."
   (tp-test-with-temp-buffer
     (define-tp tp-test-param (arg)
       (list 'display arg))
-    (should (assoc 'tp-test-param tp-layer-params))
+    (should (assoc 'tp-test-param tp-layer-alist))
+    (should (tp-layer-parameterized-p 'tp-test-param))
     (tp-undefine-layer 'tp-test-param)
-    (should-not (assoc 'tp-test-param tp-layer-params))))
+    (should-not (assoc 'tp-test-param tp-layer-alist))))
 
 (ert-deftest tp-test-layer-reset-clears-params ()
   "Test tp-layer-reset clears parameterized layers."
   (tp-test-with-temp-buffer
     (define-tp tp-test-param (arg)
       (list 'display arg))
-    (should tp-layer-params)
+    (should (assoc 'tp-test-param tp-layer-alist))
     (tp-layer-reset)
-    (should-not tp-layer-params)))
+    (should-not tp-layer-alist)))
 
 (ert-deftest tp-test-layer-with-extra-props-string ()
   "Test layer with extra native properties on string."

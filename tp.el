@@ -66,11 +66,6 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
 (defvar tp-layer-data nil
   "Alist of data variables: (LAYER-NAME . (VAR-SYMBOL ...)).")
 
-(defvar tp-layer-params nil
-  "Alist of layer parameter info: (LAYER-NAME . (ARGLIST . BODY-FORM)).
-ARGLIST is a list of argument symbols (currently only single argument is supported).
-BODY-FORM is the unevaluated body form that uses the argument.")
-
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
@@ -751,8 +746,7 @@ Supports multiple calling conventions:
        ;; (tp-set "str" 'layer-name arg ...) - layer with argument and optional extra props
        ((and (symbolp end-or-prop)
              (or (assoc end-or-prop tp-layer-alist)
-                 (assoc end-or-prop tp-layer-groups)
-                 (assoc end-or-prop tp-layer-params))
+                 (assoc end-or-prop tp-layer-groups))
              props-or-val)
         ;; Build props: (layer-name arg extra-prop1 val1 ...)
         (setq props (cons end-or-prop (cons props-or-val rest))))
@@ -2173,27 +2167,28 @@ it will be evaluated with the argument bound."
   (unless (listp arglist)
     (error "define-tp ARGLIST must be a list"))
   (cond
-   ;; Non-parameterized: empty arglist
+   ;; Non-parameterized: empty arglist - store as (LAYER-NAME nil BODY-FORM)
    ((null arglist)
-    `(tp-define-layer ',name ,body))
-   ;; Parameterized: single argument
+    `(tp--define-layer-unified ',name nil ,body))
+   ;; Parameterized: single argument - store as (LAYER-NAME ARGLIST BODY-FORM)
    ((and (= (length arglist) 1)
          (symbolp (car arglist)))
-    `(tp--define-parameterized-layer ',name ',arglist ',body))
+    `(tp--define-layer-unified ',name ',arglist ',body))
    (t
     (error "define-tp ARGLIST must be empty or contain exactly one symbol"))))
 
-(defun tp--define-parameterized-layer (name arglist body)
-  "Define a parameterized layer NAME with ARGLIST and BODY.
-ARGLIST must have exactly one element.
-BODY is a form that will be evaluated with the argument bound."
-  ;; Store the parameter info
-  (if (assoc name tp-layer-params)
-      (setf (cdr (assoc name tp-layer-params)) (cons arglist body))
-    (push (cons name (cons arglist body)) tp-layer-params))
-  ;; Also store a placeholder in tp-layer-alist so the layer is recognized
-  ;; The actual properties will be computed at usage time
-  (tp--set-layer-props name nil)
+(defun tp--define-layer-unified (name arglist body)
+  "Define a layer NAME with ARGLIST and BODY using unified structure.
+For non-parameterized layers, ARGLIST is nil and BODY is the evaluated plist.
+For parameterized layers, ARGLIST contains one symbol and BODY is the unevaluated form.
+Stores the layer in `tp-layer-alist' with format: (LAYER-NAME ARGLIST BODY-FORM)."
+  ;; Store in tp-layer-alist with unified format: (LAYER-NAME ARGLIST BODY-FORM)
+  ;; For non-parameterized, quote the body so eval returns the plist
+  (let ((stored-body (if arglist body `',body)))
+    (let ((entry (list arglist stored-body)))
+      (if (assoc name tp-layer-alist)
+          (setf (cdr (assoc name tp-layer-alist)) entry)
+        (push (cons name entry) tp-layer-alist))))
   (assoc name tp-layer-alist))
 
 (defun tp--layer-group-element-format (element)
@@ -2409,6 +2404,7 @@ See `tp-define-layer-group' for full documentation."
 (defun tp--set-layer-props (layer-name properties)
   "Set PROPERTIES for layer LAYER-NAME in `tp-layer-alist'.
 If the layer already exists, updates its properties; otherwise creates it.
+Stores as (LAYER-NAME . PROPERTIES) for backward compatibility with reactive layers.
 This is an internal function used by layer definition macros and reactive updates."
   (if (assoc layer-name tp-layer-alist)
       (setf (cdr (assoc layer-name tp-layer-alist)) properties)
@@ -2424,26 +2420,58 @@ This is an internal function used by group definition macros."
 
 (defun tp-layer-props (layer-name)
   "Return properties for layer LAYER-NAME from `tp-layer-alist'.
-Appends 'tp-name property to identify the layer."
-  (when-let ((plist (cdr (assoc layer-name tp-layer-alist))))
-    (append plist (list 'tp-name layer-name))))
+Appends 'tp-name property to identify the layer.
+Handles two storage formats:
+1. Old format (from tp--set-layer-props): (LAYER-NAME . PLIST) - flat plist
+2. Unified format (from define-tp): (LAYER-NAME ARGLIST BODY-FORM)
+For parameterized layers (ARGLIST non-nil), returns nil - use `tp-layer-props-with-arg'."
+  (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
+    (cond
+     ;; Unified format: entry is (ARGLIST BODY-FORM) where first elem is nil or a list
+     ;; Check: exactly 2 elements and first is nil or a list of symbols
+     ((and (= (length entry) 2)
+           (or (null (car entry))
+               (and (listp (car entry))
+                    (cl-every #'symbolp (car entry)))))
+      (let ((arglist (car entry))
+            (body (cadr entry)))
+        (if arglist
+            ;; Parameterized - needs argument, return nil
+            nil
+          ;; Non-parameterized - evaluate body and return props
+          (let ((plist (eval body)))
+            (when plist
+              (append plist (list 'tp-name layer-name)))))))
+     ;; Old format: entry is just a flat plist
+     (t
+      (append entry (list 'tp-name layer-name))))))
 
 (defun tp-layer-parameterized-p (layer-name)
-  "Return non-nil if LAYER-NAME is a parameterized layer."
-  (assoc layer-name tp-layer-params))
+  "Return non-nil if LAYER-NAME is a parameterized layer.
+Parameterized layers are stored in unified format (LAYER-NAME ARGLIST BODY-FORM)
+where ARGLIST is a non-nil list of argument symbols."
+  (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
+    ;; Unified format: entry is (ARGLIST BODY-FORM) with exactly 2 elements
+    ;; and first element is a non-nil list of symbols
+    (and (= (length entry) 2)
+         (listp (car entry))
+         (not (null (car entry)))
+         (cl-every #'symbolp (car entry)))))
 
 (defun tp-layer-props-with-arg (layer-name arg)
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
 Appends 'tp-name property to identify the layer."
-  (when-let ((param-info (cdr (assoc layer-name tp-layer-params))))
-    (let* ((arglist (car param-info))
-           (body (cdr param-info))
-           (arg-sym (car arglist))
-           ;; Evaluate the body with the argument bound
-           (plist (eval `(let ((,arg-sym ',arg)) ,body))))
-      (when plist
-        (append plist (list 'tp-name layer-name))))))
+  (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
+    ;; entry is (ARGLIST BODY-FORM)
+    (let ((arglist (car entry))
+          (body (cadr entry)))
+      (when arglist  ; Only for parameterized layers
+        (let* ((arg-sym (car arglist))
+               ;; Evaluate the body with the argument bound
+               (plist (eval `(let ((,arg-sym ',arg)) ,body))))
+          (when plist
+            (append plist (list 'tp-name layer-name))))))))
 
 (defun tp-group-props (group-name)
   "Return list of properties for all layers in GROUP-NAME."
@@ -2456,7 +2484,6 @@ Appends 'tp-name property to identify the layer."
   "Return non-nil if SYM is a defined layer, parameterized layer, or group name."
   (and (symbolp sym)
        (or (assoc sym tp-layer-alist)
-           (assoc sym tp-layer-params)
            (assoc sym tp-layer-groups))))
 
 (defun tp--expand-layer-in-plist (props)
@@ -2620,20 +2647,18 @@ If resolution fails, return PLIST unchanged (for backward compatibility)."
 
 (defun tp-layer-reset ()
   "Reset all layer definitions.
-Clears both `tp-layer-alist' and `tp-layer-groups' and `tp-layer-params'.
+Clears both `tp-layer-alist' and `tp-layer-groups'.
 Also resets all reactive text property watchers and dependencies."
   (interactive)
   (tp-reactive-reset)
   (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
-  (setq tp-layer-params nil))
+  (setq tp-layer-groups nil))
 
 (defun tp-undefine-layer (name)
   "Remove layer NAME from `tp-layer-alist'.
 Also unregisters any reactive dependencies for this layer."
   (tp--unregister-reactive-deps name)
-  (setq tp-layer-alist (assq-delete-all name tp-layer-alist))
-  (setq tp-layer-params (assq-delete-all name tp-layer-params)))
+  (setq tp-layer-alist (assq-delete-all name tp-layer-alist)))
 
 (defun tp-undefine-group (name)
   "Remove layer group NAME from `tp-layer-groups'."
