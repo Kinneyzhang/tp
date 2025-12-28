@@ -3044,6 +3044,49 @@ preserving the native text property behavior."
       ;; Cleanup
       (makunbound 'tp-test-reactive-text))))
 
+(ert-deftest tp-test-tp-text-reactive-nil-initializes-variable ()
+  "Test tp-text with nil reactive variable initializes the variable to source text.
+When tp-text is bound to a reactive variable and that variable is nil,
+the source text should be used and the reactive variable should be updated."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-text-var nil "Test variable for tp-text initialization.")
+    (setq tp-test-text-var nil)
+    (unwind-protect
+        (progn
+          ;; Define layer with tp-text bound to a reactive variable
+          (tp-define-layer 'test-init-text-layer
+            :props '(face bold tp-text $tp-test-text-var))
+          ;; Apply layer to string - variable is nil, so source text should be used
+          (let ((result (tp-set "2" 'test-init-text-layer)))
+            ;; Result should be the source text "2"
+            (should (equal result "2"))
+            ;; tp-test-text-var should now be "2"
+            (should (equal tp-test-text-var "2"))
+            ;; tp-text property should be "2"
+            (should (equal (tp-at 0 'tp-text result) "2")))
+          ;; Now set the variable to a different value and test again
+          (setq tp-test-text-var "18")
+          ;; Redefine layer to reset resolved props
+          (tp-define-layer 'test-init-text-layer
+            :props '(face bold tp-text $tp-test-text-var))
+          (let ((result (tp-set "2" 'test-init-text-layer)))
+            ;; Result should be the variable value "18", not source "2"
+            (should (equal result "18"))
+            ;; Variable should remain "18"
+            (should (equal tp-test-text-var "18"))))
+      ;; Cleanup
+      (makunbound 'tp-test-text-var))))
+
+(ert-deftest tp-test-tp-text-direct-string-uses-specified-text ()
+  "Test tp-text with direct string value uses that string, not source text.
+When tp-text is set directly to a string (not a reactive variable),
+the inserted text should be that string, not the source text."
+  (let ((result (tp-set "2" 'tp-text "23")))
+    ;; Result should be "23", not "2"
+    (should (equal result "23"))
+    ;; tp-text property should be "23"
+    (should (equal (tp-at 0 'tp-text result) "23"))))
+
 (ert-deftest tp-test-tp-text-reactive-computed ()
   "Test tp-text with computed reactive variable."
   (tp-test-with-temp-buffer

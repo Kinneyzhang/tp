@@ -576,6 +576,26 @@ WHERE specifies which buffers to update:
 ;;; Layer 4: Reactive Text (tp-text property)
 ;;;============================================================================
 
+(defun tp--find-tp-text-reactive-var (layer-name)
+  "Find the reactive variable symbol used for tp-text in LAYER-NAME.
+Returns the variable symbol (e.g., tp-test-counter) if tp-text uses a
+reactive variable (e.g., $tp-test-counter), or nil if not found.
+Searches through `tp-reactive-deps' to find the original reactive props."
+  (catch 'found
+    (dolist (dep tp-reactive-deps)
+      (let* ((var-sym (car dep))
+             (layer-entry (assoc layer-name (cdr dep))))
+        (when layer-entry
+          (let ((reactive-props (cdr layer-entry)))
+            ;; Check if tp-text in reactive-props uses this variable
+            (when (plist-member reactive-props 'tp-text)
+              (let ((tp-text-val (plist-get reactive-props 'tp-text)))
+                ;; Check if tp-text-val is a reactive symbol for this variable
+                (when (and (tp--reactive-symbol-p tp-text-val)
+                           (eq (tp--reactive-var-symbol tp-text-val) var-sym))
+                  (throw 'found var-sym))))))))
+    nil))
+
 (defun tp--update-reactive-text (layer-name &optional where)
   "Update text regions that have tp-text property with LAYER-NAME applied.
 This is called when a reactive variable bound to tp-text changes.
@@ -644,6 +664,17 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                      (with-current-buffer object
                        (buffer-substring-no-properties start end))
                    (buffer-substring-no-properties start end)))))
+          ;; If tp-text uses a reactive variable, update that variable to match
+          ;; This ensures the reactive variable and buffer text stay in sync
+          (when-let ((layer-name (plist-get props 'tp-name)))
+            (when-let ((reactive-var (tp--find-tp-text-reactive-var layer-name)))
+              ;; Update the reactive variable with the current text (buffer-local)
+              (set reactive-var current-text)
+              ;; Also update the layer definition so future accesses see the new value
+              (let ((layer-props (cdr (assoc layer-name tp-layer-alist))))
+                (when layer-props
+                  (setf (cdr (assoc layer-name tp-layer-alist))
+                        (plist-put layer-props 'tp-text current-text))))))
           (list (plist-put props 'tp-text current-text) end object)))
        ;; tp-text has a string value - replace the text in the region
        ((stringp tp-text-val)
