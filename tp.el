@@ -497,27 +497,29 @@ WHERE specifies which buffers to update:
 NEW-TEXT is the new text to replace with.
 PROPS are the properties to apply to the new text."
   (goto-char (point-min))
-  (let ((match t))
+  (let ((match (text-property-search-forward 'tp-name layer-name t)))
     (while match
-      (setq match (text-property-search-forward 'tp-name layer-name t))
-      (when match
-        (let* ((m-start (prop-match-beginning match))
-               (m-end (prop-match-end match))
-               (old-text (buffer-substring-no-properties m-start m-end)))
-          ;; Only replace if text is different
-          (unless (equal old-text new-text)
-            ;; Delete old text and insert new
-            (delete-region m-start m-end)
-            (goto-char m-start)
-            (insert new-text)
-            ;; Apply the layer properties (including tp-text and tp-name) to new text
-            (let ((new-end (+ m-start (length new-text))))
-              (set-text-properties m-start new-end props))))))))
+      (let* ((m-start (prop-match-beginning match))
+             (m-end (prop-match-end match))
+             (old-text (buffer-substring-no-properties m-start m-end)))
+        ;; Only replace if text is different
+        (unless (equal old-text new-text)
+          ;; Delete old text and insert new
+          (delete-region m-start m-end)
+          (goto-char m-start)
+          (insert new-text)
+          ;; Apply the layer properties (including tp-text and tp-name) to new text
+          (let ((new-end (+ m-start (length new-text))))
+            (set-text-properties m-start new-end props))))
+      ;; Search for next match
+      (setq match (text-property-search-forward 'tp-name layer-name t)))))
 
-(defun tp--handle-tp-text-property (start end props object)
+(defun tp--handle-tp-text-property (start end props object &optional preserve-props)
   "Handle tp-text property in PROPS for region from START to END in OBJECT.
 If tp-text is nil, initialize it to the current text in the region.
 If tp-text is a string different from current text, replace the text.
+When PRESERVE-PROPS is non-nil, existing text properties are preserved
+on the replaced text (used by tp-set and tp-add).
 Returns (PROPS NEW-END) where PROPS is the updated props and NEW-END is
 the new end position after any text replacement."
   (if (not (plist-member props 'tp-text))
@@ -548,10 +550,11 @@ the new end position after any text replacement."
                 ;; Same text, no replacement needed
                 (list props end)
               ;; Need to replace text
-              (let ((existing-props (if object
-                                        (with-current-buffer object
-                                          (text-properties-at start))
-                                      (text-properties-at start))))
+              (let ((existing-props (when preserve-props
+                                      (if object
+                                          (with-current-buffer object
+                                            (text-properties-at start))
+                                        (text-properties-at start)))))
                 (save-excursion
                   (if object
                       (with-current-buffer object
@@ -564,16 +567,10 @@ the new end position after any text replacement."
                       (goto-char start)
                       (insert tp-text-val))))
                 (let ((new-end (+ start (length tp-text-val))))
-                  ;; Re-apply existing properties to new text region
+                  ;; Re-apply existing properties to new text region if preserving
                   (when existing-props
-                    (let ((i 0)
-                          (len (length existing-props)))
-                      (while (< i len)
-                        (put-text-property start new-end
-                                           (nth i existing-props)
-                                           (nth (1+ i) existing-props)
-                                           object)
-                        (setq i (+ i 2)))))
+                    (cl-loop for (key val) on existing-props by #'cddr
+                             do (put-text-property start new-end key val object)))
                   (list props new-end)))))))
        ;; Other types - return unchanged
        (t (list props end))))))
@@ -666,18 +663,12 @@ Return the modified object (string) or region (START . END) for buffer."
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
     ;; Handle tp-text property specially using helper function
     (pcase-let ((`(,new-props ,new-finish)
-                 (tp--handle-tp-text-property start finish props object)))
+                 (tp--handle-tp-text-property start finish props object t)))
       (setq props new-props)
       (setq finish new-finish))
     ;; Apply properties individually (preserves other properties)
-    (let ((len (length props))
-          (i 0))
-      (while (< i len)
-        (put-text-property start finish
-                           (nth i props)
-                           (nth (1+ i) props)
-                           object)
-        (setq i (+ i 2))))
+    (cl-loop for (key val) on props by #'cddr
+             do (put-text-property start finish key val object))
     (if (stringp object)
         object
       (cons start finish))))
@@ -717,40 +708,11 @@ Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
     ;; Handle tp-text property specially using helper function
-    ;; Note: for tp-reset we don't preserve existing props on text replacement
-    ;; since tp-reset is meant to completely replace all properties
-    (when (plist-member props 'tp-text)
-      (let ((tp-text-val (plist-get props 'tp-text)))
-        (cond
-         ;; tp-text is nil - initialize it to the current text
-         ((null tp-text-val)
-          (let ((current-text (if (stringp object)
-                                  (substring object start finish)
-                                (if object
-                                    (with-current-buffer object
-                                      (buffer-substring-no-properties start finish))
-                                  (buffer-substring-no-properties start finish)))))
-            (setq props (plist-put props 'tp-text current-text))))
-         ;; tp-text has a string value - replace the text in the region
-         ((stringp tp-text-val)
-          (unless (stringp object)
-            (let ((old-text (if object
-                                (with-current-buffer object
-                                  (buffer-substring-no-properties start finish))
-                              (buffer-substring-no-properties start finish))))
-              (unless (equal old-text tp-text-val)
-                (save-excursion
-                  (if object
-                      (with-current-buffer object
-                        (let ((inhibit-read-only t))
-                          (delete-region start finish)
-                          (goto-char start)
-                          (insert tp-text-val)))
-                    (let ((inhibit-read-only t))
-                      (delete-region start finish)
-                      (goto-char start)
-                      (insert tp-text-val))))
-                (setq finish (+ start (length tp-text-val))))))))))
+    ;; Pass nil for preserve-props since tp-reset replaces all properties
+    (pcase-let ((`(,new-props ,new-finish)
+                 (tp--handle-tp-text-property start finish props object nil)))
+      (setq props new-props)
+      (setq finish new-finish))
     ;; Completely replace all properties
     (set-text-properties start finish props object)
     (if (stringp object)
@@ -871,8 +833,9 @@ Return the modified object (string) or region (START . END) for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
     ;; Handle tp-text property specially using helper function
+    ;; Pass t for preserve-props since tp-add preserves existing properties
     (pcase-let ((`(,new-props ,new-finish)
-                 (tp--handle-tp-text-property start finish props object)))
+                 (tp--handle-tp-text-property start finish props object t)))
       (setq props new-props)
       (setq finish new-finish))
     ;; Process each property with deep merging
