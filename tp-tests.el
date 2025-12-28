@@ -3429,5 +3429,152 @@ When using tp-set (direct property setting), tp-name is NOT added."
       ;; Face property exists
       (should (get-text-property 0 'face result)))))
 
+;;; ============================================================
+;;; Twidget (Text Widget) Tests
+;;; ============================================================
+
+(ert-deftest tp-test-define-twidget-basic ()
+  "Test basic twidget definition."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    (tp-define-twidget test-widget
+      :props '(name)
+      :slot 'content
+      :render (lambda (props slot)
+                (concat "Hello " (plist-get props :name) ": " slot)))
+    (should (assoc 'test-widget tp-twidget-alist))
+    (let ((def (cdr (assoc 'test-widget tp-twidget-alist))))
+      (should (equal (plist-get def :props) '(name)))
+      (should (equal (plist-get def :slot) 'content)))))
+
+(ert-deftest tp-test-widget-parse-basic ()
+  "Test basic widget parsing."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    (tp-define-twidget greeting
+      :props '(name)
+      :slot 'message
+      :render (lambda (props slot)
+                (concat "Hello " (plist-get props :name) "! " slot)))
+    (let ((result (tp-widget-parse '(greeting :name "World" "Nice to meet you"))))
+      (should (equal result "Hello World! Nice to meet you")))))
+
+(ert-deftest tp-test-widget-parse-with-default ()
+  "Test widget parsing with default prop values."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    (tp-define-twidget styled-text
+      :props '((color . "blue") message)
+      :slot 'text
+      :render (lambda (props slot)
+                (let ((color (plist-get props :color))
+                      (msg (plist-get props :message)))
+                  (format "[%s] %s: %s" color (or msg "default") slot))))
+    ;; Test with default color
+    (let ((result (tp-widget-parse '(styled-text "content"))))
+      (should (equal result "[blue] default: content")))
+    ;; Test with overridden color
+    (let ((result (tp-widget-parse '(styled-text :color "red" "content"))))
+      (should (equal result "[red] default: content")))
+    ;; Test with both props
+    (let ((result (tp-widget-parse '(styled-text :color "green" :message "info" "content"))))
+      (should (equal result "[green] info: content")))))
+
+(ert-deftest tp-test-widget-parse-with-text-properties ()
+  "Test widget parsing with text properties."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    ;; Define a simple widget that applies text properties
+    (tp-define-twidget bold-text
+      :props '((color . "black"))
+      :slot 'content
+      :render (lambda (props slot)
+                (let ((color (plist-get props :color)))
+                  (tp-set slot 'face `(:foreground ,color :weight bold)))))
+    (let ((result (tp-widget-parse '(bold-text :color "red" "Hello"))))
+      (should (stringp result))
+      (should (equal (substring-no-properties result) "Hello"))
+      (let ((face (get-text-property 0 'face result)))
+        (should (equal (plist-get face :foreground) "red"))
+        (should (eq (plist-get face :weight) 'bold))))))
+
+(ert-deftest tp-test-widget-parse-button-example ()
+  "Test the button widget example from the problem statement."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    ;; First define the tp-space layer (from problem statement)
+    (define-tp tp-space (pixel)
+      `(display (space :width (,pixel))))
+    ;; Define the button widget similar to the example
+    (tp-define-twidget button
+      :props '(action (bgcolor . "green"))
+      :slot 'label
+      :render (lambda (props slot)
+                (let ((action (plist-get props :action))
+                      (bgcolor (plist-get props :bgcolor)))
+                  (tp-add (format "%s%s%s"
+                                  (tp-set " " 'tp-space 2)
+                                  slot (tp-set " " 'tp-space 2))
+                          'face `(:background ,bgcolor)
+                          'button-action `(:action ,action)))))
+    ;; Parse the button widget
+    (let ((result (tp-widget-parse
+                   '(button :action (lambda ()
+                                      (interactive)
+                                      (message "clicked!"))
+                            "CLICK"))))
+      (should (stringp result))
+      ;; Check that the face property is applied
+      (let ((face (get-text-property 2 'face result)))
+        (should (equal (plist-get face :background) "green")))
+      ;; Check that the button-action property is applied
+      (let ((action-prop (get-text-property 2 'button-action result)))
+        (should (listp (plist-get action-prop :action)))))))
+
+(ert-deftest tp-test-twidget-reset ()
+  "Test twidget reset clears all definitions."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    (tp-define-twidget test-widget1
+      :props '(a)
+      :slot 'b
+      :render (lambda (p s) ""))
+    (tp-define-twidget test-widget2
+      :props '(c)
+      :slot 'd
+      :render (lambda (p s) ""))
+    (should (= (length tp-twidget-alist) 2))
+    (tp-twidget-reset)
+    (should (= (length tp-twidget-alist) 0))))
+
+(ert-deftest tp-test-widget-parse-error-undefined ()
+  "Test widget parse with undefined widget raises error."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    (should-error (tp-widget-parse '(undefined-widget "content")))))
+
+(ert-deftest tp-test-widget-multiple-props ()
+  "Test widget with multiple props including defaults."
+  (tp-test-with-temp-buffer
+    (tp-twidget-reset)
+    (tp-define-twidget multi-prop
+      :props '(required (opt1 . "default1") (opt2 . "default2"))
+      :slot 'content
+      :render (lambda (props slot)
+                (format "%s|%s|%s|%s"
+                        (plist-get props :required)
+                        (plist-get props :opt1)
+                        (plist-get props :opt2)
+                        slot)))
+    ;; All defaults
+    (let ((result (tp-widget-parse '(multi-prop :required "req" "slot"))))
+      (should (equal result "req|default1|default2|slot")))
+    ;; Override one default
+    (let ((result (tp-widget-parse '(multi-prop :required "req" :opt1 "custom1" "slot"))))
+      (should (equal result "req|custom1|default2|slot")))
+    ;; Override all
+    (let ((result (tp-widget-parse '(multi-prop :required "req" :opt1 "c1" :opt2 "c2" "slot"))))
+      (should (equal result "req|c1|c2|slot")))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
