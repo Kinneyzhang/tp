@@ -14,18 +14,18 @@
 
 ;;; Commentary:
 
-;; tp.el provides a convenient wrapper around Emacs text properties,
-;; with an innovative layer system that allows setting multiple layers
-;; of text properties on the same text region.
+;; tp.el provides a comprehensive text property manipulation library with:
 ;;
-;; Features:
-;; - Simple API for text property manipulation (similar to ov.el for overlays)
-;; - Innovative tp-layer system for multi-layer text properties
-;; - Layer groups for defining reusable property sets
-;; - Search and navigation functions for text properties
+;; Architecture (5 layers, bottom to top):
+;;   1. Basic utilities: argument parsing, plist operations, interval handling
+;;   2. Core property operations: tp-set, tp-get, tp-at, tp-remove, tp-clear
+;;   3. Layer system: multi-layer property stacks with tp-push-layer, tp-pop-layer
+;;   4. Reactive system: automatic updates when variables change
+;;   5. High-level API: pattern matching, search and navigation
+;;
+;; See ARCHITECTURE.md for detailed function call hierarchy.
 ;;
 ;; Inspired by https://github.com/emacsorphanage/ov
-;;
 ;; Requires Emacs 28.1+ for `object-intervals' function.
 
 ;;; Code:
@@ -34,7 +34,11 @@
 (require 'dash)
 (require 'seq)
 
-;;; Variables
+;;;============================================================================
+;;; Layer 1: Global Variables and Configuration
+;;;============================================================================
+
+;;; --- Layer Definition Storage ---
 
 (defgroup tp nil
   "Group for tp.el text property manipulation."
@@ -42,50 +46,158 @@
   :group 'development)
 
 (defvar tp-layer-alist nil
-  "Alist where each element is (LAYER-NAME . PROPERTIES).
-Stores individual layer definitions.")
+  "Alist of layer definitions: (LAYER-NAME . PROPERTIES).")
 
 (defvar tp-layer-groups nil
-  "Alist where each element is (GROUP-NAME . (LAYER-NAME1 LAYER-NAME2 ...)).
-Stores layer group definitions, where each group contains multiple layer names.")
+  "Alist of layer groups: (GROUP-NAME . (LAYER-NAME1 LAYER-NAME2 ...)).")
 
-;;; Reactive Text Properties Variables
+;;; --- Reactive System Storage ---
 
 (defvar tp-reactive-deps nil
-  "Alist mapping reactive variables to their dependent layers.
-Each element is (VARIABLE-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).
-REACTIVE-PROPS contains only the property key-value pairs that use this variable.
-For example, for (define-tp my-layer (help-echo \"test\" face (:foreground $color))),
-only (face (:foreground $color)) is stored, not the help-echo.")
+  "Alist mapping reactive variables to dependent layers.
+Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
 
 (defvar tp-layer-watchers nil
-  "Alist mapping layer names to their watcher definitions.
-Each element is (LAYER-NAME . WATCHER-LIST) where WATCHER-LIST
-is a list of (VAR-SYMBOL . CALLBACK) pairs.
-CALLBACK receives (NEW-VAL OLD-VAL LAYER-NAME) when VAR-SYMBOL changes.")
+  "Alist of layer watchers: (LAYER-NAME . ((VAR-SYMBOL . CALLBACK) ...)).")
 
 (defvar tp-layer-computed nil
-  "Alist mapping layer names to their computed variable definitions.
-Each element is (LAYER-NAME . COMPUTED-LIST) where COMPUTED-LIST
-is a list of (VAR-SYMBOL . COMPUTE-FN) pairs.
-COMPUTE-FN is evaluated to get the current value of the reactive variable.")
+  "Alist of computed properties: (LAYER-NAME . ((VAR-SYMBOL . COMPUTE-FN) ...)).")
 
 (defvar tp-layer-data nil
-  "Alist mapping layer names to their data variable definitions.
-Each element is (LAYER-NAME . VAR-LIST) where VAR-LIST is a list
-of variable symbols defined via :data.")
+  "Alist of data variables: (LAYER-NAME . (VAR-SYMBOL ...)).")
 
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
+;;;============================================================================
+;;; Layer 1: Basic Utility Functions
+;;;============================================================================
+
+;;; --- Anonymous Layer Generation ---
+
 (defun tp--generate-anonymous-layer-name ()
-  "Generate a unique symbol for anonymous layers.
-Uses a counter to ensure uniqueness within an Emacs session."
+  "Generate a unique symbol for anonymous reactive layers."
   (setq tp--anonymous-layer-counter (1+ tp--anonymous-layer-counter))
   (intern (format "tp-anon-%d" tp--anonymous-layer-counter)))
 
+;;; --- Buffer Utility ---
 
-;;; Reactive Text Properties Functions
+(defmacro tp-with-current-buffer (buffer-or-name &rest body)
+  "Execute BODY in BUFFER-OR-NAME with `inhibit-read-only' bound to t."
+  (declare (indent defun))
+  `(with-current-buffer ,buffer-or-name
+     (let ((inhibit-read-only t))
+       ,@body)))
+
+;;;============================================================================
+;;; Layer 1: Interval and Property Inspection
+;;;============================================================================
+
+(defun tp-intervals (start end &optional object)
+  "Return list of property intervals from START to END in OBJECT.
+Each element is (START END PROPERTIES). OBJECT defaults to current buffer."
+  (let ((intervals (object-intervals (or object (current-buffer)))))
+    (mapcar (lambda (tp)
+              (let* ((tp-start (- (nth 0 tp) (if (stringp object) 0 start)))
+                     (tp-end (- (nth 1 tp) (if (stringp object) 0 start)))
+                     (tp-props (nth 2 tp)))
+                (list tp-start tp-end tp-props)))
+            (seq-filter (lambda (tp)
+                          (and (< (nth 0 tp) (if (stringp object) end (+ start end)))
+                               (> (nth 1 tp) (if (stringp object) start 0))))
+                        intervals))))
+
+(defun tp-empty-p (&optional object)
+  "Return t if OBJECT has no text properties.
+OBJECT can be string or buffer; nil means current buffer."
+  (null (object-intervals (or object (current-buffer)))))
+
+(defun tp-plist (start-or-string &optional end object)
+  "Return merged plist of all properties from START to END in OBJECT.
+With single STRING argument, return properties of entire string."
+  (let (start-pos end-pos obj)
+    (if (stringp start-or-string)
+        (setq start-pos 0
+              end-pos (length start-or-string)
+              obj start-or-string)
+      (setq start-pos start-or-string
+            end-pos end
+            obj object))
+    (let ((result nil))
+      (dolist (interval (tp-intervals start-pos end-pos obj))
+        (let ((props (nth 2 interval)))
+          (cl-loop for (key val) on props by #'cddr
+                   do (setq result (plist-put result key val)))))
+      result)))
+
+;;;============================================================================
+;;; Layer 1: Plist Deep Merge and Nested Access
+;;;============================================================================
+
+(defun tp--deep-merge-plist (base new)
+  "Deep merge NEW plist into BASE plist.
+For nested plists (starting with keyword), recursively merge.
+NEW values override BASE values."
+  (let ((result (copy-sequence base)))
+    (cl-loop
+     for (key val) on new by #'cddr
+     do (let ((base-val (plist-get result key)))
+          (setq result
+                (plist-put
+                 result key
+                 (cond
+                  ;; Both are plists - recursively merge
+                  ((and (listp val) (keywordp (car-safe val))
+                        (listp base-val) (keywordp (car-safe base-val)))
+                   (tp--deep-merge-plist base-val val))
+                  ;; Otherwise use new value
+                  (t val))))))
+    result))
+
+(defun tp--get-nested (value path)
+  "Get nested value from VALUE following PATH (list of keys).
+Supports plists, alists, and list-of-keys extraction."
+  (if (null path)
+      value
+    (let* ((key (car path))
+           (rest (cdr path))
+           (is-plist-like (and (listp value)
+                               (or (keywordp (car value))
+                                   (and (symbolp (car value))
+                                        (cdr value)
+                                        (keywordp (cadr value))))))
+           (next-value
+            (cond
+             ;; Key is a list - extract multiple keys
+             ((and (listp key) (not (null key)))
+              (when is-plist-like
+                (let ((result nil)
+                      (plist-part (if (keywordp (car value)) value (cdr value))))
+                  (dolist (k key)
+                    (let ((v (plist-get plist-part k)))
+                      (when v (setq result (plist-put result k v)))))
+                  result)))
+             ;; Value is plist-like
+             (is-plist-like
+              (plist-get (if (keywordp (car value)) value (cdr value)) key))
+             ;; Value is alist
+             ((and (listp value) (consp (car value)))
+              (cdr (assoc key value)))
+             ;; Other list types
+             ((listp value)
+              (or (plist-get value key)
+                  (cdr (assoc key value))
+                  (cl-loop for spec in value
+                           when (and (listp spec) (eq (car spec) key))
+                           return (if (= (length (cdr spec)) 1) (cadr spec) (cdr spec))
+                           when (and (listp spec) (keywordp (car spec)))
+                           thereis (plist-get spec key))))
+             (t nil))))
+      (tp--get-nested next-value rest))))
+
+;;;============================================================================
+;;; Layer 4: Reactive System - Symbol Detection and Resolution
+;;;============================================================================
 
 (defun tp--reactive-symbol-p (sym)
   "Return non-nil if SYM is a reactive variable symbol (starts with $)."
@@ -399,12 +511,6 @@ Also adds variable watchers so changes to data vars trigger computed updates."
   "Unregister data variables for LAYER-NAME."
   (setq tp-layer-data (assq-delete-all layer-name tp-layer-data)))
 
-(defmacro tp-with-current-buffer (buffer-or-name &rest body)
-  (declare (indent defun))
-  `(with-current-buffer ,buffer-or-name
-     (let ((inhibit-read-only t))
-       ,@body)))
-
 (defun tp--ensure-reactive-variables (var-symbols)
   "Ensure all VAR-SYMBOLS are defined as global variables.
 VAR-SYMBOLS can be a list of symbols or cons cells (SYMBOL . INITIAL-VALUE).
@@ -466,8 +572,9 @@ WHERE specifies which buffers to update:
   (setq tp-layer-computed nil)
   (setq tp-layer-data nil))
 
-
-;;; Reactive Text (tp-text) Functions
+;;;============================================================================
+;;; Layer 4: Reactive Text (tp-text property)
+;;;============================================================================
 
 (defun tp--update-reactive-text (layer-name &optional where)
   "Update text regions that have tp-text property with LAYER-NAME applied.
@@ -580,7 +687,9 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
        ;; Other types - return unchanged
        (t (list props end object))))))
 
-;;; Core Property Functions
+;;;============================================================================
+;;; Layer 2: Core Property Functions - Argument Parsing
+;;;============================================================================
 
 (defun tp--parse-args (start-or-string end-or-prop props-or-val rest)
   "Parse flexible function arguments and return (OBJECT START END PROPS).
@@ -588,14 +697,7 @@ Supports four calling conventions:
 1. Buffer region: (START END PROPS)
 2. Buffer region with object: (START END PROPS OBJECT)
 3. String region: (START END PROPS STRING)
-4. Entire string: (STRING PROP VAL ...)
-
-PROPS can be:
-- A symbol representing a layer or group name defined by `define-tp' or `define-tp-group'
-- A plist of properties (anonymous layers get a generated tp-name)
-
-For anonymous plists with reactive variables ($...), a unique tp-name is generated
-and reactive dependencies are registered automatically."
+4. Entire string: (STRING PROP VAL ...)"
   (let (object start finish props)
     (cond
      ;; First arg is a string - apply to entire string
@@ -618,138 +720,57 @@ and reactive dependencies are registered automatically."
                           (stringp (car rest))))
         (setq object (car rest))))
      (t (error "Invalid first argument: %S" start-or-string)))
-    ;; Unwrap double-wrapped properties: when called as (tp-set 1 6 '(face bold)),
-    ;; props is already the plist.  But when called internally or from certain
-    ;; contexts, props might be wrapped in an extra list like '((face bold)).
-    ;; We detect this by checking if props is a list whose first element is also
-    ;; a list (not just a symbol like 'face).
+    ;; Unwrap double-wrapped properties
     (when (and (listp props) (listp (car-safe props)))
       (setq props (car props)))
-    ;; Resolve props: handles layer/group names and anonymous reactive plists.
-    ;; For symbols: resolves to layer/group properties with tp-name/tp-layers.
-    ;; For plists: adds tp-name and handles reactive variables.
+    ;; Resolve props: handles layer/group names and anonymous reactive plists
     (when props
       (setq props (or (tp--resolve-props props) props)))
     (list object start finish props)))
 
+;;;============================================================================
+;;; Layer 2: Core Property Functions - Set/Reset/Add
+;;;============================================================================
+
 (defun tp-set (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Set text properties on string or buffer region.
 
-This function supports four calling conventions:
+Supports four calling conventions:
+1. (tp-set START END PROPS) - current buffer
+2. (tp-set START END PROPS BUFFER/STRING) - specific object
+3. (tp-set STRING PROP VAL ...) - entire string
 
-1. Current buffer:
-   (tp-set START END \\='(PROPERTY VALUE ...))
-   (tp-set START END LAYER-NAME)
-
-2. Specific buffer:
-   (tp-set START END \\='(PROPERTY VALUE ...) BUFFER)
-   (tp-set START END LAYER-NAME BUFFER)
-
-3. Specific string (0-indexed positions):
-   (tp-set START END \\='(PROPERTY VALUE ...) STRING)
-   (tp-set START END LAYER-NAME STRING)
-
-4. Entire string:
-   (tp-set STRING PROPERTY VALUE ...)
-
-PROPS can also be a symbol representing a layer or group name defined
-by `define-tp' or `define-tp-group', which will be resolved to its properties.
-
-Special property `tp-text':
-  If PROPS contains `tp-text' with a nil value, it will be initialized
-  to the current text in the region, making the text reactive.
-  If `tp-text' has a string value, the text in the region will be replaced
-  with this value while preserving the text properties.
-
-This replaces only the properties specified, preserving other properties.
-Return the modified object (string) or region (START . END) for buffer."
+PROPS can be a plist or a layer/group name symbol.
+Preserves existing properties not specified in PROPS.
+Returns modified string or (START . END) cons for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property specially using helper function
+    ;; Handle tp-text property specially
     (pcase-let ((`(,new-props ,new-finish ,new-object)
                  (tp--handle-tp-text-property start finish props object t)))
-      (setq props new-props)
-      (setq finish new-finish)
-      (setq object new-object)
-      ;; For strings with tp-text, start is always 0
+      (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
-    ;; Apply properties individually (preserves other properties)
+    ;; Apply properties individually
     (cl-loop for (key val) on props by #'cddr
              do (put-text-property start finish key val object))
-    (if (stringp object)
-        object
-      (cons start finish))))
+    (if (stringp object) object (cons start finish))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
-
-This function supports four calling conventions:
-
-1. Current buffer:
-   (tp-reset START END \\='(PROPERTY VALUE ...))
-   (tp-reset START END LAYER-NAME)
-
-2. Specific buffer:
-   (tp-reset START END \\='(PROPERTY VALUE ...) BUFFER)
-   (tp-reset START END LAYER-NAME BUFFER)
-
-3. Specific string (0-indexed positions):
-   (tp-reset START END \\='(PROPERTY VALUE ...) STRING)
-   (tp-reset START END LAYER-NAME STRING)
-
-4. Entire string:
-   (tp-reset STRING PROPERTY VALUE ...)
-
-PROPS can also be a symbol representing a layer or group name defined
-by `define-tp' or `define-tp-group', which will be resolved to its properties.
-
-Unlike `tp-set', this completely replaces all existing properties.
-
-Special property `tp-text':
-  If PROPS contains `tp-text' with a nil value, it will be initialized
-  to the current text in the region, making the text reactive.
-  If `tp-text' has a string value, the text in the region will be replaced
-  with this value while preserving the text properties.
-
-Return the modified object (string) or region (START . END) for buffer."
+Like `tp-set' but replaces ALL existing properties.
+Returns modified string or (START . END) cons for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property specially using helper function
-    ;; Pass nil for preserve-props since tp-reset replaces all properties
+    ;; Handle tp-text property
     (pcase-let ((`(,new-props ,new-finish ,new-object)
                  (tp--handle-tp-text-property start finish props object nil)))
-      (setq props new-props)
-      (setq finish new-finish)
-      (setq object new-object)
-      ;; For strings with tp-text, start is always 0
+      (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
     ;; Completely replace all properties
     (set-text-properties start finish props object)
-    (if (stringp object)
-        object
-      (cons start finish))))
-
-(defun tp--deep-merge-plist (base new)
-  "Deep merge NEW plist into BASE plist.
-For nested plists (starting with keyword), recursively merge.
-NEW values override BASE values."
-  (let ((result (copy-sequence base)))
-    (cl-loop
-     for (key val) on new by #'cddr
-     do (let ((base-val (plist-get result key)))
-          (setq result
-                (plist-put
-                 result key
-                 (cond
-                  ;; Both are plists - recursively merge
-                  ((and (listp val) (keywordp (car-safe val))
-                        (listp base-val) (keywordp (car-safe base-val)))
-                   (tp--deep-merge-plist base-val val))
-                  ;; Otherwise use new value
-                  (t val))))))
-    result))
+    (if (stringp object) object (cons start finish))))
 
 (defun tp--prepend-face (new-face existing-face)
   "Prepend NEW-FACE to EXISTING-FACE for the face property.
@@ -804,54 +825,16 @@ Duplicate faces are not added."
    (t new-face)))
 
 (defun tp-add (start-or-string &optional end-or-prop props-or-val &rest rest)
-  "Add or update text properties, preserving existing properties.
-
-This function supports four calling conventions:
-
-1. Current buffer:
-   (tp-add START END \\='(PROPERTY VALUE ...))
-   (tp-add START END LAYER-NAME)
-
-2. Specific buffer:
-   (tp-add START END \\='(PROPERTY VALUE ...) BUFFER)
-   (tp-add START END LAYER-NAME BUFFER)
-
-3. Specific string (0-indexed positions):
-   (tp-add START END \\='(PROPERTY VALUE ...) STRING)
-   (tp-add START END LAYER-NAME STRING)
-
-4. Entire string:
-   (tp-add STRING PROPERTY VALUE ...)
-
-PROPS can also be a symbol representing a layer or group name defined
-by `define-tp' or `define-tp-group', which will be resolved to its properties.
-
-Unlike `tp-set', this deeply merges nested properties.
-For example, \\='(face (:underline (:style wave))) will merge with
-existing face properties rather than replacing them entirely.
-
-For the `face' property specifically, symbol faces are prepended to
-the existing face list rather than replacing.  For example:
-  (tp-add str \\='face \\='shadow) with existing face \\='bold
-  results in face value \\='(shadow bold).
-
-Special property `tp-text':
-  If PROPS contains `tp-text' with a nil value, it will be initialized
-  to the current text in the region, making the text reactive.
-  If `tp-text' has a string value, the text in the region will be replaced
-  with this value while preserving the text properties.
-
-Return the modified object (string) or region (START . END) for buffer."
+  "Add or update text properties with deep merging.
+Unlike `tp-set', deeply merges nested properties.
+For `face' property, symbol faces are prepended to existing face list.
+Returns modified string or (START . END) cons for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property specially using helper function
-    ;; Pass t for preserve-props since tp-add preserves existing properties
+    ;; Handle tp-text property
     (pcase-let ((`(,new-props ,new-finish ,new-object)
                  (tp--handle-tp-text-property start finish props object t)))
-      (setq props new-props)
-      (setq finish new-finish)
-      (setq object new-object)
-      ;; For strings with tp-text, start is always 0
+      (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
     ;; Process each property with deep merging
@@ -859,133 +842,27 @@ Return the modified object (string) or region (START . END) for buffer."
       (while (< pos finish)
         (let* ((current-props (text-properties-at pos object))
                (next-pos (or (next-property-change pos object finish) finish)))
-          ;; Merge each property in props
           (cl-loop
            for (key val) on props by #'cddr
            do (let* ((current-val (plist-get current-props key))
-                     (new-val
-                      (cond
-                       ;; Handle face property specially - prepend faces
-                       ((eq key 'face)
-                        (tp--prepend-face val current-val))
-                       ;; Both are plists - deep merge
-                       ((and (listp val) (keywordp (car-safe val))
-                             (listp current-val) (keywordp (car-safe current-val)))
-                        (tp--deep-merge-plist current-val val))
-                       ;; Otherwise use new value
-                       (t val))))
+                     (new-val (cond
+                               ((eq key 'face) (tp--prepend-face val current-val))
+                               ((and (listp val) (keywordp (car-safe val))
+                                     (listp current-val) (keywordp (car-safe current-val)))
+                                (tp--deep-merge-plist current-val val))
+                               (t val))))
                 (put-text-property pos next-pos key new-val object)))
           (setq pos next-pos))))
-    (if (stringp object)
-        object
-      (cons start finish))))
+    (if (stringp object) object (cons start finish))))
 
-(defun tp--get-nested (value path)
-  "Get nested value from VALUE following PATH.
-PATH is a list of keys/symbols to traverse nested structures.
-Supports plists, alists, and special display property formats.
-
-If an element in PATH is a list of keys, extract those keys from the
-current value and return a plist with those keys.
-Example: (tp--get-nested \\='(:a 1 :b 2 :c 3) \\='((:a :b))) => (:a 1 :b 2)"
-  (if (null path)
-      value
-    (let* ((key (car path))
-           (rest (cdr path))
-           ;; Check if value is a plist-like structure
-           ;; A plist starts with keyword, or starts with symbol followed by keywords
-           ;; e.g., (:foreground "red") or (shadow :foreground "red")
-           (is-plist-like (and (listp value)
-                               (or (keywordp (car value))
-                                   (and (symbolp (car value))
-                                        (cdr value)
-                                        (keywordp (cadr value))))))
-           (next-value
-            (cond
-             ;; Key is a list of keys - extract multiple keys from value
-             ((and (listp key) (not (null key)))
-              (when is-plist-like
-                (let ((result nil)
-                      (plist-part (if (keywordp (car value))
-                                      value
-                                    (cdr value))))
-                  (dolist (k key)
-                    (let ((v (plist-get plist-part k)))
-                      (when v
-                        (setq result (plist-put result k v)))))
-                  result)))
-             ;; Value is a plist or plist-like (symbol followed by plist)
-             (is-plist-like
-              (let ((plist-part (if (keywordp (car value))
-                                    value
-                                  (cdr value))))
-                (plist-get plist-part key)))
-             ;; Value is an alist
-             ((and (listp value) (consp (car value)))
-              (cdr (assoc key value)))
-             ;; Value is a list of specs (e.g., display property)
-             ((listp value)
-              (or (plist-get value key)
-                  (cdr (assoc key value))
-                  (cl-loop for spec in value
-                           when (and (listp spec)
-                                     (eq (car spec) key))
-                           return (if (listp (cdr spec))
-                                      (if (= (length (cdr spec)) 1)
-                                          (cadr spec)
-                                        (cdr spec))
-                                    (cdr spec))
-                           when (and (listp spec) (keywordp (car spec)))
-                           thereis (plist-get spec key))))
-             (t nil))))
-      (tp--get-nested next-value rest))))
+;;;============================================================================
+;;; Layer 2: Core Property Functions - Get/At
+;;;============================================================================
 
 (defun tp-get (start-or-string &optional end-or-property &rest args)
   "Get text property value(s) with support for nested sub-properties.
-
-This function supports multiple calling conventions:
-
-1. Range with property path as list:
-   (tp-get START END \\='(PROPERTY) OBJECT)
-   (tp-get START END \\='(PROPERTY SUB-KEY ...) OBJECT)
-   (tp-get 5 20 \\='(face) str-or-buffer-or-nil)
-   (tp-get 5 20 \\='(face :underline) str-or-buffer-or-nil)
-   (tp-get 5 20 \\='(face :underline :style) str-or-buffer-or-nil)
-
-2. Range, single property:
-   (tp-get START END PROPERTY)
-   (tp-get START END PROPERTY OBJECT)
-
-3. Range, nested sub-property:
-   (tp-get START END PROPERTY SUB-KEY ...)
-
-4. Range, all properties:
-   (tp-get START END)
-   (tp-get START END OBJECT)
-
-5. Entire string, all properties:
-   (tp-get STRING)
-
-6. Entire string, single property:
-   (tp-get STRING PROPERTY)
-
-7. Entire string, nested sub-property:
-   (tp-get STRING PROPERTY SUB-KEY ...)
-   (tp-get str \\='face)
-   (tp-get str \\='face :underline)
-   (tp-get str \\='face :underline :style)
-
-8. Entire string with property path as list:
-   (tp-get STRING \\='(PROPERTY SUB-KEY ...))
-   (tp-get str \\='(face :foreground))
-
-Returns a list of (START END VALUE) intervals, allowing you to see all
-property values across the range.
-
-For single position queries, use `tp-at' instead.
-
-For buffers, positions are 1-indexed.
-For strings, positions are 0-indexed.
+Returns list of (START END VALUE) intervals.
+Use `tp-at' for single position queries."
 OBJECT defaults to current buffer."
   (cond
    ;; (tp-get STRING ...) - entire string
@@ -1171,13 +1048,12 @@ Examples:
             prop-value))
       (text-properties-at pos obj))))
 
-;;; Private functions for fine-grained property manipulation
+;;;============================================================================
+;;; Layer 2: Core Property Functions - Remove/Clear
+;;;============================================================================
 
 (defun tp--remove-sub (start end property sub-property &optional object)
-  "Remove SUB-PROPERTY from PROPERTY between START and END in OBJECT.
-For example, remove :foreground from a face property.
-OBJECT defaults to current buffer.
-Internal function - use `tp-remove' with nested path for public API."
+  "Remove SUB-PROPERTY from PROPERTY between START and END in OBJECT."
   (let* ((pos start))
     (while (< pos end)
       (let* ((current-value (get-text-property pos property object))
@@ -1321,19 +1197,18 @@ Returns the modified string for string input, or nil for buffer operations."
 ;;;###autoload
 (defun tp-clear (&optional start end object)
   "Clear all text properties from START to END in OBJECT.
-If START and END are not provided, clear the entire buffer.
-OBJECT defaults to current buffer."
+If START and END are not provided, clear the entire buffer."
   (interactive)
   (let ((beg (or start (point-min)))
         (finish (or end (point-max))))
     (set-text-properties beg finish nil object)))
 
-;;; Match and regexp functions
+;;;============================================================================
+;;; Layer 5: High-Level API - Pattern Matching (match/regexp)
+;;;============================================================================
 
 (defun tp--match-apply-single (pattern properties apply-fn object)
-  "Apply APPLY-FN to matches of single PATTERN in OBJECT.
-APPLY-FN is called with (START END PROPS OBJECT) for each match.
-Returns modified object or list of regions."
+  "Apply APPLY-FN to matches of single PATTERN in OBJECT."
   (cond
    ;; String object
    ((stringp object)
@@ -1547,29 +1422,23 @@ OBJECT is a buffer or string; nil means current buffer.
 Unlike `tp-regexp-set', this deeply merges nested properties."
   (tp--regexp-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply object))
 
-;;; Search functions
+;;;============================================================================
+;;; Layer 5: High-Level API - Search and Navigation
+;;;============================================================================
 
 (defun tp-search-forward (property &optional value predicate not-current)
   "Search forward for text with PROPERTY.
-VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-forward'."
+Wraps `text-property-search-forward'."
   (text-property-search-forward property value predicate not-current))
 
 (defun tp-search-backward (property &optional value predicate not-current)
   "Search backward for text with PROPERTY.
-VALUE, PREDICATE, and NOT-CURRENT work as in `text-property-search-backward'."
+Wraps `text-property-search-backward'."
   (text-property-search-backward property value predicate not-current))
 
 (defun tp-forward (property &optional value object n)
   "Search forward N times for text with PROPERTY.
-
-N is the number of searches, defaulting to 1.
-VALUE is the optional value to match.
-OBJECT can be a buffer or string; nil defaults to current buffer.
-
-For buffers, returns the prop-match object from the last successful search.
-For strings, returns a list of (START END VALUE) for all matches found.
-
-Uses `tp-search-forward' for buffers and `tp-search' for strings."
+Returns prop-match for buffers or list of (START END VALUE) for strings."
   (let ((count (or n 1)))
     (cond
      ;; String object - use tp-search
@@ -2071,83 +1940,13 @@ Example:
                  (insert new-text)))))))
      property value object start end)))
 
-
-;;; Query Functions
-
-;;; Text property intervals
-;; Note: Uses `object-intervals' which requires Emacs 28.1+
-
-(defun tp-intervals (start end &optional object)
-  "Get all text property intervals from START to END in OBJECT.
-OBJECT can be a buffer or string; nil defaults to current buffer.
-Returns a list of (START END PROPERTIES) for each interval.
-Uses `object-intervals' (Emacs 28.1+)."
-  (let ((object (or object (current-buffer))))
-    (cond
-     ((stringp object)
-      (object-intervals (substring object start end)))
-     ((bufferp object)
-      (tp-with-current-buffer (get-buffer-create object)
-        (object-intervals (buffer-substring start end))))
-     (t (error "Invalid format of object: %S"
-               (type-of object))))))
-
-(defun tp-empty-p (&optional object)
-  "Return t if OBJECT has no text properties.
-OBJECT can be a string or buffer; nil defaults to current buffer.
-Uses `object-intervals' (Emacs 28.1+)."
-  (let ((obj (or object (current-buffer))))
-    (cond
-     ((stringp obj)
-      (null (object-intervals obj)))
-     ((bufferp obj)
-      (tp-with-current-buffer obj
-        (null (object-intervals (buffer-substring (point-min) (point-max))))))
-     (t (error "Invalid object type: %S" (type-of obj))))))
-
-(defun tp-plist (start-or-string &optional end object)
-  "Get the property list of text in a region or string.
-
-This function supports two calling conventions:
-
-1. Buffer/string region:
-   (tp-plist START END &optional OBJECT)
-
-2. Entire string:
-   (tp-plist STRING)
-
-Returns a plist of all properties in the region or string."
-  (let (start finish obj)
-    (cond
-     ;; Entire string form: (tp-plist string)
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            finish (length start-or-string)))
-     ;; Region form: (tp-plist start end &optional object)
-     ((numberp start-or-string)
-      (setq start start-or-string
-            finish end
-            obj object)))
-    (let ((props nil)
-          (pos start))
-      (while (< pos finish)
-        (let ((current-props (tp-at pos obj)))
-          (cl-loop for (key val) on current-props by #'cddr
-                   do (unless (plist-member props key)
-                        (setq props (plist-put props key val)))))
-        (setq pos (next-single-property-change pos nil obj finish)))
-      props)))
-
-;;; Layer Definition Functions
+;;;============================================================================
+;;; Layer 3-4: Layer Definition and Management
+;;;============================================================================
 
 (defun tp--parse-define-layer-args (args)
   "Parse ARGS for tp-define-layer function.
-Returns a plist with keys :props, :data, :watch, :compute.
-When :watch, :compute, or :data are present, :props is required.
-
-ARGS can be:
-- A single plist: the properties directly
+Returns plist with keys :props, :data, :watch, :compute."
 - Keyword arguments: :props PLIST [:data DATA] [:watch WATCH] [:compute COMPUTE]"
   (let (props data watch compute has-keywords)
     (cond
@@ -2626,11 +2425,13 @@ Also unregisters any reactive dependencies for this layer."
   "Remove layer group NAME from `tp-layer-groups'."
   (setq tp-layer-groups (assq-delete-all name tp-layer-groups)))
 
+;;;============================================================================
+;;; Layer 3: Layer Stack Operations
+;;;============================================================================
+
 (defun tp-intervals-map (function start end &optional object)
   "Apply FUNCTION to all intervals between START and END in OBJECT.
-FUNCTION receives four arguments: interval-start, interval-end,
-top-props (the visible layer properties), and below-props-lst (list of hidden layers).
-OBJECT can be a buffer or string; nil defaults to current buffer."
+FUNCTION receives (i-start i-end top-props below-props-lst)."
   (remove
    nil
    (mapcar
@@ -2662,14 +2463,10 @@ Returns a list of (START END PROPERTIES) for matching intervals."
        (list (+ start i-start) (+ start i-end) props)))
    start end object))
 
-;;; New Layer API Functions
+;;; --- Layer Stack Utilities ---
 
 (defun tp--normalize-layer-spec (layer-spec)
-  "Normalize LAYER-SPEC to a plist with tp-name.
-LAYER-SPEC can be:
-- A symbol (layer name from tp-layer-alist)
-- A plist (inline layer definition)
-- A list (name &rest plist) for named inline layer."
+  "Normalize LAYER-SPEC to a plist with tp-name."
   (cond
    ;; Symbol - look up in tp-layer-alist
    ((symbolp layer-spec)
