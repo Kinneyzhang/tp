@@ -2959,6 +2959,17 @@ preserving the native text property behavior."
     ;; face should still be bold
     (should (eq (tp-at 1 'face) 'bold))))
 
+(ert-deftest tp-test-tp-text-string-object-replaces-content ()
+  "Test that tp-text on string object replaces the string content."
+  ;; When tp-text is set on a string, the returned string should have
+  ;; the tp-text value as its content, not the original string
+  (let ((result (tp-set "2" 'face '(:background "green") 'tp-text "6")))
+    ;; The returned string should be "6", not "2"
+    (should (equal result "6"))
+    ;; Properties should be applied
+    (should (equal (get-text-property 0 'face result) '(:background "green")))
+    (should (equal (get-text-property 0 'tp-text result) "6"))))
+
 (ert-deftest tp-test-tp-text-string-replaces-text ()
   "Test that tp-text with string value replaces the text in the region."
   (tp-test-with-temp-buffer
