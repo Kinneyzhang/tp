@@ -529,7 +529,7 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
     (let ((tp-text-val (plist-get props 'tp-text)))
       (cond
        ;; tp-text is nil - initialize it to the current text
-       ((not (null tp-text-val))
+       ((null tp-text-val)
         (let ((current-text
                (if (stringp object)
                    (substring object start end)
