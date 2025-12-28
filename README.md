@@ -2462,6 +2462,8 @@ Return t if OBJECT has no text properties.
 
 ## Reactive Text Properties
 
+> 📖 **For a comprehensive guide with detailed examples, see [Reactive Text Properties Complete Guide](docs/reactive-text-properties-en.md)**
+
 **Reactive Text Properties** is tp.el's groundbreaking innovation that brings reactive programming paradigms to Emacs text properties. Inspired by modern frontend frameworks like Vue.js, this feature enables text properties to automatically update when underlying variable values change.
 
 ### Core Concept

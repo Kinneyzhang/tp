@@ -2451,6 +2451,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ## 响应式文本属性
 
+> 📖 **完整的详细指南和示例，请参阅 [响应式文本属性完全指南](docs/reactive-text-properties.md)**
+
 **响应式文本属性**是 tp.el 的突破性创新，它将响应式编程范式带入了 Emacs 文本属性。受 Vue.js 等现代前端框架启发，这个功能使文本属性能够在底层变量值改变时自动更新。
 
 ### 核心概念
