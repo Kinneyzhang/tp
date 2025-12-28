@@ -3330,5 +3330,46 @@ When using tp-set (direct property setting), tp-name is NOT added."
       (should (equal (get-text-property 0 'test1 result) "value1"))
       (should (equal (get-text-property 0 'test2 result) "value2")))))
 
+;; Tests for tp-push-layer and tp-put-layer with define-tp layers
+(ert-deftest tp-test-push-layer-non-parameterized ()
+  "Test tp-push-layer with non-parameterized define-tp layer."
+  (tp-test-with-temp-buffer
+    (define-tp tp-bold ()
+      '(face bold))
+    ;; String form
+    (let ((result (tp-push-layer "emacs" 'tp-bold)))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-bold))
+      (should (eq (get-text-property 0 'face result) 'bold)))))
+
+(ert-deftest tp-test-push-layer-parameterized ()
+  "Test tp-push-layer with parameterized define-tp layer."
+  (tp-test-with-temp-buffer
+    (define-tp tp-space (pixel)
+      `(display (space :width (,pixel))))
+    ;; String form with parameterized layer
+    (let ((result (tp-push-layer "emacs" '(tp-space 6))))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-space))
+      (should (equal (get-text-property 0 'display result) '(space :width (6)))))))
+
+(ert-deftest tp-test-put-layer-non-parameterized ()
+  "Test tp-put-layer with non-parameterized define-tp layer."
+  (tp-test-with-temp-buffer
+    (define-tp tp-italic ()
+      '(face italic))
+    ;; String form
+    (let ((result (tp-put-layer "emacs" 'tp-italic 0)))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-italic))
+      (should (eq (get-text-property 0 'face result) 'italic)))))
+
+(ert-deftest tp-test-put-layer-parameterized ()
+  "Test tp-put-layer with parameterized define-tp layer."
+  (tp-test-with-temp-buffer
+    (define-tp tp-width (pixels)
+      `(display (space :width (,pixels))))
+    ;; String form with parameterized layer
+    (let ((result (tp-put-layer "emacs" '(tp-width 10) 0)))
+      (should (eq (get-text-property 0 'tp-name result) 'tp-width))
+      (should (equal (get-text-property 0 'display result) '(space :width (10)))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

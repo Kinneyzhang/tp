@@ -2733,20 +2733,48 @@ Returns a list of (START END PROPERTIES) for matching intervals."
 
 (defun tp--normalize-layer-spec (layer-spec)
   "Normalize LAYER-SPEC to a plist with tp-name.
-Used by layer stack functions that need tp-name for identification."
+Used by layer stack functions that need tp-name for identification.
+
+LAYER-SPEC can be:
+- A symbol (non-parameterized layer name from define-tp or tp-define-layer)
+- A list (LAYER-NAME ARG) for parameterized layers from define-tp
+- A plist for inline layer definition
+- A list (NAME &rest PLIST) for named inline layer"
   (cond
-   ;; Symbol - look up in tp-layer-alist
+   ;; Symbol - look up in tp-layer-alist (non-parameterized layer)
    ((symbolp layer-spec)
-    (or (tp-layer-props layer-spec t)  ; include tp-name for layer stack
-        (error "Layer %S not found in tp-layer-alist" layer-spec)))
-   ;; List starting with symbol followed by plist - named inline layer (name &rest plist)
+    (cond
+     ;; Parameterized layer symbol without arg - error
+     ((tp-layer-parameterized-p layer-spec)
+      (error "Parameterized layer %S requires an argument, use '(%S arg)" 
+             layer-spec layer-spec))
+     ;; Non-parameterized layer or old-format layer
+     ((assoc layer-spec tp-layer-alist)
+      (or (tp-layer-props layer-spec t)  ; include tp-name for layer stack
+          (error "Layer %S not found in tp-layer-alist" layer-spec)))
+     (t (error "Layer %S not found in tp-layer-alist" layer-spec))))
+   
+   ;; List starting with symbol - check if it's a parameterized layer
    ((and (listp layer-spec)
          (symbolp (car layer-spec))
-         (not (keywordp (car layer-spec)))
-         (cdr layer-spec))
+         (not (keywordp (car layer-spec))))
     (let ((name (car layer-spec))
-          (props (cdr layer-spec)))
-      (append props (list 'tp-name name))))
+          (rest (cdr layer-spec)))
+      (cond
+       ;; Parameterized layer: (LAYER-NAME ARG)
+       ((and (tp-layer-parameterized-p name)
+             (= (length rest) 1))
+        (or (tp-layer-props-with-arg name (car rest) t)  ; include tp-name
+            (error "Failed to resolve parameterized layer %S with arg %S" 
+                   name (car rest))))
+       ;; Named inline layer: (NAME &rest PLIST)
+       (rest
+        (append rest (list 'tp-name name)))
+       ;; Just a symbol in a list - treat as non-parameterized layer
+       ((null rest)
+        (or (tp-layer-props name t)
+            (error "Layer %S not found in tp-layer-alist" name))))))
+   
    ;; Plist (starts with keyword or property name)
    ((and (listp layer-spec) layer-spec)
     layer-spec)
