@@ -182,6 +182,7 @@ Only the reactive portions of the properties are stored for each variable."
         ;; Create new dependency entry and add watcher
         (push (cons var-sym (list (cons layer-name reactive-props))) tp-reactive-deps)
         ;; Add variable watcher for this variable
+        (unless (boundp var-sym) (set var-sym nil))
         (add-variable-watcher var-sym #'tp--reactive-variable-watcher)))))
 
 (defun tp--unregister-reactive-deps (layer-name)
@@ -387,6 +388,7 @@ Also adds variable watchers so changes to data vars trigger computed updates."
                   (push (cons layer-name nil) (cdr existing))))
             ;; Create new dependency entry and add watcher
             (push (cons var-sym (list (cons layer-name nil))) tp-reactive-deps)
+            (unless (boundp var-sym) (set var-sym nil))
             (add-variable-watcher var-sym #'tp--reactive-variable-watcher)))))))
 
 (defun tp--unregister-layer-data (layer-name)
@@ -492,13 +494,12 @@ and reactive dependencies are registered automatically."
      ;; First arg is a number - region convention
      ((numberp start-or-string)
       (setq start start-or-string
-            finish end-or-prop)
+            finish end-or-prop
+            props props-or-val)
       ;; Check if 4th arg (first of rest) is a buffer or string
-      (if (and rest (or (bufferp (car rest)) (stringp (car rest))))
-          (setq object (car rest)
-                props props-or-val)
-        (setq object nil
-              props props-or-val)))
+      (when (and rest (or (bufferp (car rest))
+                          (stringp (car rest))))
+        (setq object (car rest))))
      (t (error "Invalid first argument: %S" start-or-string)))
     ;; Unwrap double-wrapped properties: when called as (tp-set 1 6 '(face bold)),
     ;; props is already the plist.  But when called internally or from certain
@@ -2411,7 +2412,8 @@ For group names, includes `tp-layers' property with the full layer stack."
                (reactive-syms (tp--collect-reactive-symbols props)))
           (if reactive-syms
               ;; Has reactive symbols - need to handle as anonymous reactive layer
-              (let* ((layer-name (or existing-tp-name (tp--generate-anonymous-layer-name)))
+              (let* ((layer-name (or existing-tp-name
+                                     (tp--generate-anonymous-layer-name)))
                      ;; Resolve reactive symbols to get current values
                      (resolved-props (tp--resolve-reactive-symbols props)))
                 ;; Register this anonymous layer in tp-layer-alist with resolved props
