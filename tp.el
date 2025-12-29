@@ -3537,12 +3537,12 @@ Returns the modified object (string) or nil for buffer operations."
 ;;; Widget System: Component Definition and Parsing
 ;;;============================================================================
 
-(defvar tp-twidget-alist nil
-  "Alist of twidget definitions: (TWIDGET-NAME . DEFINITION).
+(defvar tp-widget-alist nil
+  "Alist of widget definitions: (WIDGET-NAME . DEFINITION).
 Each DEFINITION is a plist with :props, :slot, and :render keys.")
 
-(defmacro tp-define-twidget (name &rest args)
-  "Define a text widget (twidget) named NAME.
+(defmacro tp-define-widget (name &rest args)
+  "Define a text widget (widget) named NAME.
 
 ARGS should include:
   :props - A quoted list of property definitions. Each can be:
@@ -3556,7 +3556,7 @@ The render function receives:
   - SLOT: the slot value (last positional argument)
 
 Example:
-  (tp-define-twidget button
+  (tp-define-widget button
     :props \\='(action (bgcolor . \"green\"))
     :slot \\='label
     :render (lambda (props slot)
@@ -3578,36 +3578,38 @@ Example:
         (:props (setq props (cadr rest) rest (cddr rest)))
         (:slot (setq slot (cadr rest) rest (cddr rest)))
         (:render (setq render (cadr rest) rest (cddr rest)))
-        (_ (error "Unknown keyword %S in tp-define-twidget" (car rest)))))
-    `(tp--define-twidget-internal ',name ,props ,slot ,render)))
+        (_ (error "Unknown keyword %S in tp-define-widget" (car rest)))))
+    `(tp--define-widget-internal ',name ,props ,slot ,render)))
 
-(defun tp--define-twidget-internal (name props slot render)
-  "Internal function to define a twidget NAME with PROPS, SLOT, and RENDER.
+(defalias 'define-twidget 'tp-define-widget)
+
+(defun tp--define-widget-internal (name props slot render)
+  "Internal function to define a widget NAME with PROPS, SLOT, and RENDER.
 PROPS is a list of property definitions.
 SLOT is the slot name symbol.
 RENDER is the render function."
   (let ((definition (list :props props :slot slot :render render))
-        (existing (assoc name tp-twidget-alist)))
+        (existing (assoc name tp-widget-alist)))
     (if existing
         (setcdr existing definition)
-      (push (cons name definition) tp-twidget-alist)))
-  (assoc name tp-twidget-alist))
+      (push (cons name definition) tp-widget-alist)))
+  (assoc name tp-widget-alist))
 
-(defun tp--twidget-prop-name (prop-def)
+(defun tp--widget-prop-name (prop-def)
   "Extract the property name from PROP-DEF.
 PROP-DEF can be a symbol or a cons cell (SYMBOL . DEFAULT)."
   (if (consp prop-def)
       (car prop-def)
     prop-def))
 
-(defun tp--twidget-prop-default (prop-def)
+(defun tp--widget-prop-default (prop-def)
   "Extract the default value from PROP-DEF.
 Returns nil if no default is specified."
   (if (consp prop-def)
       (cdr prop-def)
     nil))
 
-(defun tp--twidget-prop-has-default-p (prop-def)
+(defun tp--widget-prop-has-default-p (prop-def)
   "Return non-nil if PROP-DEF has a default value."
   (consp prop-def))
 
@@ -3634,9 +3636,9 @@ Returns the rendered string with text properties applied."
     (error "Invalid widget form: must be a list starting with widget name"))
   (let* ((widget-name (car widget-form))
          (rest (cdr widget-form))
-         (definition (cdr (assoc widget-name tp-twidget-alist))))
+         (definition (cdr (assoc widget-name tp-widget-alist))))
     (unless definition
-      (error "Undefined twidget: %S" widget-name))
+      (error "Undefined widget: %S" widget-name))
     (let* ((prop-defs (plist-get definition :props))
            (slot-name (plist-get definition :slot))
            (render-fn (plist-get definition :render))
@@ -3656,25 +3658,40 @@ Returns the rendered string with text properties applied."
         (when args
           (setq slot-value (car args))
           (when (cdr args)
-            (warn "tp-widget-parse: Extra arguments after slot value ignored: %S" (cdr args))))
+            (warn "tp-widget-parse: Extra arguments after slot\
+ value ignored: %S" (cdr args))))
         ;; Build the props plist with defaults
         (dolist (prop-def prop-defs)
-          (let* ((prop-name (tp--twidget-prop-name prop-def))
+          (let* ((prop-name (tp--widget-prop-name prop-def))
                  (prop-keyword (intern (format ":%s" prop-name)))
                  (provided (assoc prop-keyword collected-props)))
             (if provided
-                (setq parsed-props (plist-put parsed-props prop-keyword (cdr provided)))
+                (setq parsed-props
+                      (plist-put parsed-props prop-keyword (cdr provided)))
               ;; Use default value if available
-              (when (tp--twidget-prop-has-default-p prop-def)
-                (setq parsed-props (plist-put parsed-props prop-keyword
-                                              (tp--twidget-prop-default prop-def))))))))
+              (when (tp--widget-prop-has-default-p prop-def)
+                (setq parsed-props
+                      (plist-put parsed-props prop-keyword
+                                 (tp--widget-prop-default prop-def))))))))
       ;; Call the render function
       (funcall render-fn parsed-props slot-value))))
 
-(defun tp-twidget-reset ()
-  "Reset all twidget definitions."
+(defun tp-widget-reset ()
+  "Reset all widget definitions."
   (interactive)
-  (setq tp-twidget-alist nil))
+  (setq tp-widget-alist nil))
+
+;;; Utilities
+
+(defun tp-inc (sym num)
+  (let ((str (symbol-value sym)))
+    (set (make-local-variable sym)
+         (number-to-string (+ (string-to-number str) num)))))
+
+(defun tp-dec (sym num)
+  (let ((str (symbol-value sym)))
+    (set (make-local-variable sym)
+         (number-to-string (- (string-to-number str) num)))))
 
 (provide 'tp)
 ;;; tp.el ends here
