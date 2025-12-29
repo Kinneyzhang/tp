@@ -3430,426 +3430,149 @@ When using tp-set (direct property setting), tp-name is NOT added."
       (should (get-text-property 0 'face result)))))
 
 ;;; ============================================================
-;;; Twidget (Text Widget) Tests
+;;; Batched Updates Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-define-twidget-basic ()
-  "Test basic twidget definition."
+(ert-deftest tp-test-batch-updates-basic ()
+  "Test that tp-with-batch-updates defers reactive updates."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget test-widget
-      :props '(name)
-      :slot t
-      :render (lambda (props slot)
-                (concat "Hello " (plist-get props :name) ": " slot)))
-    (should (assoc 'test-widget tp-widget-alist))
-    (let ((def (cdr (assoc 'test-widget tp-widget-alist))))
-      (should (equal (plist-get def :props) '(name)))
-      (should (equal (plist-get def :slot) t)))))
+    (unwind-protect
+        (progn
+          ;; Define a reactive layer
+          (tp-define-layer 'test-batch-layer
+            :props '(face (:foreground $tp-test-batch-color))
+            :data '((tp-test-batch-color . "red")))
+          (insert "Hello World")
+          (tp-set 1 6 'test-batch-layer)
+          ;; Initial color should be red
+          (should (equal (plist-get (tp-at 1 'face) :foreground) "red"))
+          ;; Now use batch updates
+          (tp-with-batch-updates
+            (setq tp-test-batch-color "blue")
+            ;; Inside batch, layer definition is updated but buffer may not be
+            ;; (implementation note: the layer props are always updated immediately)
+            )
+          ;; After batch ends, buffer should be updated
+          (should (equal (plist-get (tp-at 1 'face) :foreground) "blue")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-batch-color)))))
 
-(ert-deftest tp-test-widget-parse-basic ()
-  "Test basic widget parsing."
+(ert-deftest tp-test-batch-updates-multiple-vars ()
+  "Test that tp-with-batch-updates consolidates multiple variable changes."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget greeting
-      :props '(name)
-      :slot t
-      :render (lambda (props slot)
-                (concat "Hello " (plist-get props :name) "! " slot)))
-    (let ((result (tp-widget-parse '(greeting :name "World" "Nice to meet you"))))
-      (should (equal result "Hello World! Nice to meet you")))))
-
-(ert-deftest tp-test-widget-parse-with-default ()
-  "Test widget parsing with default prop values."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget styled-text
-      :props '((color . "blue") message)
-      :slot t
-      :render (lambda (props slot)
-                (let ((color (plist-get props :color))
-                      (msg (plist-get props :message)))
-                  (format "[%s] %s: %s" color (or msg "default") slot))))
-    ;; Test with default color
-    (let ((result (tp-widget-parse '(styled-text "content"))))
-      (should (equal result "[blue] default: content")))
-    ;; Test with overridden color
-    (let ((result (tp-widget-parse '(styled-text :color "red" "content"))))
-      (should (equal result "[red] default: content")))
-    ;; Test with both props
-    (let ((result (tp-widget-parse '(styled-text :color "green" :message "info" "content"))))
-      (should (equal result "[green] info: content")))))
-
-(ert-deftest tp-test-widget-parse-with-text-properties ()
-  "Test widget parsing with text properties."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Define a simple widget that applies text properties
-    (tp-define-twidget bold-text
-      :props '((color . "black"))
-      :slot t
-      :render (lambda (props slot)
-                (let ((color (plist-get props :color)))
-                  (tp-set slot 'face `(:foreground ,color :weight bold)))))
-    (let ((result (tp-widget-parse '(bold-text :color "red" "Hello"))))
-      (should (stringp result))
-      (should (equal (substring-no-properties result) "Hello"))
-      (let ((face (get-text-property 0 'face result)))
-        (should (equal (plist-get face :foreground) "red"))
-        (should (eq (plist-get face :weight) 'bold))))))
-
-(ert-deftest tp-test-widget-parse-button-example ()
-  "Test the button widget example from the problem statement."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; First define the tp-space layer (from problem statement)
-    (define-tp tp-space (pixel)
-      `(display (space :width (,pixel))))
-    ;; Define the button widget similar to the example
-    ;; Note: Using tp-button as the property name to match problem statement
-    (tp-define-twidget button
-      :props '(action (bgcolor . "green"))
-      :slot t
-      :render (lambda (props slot)
-                (let ((action (plist-get props :action))
-                      (bgcolor (plist-get props :bgcolor)))
-                  (tp-add (format "%s%s%s"
-                                  (tp-set " " 'tp-space 2)
-                                  slot (tp-set " " 'tp-space 2))
-                          'face `(:background ,bgcolor)
-                          'tp-button `(:action ,action)))))
-    ;; Parse the button widget
-    (let ((result (tp-widget-parse
-                   '(button :action (lambda ()
-                                      (interactive)
-                                      (message "clicked!"))
-                            "CLICK"))))
-      (should (stringp result))
-      ;; Check that the face property is applied
-      (let ((face (get-text-property 2 'face result)))
-        (should (equal (plist-get face :background) "green")))
-      ;; Check that the tp-button property is applied (matches problem statement)
-      (let ((action-prop (get-text-property 2 'tp-button result)))
-        (should (listp (plist-get action-prop :action)))))))
-
-(ert-deftest tp-test-widget-reset ()
-  "Test widget reset clears all definitions."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget test-widget1
-      :props '(a)
-      :slot t
-      :render (lambda (p s) ""))
-    (tp-define-twidget test-widget2
-      :props '(c)
-      :slot t
-      :render (lambda (p s) ""))
-    (should (= (length tp-widget-alist) 2))
-    (tp-widget-reset)
-    (should (= (length tp-widget-alist) 0))))
-
-(ert-deftest tp-test-widget-parse-error-undefined ()
-  "Test widget parse with undefined widget raises error."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (should-error (tp-widget-parse '(undefined-widget "content")))))
-
-(ert-deftest tp-test-widget-multiple-props ()
-  "Test widget with multiple props including defaults."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget multi-prop
-      :props '(required (opt1 . "default1") (opt2 . "default2"))
-      :slot t
-      :render (lambda (props slot)
-                (format "%s|%s|%s|%s"
-                        (plist-get props :required)
-                        (plist-get props :opt1)
-                        (plist-get props :opt2)
-                        slot)))
-    ;; All defaults
-    (let ((result (tp-widget-parse '(multi-prop :required "req" "slot"))))
-      (should (equal result "req|default1|default2|slot")))
-    ;; Override one default
-    (let ((result (tp-widget-parse '(multi-prop :required "req" :opt1 "custom1" "slot"))))
-      (should (equal result "req|custom1|default2|slot")))
-    ;; Override all
-    (let ((result (tp-widget-parse '(multi-prop :required "req" :opt1 "c1" :opt2 "c2" "slot"))))
-      (should (equal result "req|c1|c2|slot")))))
-
-(ert-deftest tp-test-widget-multiple-slots ()
-  "Test widget with multiple slot values."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget container
-      :slot t
-      :render (lambda (_props slot) (format "[%s]" slot)))
-    (let ((result (tp-widget-parse '(container "hello " "world"))))
-      (should (equal result "[hello world]")))))
-
-(ert-deftest tp-test-widget-nested-widgets ()
-  "Test widget with nested widget forms in slot."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Define parent container
-    (tp-define-twidget p
-      :slot t
-      :render (lambda (_props slot) slot))
-    ;; Define text wrapper
-    (tp-define-twidget text
-      :slot t
-      :render (lambda (_props slot)
-                (tp-set slot 'face 'bold)))
-    ;; Define button widget
-    (tp-define-twidget button
-      :props '(action (bgcolor . "orange"))
-      :slot t
-      :render (lambda (props slot)
-                (let ((bgcolor (plist-get props :bgcolor)))
-                  (tp-add slot 'tp-button `(:bgcolor ,bgcolor)))))
-    ;; Test nested widgets (example from problem statement)
-    (let ((result (tp-widget-parse
-                   '(p "happy hacking "
-                       (text "emacs")
-                       (button :action (lambda () (message "clicked!"))
-                               "click")))))
-      (should (stringp result))
-      (should (equal (substring-no-properties result) "happy hacking emacsclick"))
-      ;; Check that "emacs" part has bold face
-      (should (eq (get-text-property 14 'face result) 'bold))
-      ;; Check that "click" part has tp-button property
-      (should (get-text-property 19 'tp-button result)))))
-
-(ert-deftest tp-test-widget-no-slot ()
-  "Test widget without slot support."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Widget without :slot defined (defaults to nil)
-    (tp-define-twidget static-widget
-      :props '((text . "default text"))
-      :render (lambda (props _slot)
-                (plist-get props :text)))
-    ;; Slot values should be ignored
-    (let ((result (tp-widget-parse '(static-widget :text "hello" "ignored"))))
-      (should (equal result "hello")))))
-
-(ert-deftest tp-test-widget-slot-boolean-false ()
-  "Test widget with :slot nil explicitly."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget no-slot-widget
-      :props '(value)
-      :slot nil
-      :render (lambda (props slot)
-                (format "%s (slot: %s)" (plist-get props :value) slot)))
-    ;; Slot should be nil even if arguments are provided
-    (let ((result (tp-widget-parse '(no-slot-widget :value "test" "ignored slot"))))
-      (should (equal result "test (slot: nil)")))))
+    (unwind-protect
+        (progn
+          ;; Define a reactive layer with multiple vars
+          (tp-define-layer 'test-multi-batch
+            :props '(face (:foreground $tp-test-fg :background $tp-test-bg))
+            :data '((tp-test-fg . "white") (tp-test-bg . "black")))
+          (insert "Hello World")
+          (tp-set 1 6 'test-multi-batch)
+          ;; Use batch updates
+          (tp-with-batch-updates
+            (setq tp-test-fg "yellow")
+            (setq tp-test-bg "navy"))
+          ;; Both should be updated
+          (should (equal (plist-get (tp-at 1 'face) :foreground) "yellow"))
+          (should (equal (plist-get (tp-at 1 'face) :background) "navy")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-fg))
+      (ignore-errors (makunbound 'tp-test-bg)))))
 
 ;;; ============================================================
-;;; Named Slots Tests
+;;; Debug Mode Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-widget-named-slots-basic ()
-  "Test widget with named slots."
+(ert-deftest tp-test-debug-mode-logs ()
+  "Test that debug mode logs to *tp-debug* buffer."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget card
-      :slots '(header content footer)
-      :render (lambda (_props slots)
-                (concat (or (plist-get slots :header) "")
-                        "|"
-                        (or (plist-get slots :content) "")
-                        "|"
-                        (or (plist-get slots :footer) ""))))
-    (let ((result (tp-widget-parse
-                   '(card (slot-header "Title")
-                          (slot-content "Body")
-                          (slot-footer "End")))))
-      (should (equal result "Title|Body|End")))))
+    (let ((tp-debug-mode t)
+          (tp-debug-echo nil))
+      ;; Clear any existing debug buffer
+      (tp-debug-clear)
+      ;; Log a message
+      (tp-debug-log "Test message %d" 42)
+      ;; Check the debug buffer
+      (with-current-buffer (get-buffer "*tp-debug*")
+        (should (string-match-p "Test message 42" (buffer-string)))))))
 
-(ert-deftest tp-test-widget-named-slots-partial ()
-  "Test widget with partial named slots."
+(ert-deftest tp-test-debug-mode-disabled ()
+  "Test that debug mode does not log when disabled."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget card
-      :slots '(header content footer)
-      :render (lambda (_props slots)
-                (concat (or (plist-get slots :header) "[no-header]")
-                        "|"
-                        (or (plist-get slots :content) "[no-content]")
-                        "|"
-                        (or (plist-get slots :footer) "[no-footer]"))))
-    ;; Only provide some slots
-    (let ((result (tp-widget-parse '(card (slot-content "Main")))))
-      (should (equal result "[no-header]|Main|[no-footer]")))))
-
-(ert-deftest tp-test-widget-named-slots-with-props ()
-  "Test widget with both props and named slots."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget article
-      :props '((title . "Untitled") author)
-      :slots '(intro body)
-      :render (lambda (props slots)
-                (format "# %s by %s\n%s\n%s"
-                        (plist-get props :title)
-                        (or (plist-get props :author) "Anonymous")
-                        (or (plist-get slots :intro) "")
-                        (or (plist-get slots :body) ""))))
-    (let ((result (tp-widget-parse
-                   '(article :title "My Post"
-                             :author "John"
-                             (slot-intro "Introduction...")
-                             (slot-body "Main content...")))))
-      (should (equal result "# My Post by John\nIntroduction...\nMain content...")))))
-
-(ert-deftest tp-test-widget-named-slots-with-nested-widgets ()
-  "Test named slots containing nested widgets."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    (tp-define-twidget emphasis
-      :slot t
-      :render (lambda (_props slot)
-                (concat "*" slot "*")))
-    (tp-define-twidget layout
-      :slots '(left right)
-      :render (lambda (_props slots)
-                (concat "[" (or (plist-get slots :left) "")
-                        "|"
-                        (or (plist-get slots :right) "") "]")))
-    (let ((result (tp-widget-parse
-                   '(layout (slot-left (emphasis "Bold"))
-                            (slot-right "Plain")))))
-      (should (equal result "[*Bold*|Plain]")))))
+    (let ((tp-debug-mode nil))
+      ;; Clear any existing debug buffer
+      (tp-debug-clear)
+      ;; Try to log a message
+      (tp-debug-log "Should not appear")
+      ;; Check that buffer is empty or doesn't exist
+      (let ((buf (get-buffer "*tp-debug*")))
+        (if buf
+            (with-current-buffer buf
+              (should (string= (buffer-string) ""))))))))
 
 ;;; ============================================================
-;;; Component Inheritance Tests
+;;; Value Transformation Tests
 ;;; ============================================================
 
-(ert-deftest tp-test-widget-extends-basic ()
-  "Test basic widget inheritance."
+(ert-deftest tp-test-transform-basic ()
+  "Test that :transform transforms tp-text values."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Define parent widget
-    (tp-define-twidget base-text
-      :props '((prefix . ""))
-      :slot t
-      :render (lambda (props slot)
-                (concat (plist-get props :prefix) slot)))
-    ;; Define child widget that extends parent
-    (tp-define-twidget bold-text
-      :extends 'base-text
-      :props '((prefix . "[B]"))
-      :render (lambda (props slot parent-render)
-                (let ((result (funcall parent-render props slot)))
-                  (upcase result))))
-    (let ((result (tp-widget-parse '(bold-text "hello"))))
-      (should (equal result "[B]HELLO")))))
+    (unwind-protect
+        (progn
+          ;; Define a layer with transform
+          (tp-define-layer 'test-transform-layer
+            :props '(face bold tp-text $tp-test-value)
+            :data '((tp-test-value . "hello"))
+            :transform #'upcase)
+          (insert "placeholder")
+          (tp-set 1 12 'test-transform-layer)
+          ;; Text should be transformed to uppercase
+          (should (equal (buffer-substring-no-properties 1 6) "HELLO")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-value)))))
 
-(ert-deftest tp-test-widget-extends-inherits-slot ()
-  "Test that child widget inherits slot from parent."
+(ert-deftest tp-test-transform-with-reactive-update ()
+  "Test that :transform works with reactive updates."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Parent has slot t
-    (tp-define-twidget parent-with-slot
-      :slot t
-      :render (lambda (_props slot)
-                (concat "P:" slot)))
-    ;; Child doesn't specify slot, should inherit
-    (tp-define-twidget child-inherits-slot
-      :extends 'parent-with-slot
-      :render (lambda (_props slot parent-render)
-                (funcall parent-render nil (concat "C:" slot))))
-    (let ((result (tp-widget-parse '(child-inherits-slot "content"))))
-      (should (equal result "P:C:content")))))
+    (unwind-protect
+        (progn
+          ;; Define a layer with transform (format as currency)
+          (tp-define-layer 'test-currency-layer
+            :props '(face bold tp-text $tp-test-amount)
+            :data '((tp-test-amount . "100"))
+            :transform (lambda (text)
+                         (format "$%s.00" text)))
+          (insert "placeholder")
+          (tp-set 1 12 'test-currency-layer)
+          ;; Text should be formatted
+          (should (equal (buffer-substring-no-properties 1 8) "$100.00"))
+          ;; Update the variable
+          (setq tp-test-amount "250")
+          ;; Text should be updated with transform applied
+          (should (equal (buffer-substring-no-properties 1 8) "$250.00")))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-amount)))))
 
-(ert-deftest tp-test-widget-extends-merges-props ()
-  "Test that child widget merges props with parent."
+(ert-deftest tp-test-transform-removed-on-redefine ()
+  "Test that :transform is removed when layer is redefined without it."
   (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Parent has props a and b with defaults
-    (tp-define-twidget parent-props
-      :props '((a . "A") (b . "B"))
-      :slot t
-      :render (lambda (props slot)
-                (format "%s|%s|%s"
-                        (plist-get props :a)
-                        (plist-get props :b)
-                        slot)))
-    ;; Child overrides default for a, adds c
-    (tp-define-twidget child-props
-      :extends 'parent-props
-      :props '((a . "AA") c)
-      :render (lambda (props slot parent-render)
-                (format "[c=%s]%s"
-                        (or (plist-get props :c) "nil")
-                        (funcall parent-render props slot))))
-    (let ((result (tp-widget-parse '(child-props :c "C" "text"))))
-      (should (equal result "[c=C]AA|B|text")))))
-
-(ert-deftest tp-test-widget-extends-chain ()
-  "Test multi-level widget inheritance chain."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Grandparent
-    (tp-define-twidget grandparent
-      :slot t
-      :render (lambda (_props slot)
-                (concat "[GP:" slot "]")))
-    ;; Parent extends grandparent
-    (tp-define-twidget parent
-      :extends 'grandparent
-      :render (lambda (_props slot parent-render)
-                (funcall parent-render nil (concat "P:" slot))))
-    ;; Child extends parent
-    (tp-define-twidget child
-      :extends 'parent
-      :render (lambda (_props slot parent-render)
-                (funcall parent-render nil (concat "C:" slot))))
-    (let ((result (tp-widget-parse '(child "text"))))
-      (should (equal result "[GP:P:C:text]")))))
-
-(ert-deftest tp-test-widget-extends-override-slot ()
-  "Test child can override parent's slot setting."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Parent has no slot (nil by default)
-    (tp-define-twidget parent-no-slot
-      :props '((prefix . "P:"))
-      :render (lambda (props slot)
-                (concat (plist-get props :prefix) (or slot "no-slot"))))
-    ;; Child explicitly sets slot to t
-    (tp-define-twidget child-with-slot
-      :extends 'parent-no-slot
-      :slot t
-      :render (lambda (props slot parent-render)
-                (funcall parent-render props slot)))
-    (let ((def (cdr (assoc 'child-with-slot tp-widget-alist))))
-      ;; Child should have slot t (explicit override)
-      (should (eq (plist-get def :slot) t)))
-    ;; Test the widget works
-    (let ((result (tp-widget-parse '(child-with-slot "content"))))
-      (should (equal result "P:content")))))
-
-(ert-deftest tp-test-widget-extends-override-slot-to-nil ()
-  "Test child can explicitly override parent's slot to nil."
-  (tp-test-with-temp-buffer
-    (tp-widget-reset)
-    ;; Parent has slot t
-    (tp-define-twidget parent-with-slot
-      :slot t
-      :render (lambda (_props slot)
-                (or slot "empty")))
-    ;; Child explicitly sets slot to nil
-    (tp-define-twidget child-no-slot
-      :extends 'parent-with-slot
-      :slot nil
-      :render (lambda (_props slot parent-render)
-                (format "child: %s" (funcall parent-render nil slot))))
-    (let ((def (cdr (assoc 'child-no-slot tp-widget-alist))))
-      ;; Child should have slot nil (explicit override, not inherited)
-      (should (null (plist-get def :slot))))))
+    (unwind-protect
+        (progn
+          ;; Define with transform
+          (tp-define-layer 'test-redef-transform
+            :props '(face bold tp-text $tp-test-text)
+            :data '((tp-test-text . "hello"))
+            :transform #'upcase)
+          ;; Check transform is registered
+          (should (assoc 'test-redef-transform tp-layer-transforms))
+          ;; Redefine without transform
+          (tp-define-layer 'test-redef-transform
+            :props '(face bold tp-text $tp-test-text)
+            :data '((tp-test-text . "hello")))
+          ;; Transform should be removed
+          (should-not (assoc 'test-redef-transform tp-layer-transforms)))
+      ;; Cleanup
+      (ignore-errors (makunbound 'tp-test-text)))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

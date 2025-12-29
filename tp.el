@@ -69,9 +69,64 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
+;;; --- Debug Mode ---
+
+(defcustom tp-debug-mode nil
+  "When non-nil, enable debug logging for reactive updates.
+Debug messages are logged to the *tp-debug* buffer and optionally
+displayed in the minibuffer based on `tp-debug-echo' setting."
+  :type 'boolean
+  :group 'tp)
+
+(defcustom tp-debug-echo nil
+  "When non-nil and `tp-debug-mode' is enabled, also echo debug messages.
+If nil, debug messages are only logged to the *tp-debug* buffer."
+  :type 'boolean
+  :group 'tp)
+
+(defvar tp-layer-transforms nil
+  "Alist of layer transforms: (LAYER-NAME . TRANSFORM-FN).
+TRANSFORM-FN receives the value and returns the transformed value.
+Used for tp-text transformations like formatting numbers or dates.")
+
+;;; --- Batched Updates ---
+
+(defvar tp--batch-update-pending nil
+  "When non-nil, reactive updates are being batched.
+This is a list of (LAYER-NAME . CHANGED-VARS) pairs pending update.")
+
+(defvar tp--batch-update-active nil
+  "When non-nil, we are inside a `tp-with-batch-updates' form.")
+
 ;;;============================================================================
 ;;; Layer 1: Basic Utility Functions
 ;;;============================================================================
+
+;;; --- Debug Logging ---
+
+(defun tp-debug-log (format-string &rest args)
+  "Log a debug message if `tp-debug-mode' is enabled.
+FORMAT-STRING and ARGS are passed to `format'."
+  (when tp-debug-mode
+    (let ((msg (apply #'format format-string args))
+          (timestamp (format-time-string "%H:%M:%S.%3N")))
+      (with-current-buffer (get-buffer-create "*tp-debug*")
+        (goto-char (point-max))
+        (insert (format "[%s] %s\n" timestamp msg)))
+      (when tp-debug-echo
+        (message "[tp] %s" msg)))))
+
+(defun tp-debug-clear ()
+  "Clear the *tp-debug* buffer."
+  (interactive)
+  (when-let ((buf (get-buffer "*tp-debug*")))
+    (with-current-buffer buf
+      (erase-buffer))))
+
+(defun tp-debug-show ()
+  "Show the *tp-debug* buffer."
+  (interactive)
+  (pop-to-buffer (get-buffer-create "*tp-debug*")))
 
 ;;; --- Anonymous Layer Generation ---
 
@@ -339,9 +394,15 @@ Updates all layers that depend on this variable.
 Only 'set' operations trigger updates because:
 - 'let'/'unlet': Temporary bindings that will be restored, no need to update UI
 - 'makunbound': Variable is being undefined, not a value change
-- 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'"
+- 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'
+
+When `tp--batch-update-active' is non-nil, buffer updates are deferred until
+the batch completes. Layer definitions are still updated immediately."
   (when (and (not (equal (symbol-value symbol) newval))
              (eq operation 'set))
+    (tp-debug-log "Variable %s changed: %S -> %S (where: %s)"
+                  symbol (symbol-value symbol) newval
+                  (if where (buffer-name where) "global"))
     (let ((deps (cdr (assoc symbol tp-reactive-deps)))
           (oldval (symbol-value symbol))
           ;; Create override alist with the new value
@@ -365,17 +426,30 @@ Only 'set' operations trigger updates because:
                 ;; Update only the reactive properties in the layer definition
                 (let ((current-props (cdr (assoc layer-name tp-layer-alist))))
                   (when current-props
-                    ;; Merge the resolved reactive props into the current layer props
-                    (cl-loop for (key val) on resolved-props by #'cddr
-                             do (setq current-props
-                                      (plist-put current-props key val)))
+                    ;; Deep merge the resolved reactive props into the current layer props
+                    ;; This preserves nested plist values (like face properties)
+                    (setq current-props (tp--deep-merge-plist current-props resolved-props))
                     (tp--set-layer-props layer-name current-props))))))
-          ;; Update text regions with this layer
-          ;; If tp-text is affected, use tp--update-reactive-text for text replacement
-          ;; Otherwise use tp--update-layer-regions for property-only updates
-          (if tp-text-affected
-              (tp--update-reactive-text layer-name where)
-            (tp--update-layer-regions layer-name where)))))))
+          ;; Update text regions with this layer (or defer if batching)
+          (if tp--batch-update-active
+              ;; Batching: defer the buffer update
+              ;; Pending format: (layer-name symbols-list where tp-text-affected)
+              (let ((existing (assoc layer-name tp--batch-update-pending)))
+                (tp-debug-log "  Deferring buffer update for %s (batch mode)" layer-name)
+                (if existing
+                    ;; Update existing entry: add symbol if not present
+                    (let ((symbols (nth 1 existing)))
+                      (unless (memq symbol symbols)
+                        (setf (nth 1 existing) (cons symbol symbols))))
+                  ;; Create new entry
+                  (push (list layer-name (list symbol) where tp-text-affected)
+                        tp--batch-update-pending)))
+            ;; Normal: update immediately
+            (tp-debug-log "  Updating layer %s (tp-text affected: %s)"
+                          layer-name (if tp-text-affected "yes" "no"))
+            (if tp-text-affected
+                (tp--update-reactive-text layer-name where)
+              (tp--update-layer-regions layer-name where))))))))
 
 (defun tp--invoke-layer-watchers (layer-name symbol newval oldval)
   "Invoke all registered watcher callbacks for LAYER-NAME watching SYMBOL.
@@ -385,10 +459,55 @@ NEWVAL is the new value, OLDVAL is the old value."
       (let ((watch-sym (car watcher))
             (callback (cdr watcher)))
         (when (eq watch-sym symbol)
+          (tp-debug-log "  Invoking watcher for %s on %s" watch-sym layer-name)
           (condition-case err
               (funcall callback newval oldval layer-name)
             (error (message "tp: watcher error for %s watching %s: %s"
                             layer-name watch-sym err))))))))
+
+;;; --- Batched Updates ---
+
+(defun tp--flush-batch-updates ()
+  "Flush all pending batch updates.
+This processes all updates collected during a `tp-with-batch-updates' form."
+  (tp-debug-log "Flushing %d pending batch updates" (length tp--batch-update-pending))
+  (let ((processed-layers nil))
+    ;; Process each pending update, avoiding duplicate layer updates
+    (dolist (pending (nreverse tp--batch-update-pending))
+      (let ((layer-name (car pending))
+            (where (caddr pending))
+            (tp-text-affected (cadddr pending)))
+        (unless (memq layer-name processed-layers)
+          (push layer-name processed-layers)
+          (tp-debug-log "  Batch updating layer %s (tp-text: %s)"
+                        layer-name (if tp-text-affected "yes" "no"))
+          (if tp-text-affected
+              (tp--update-reactive-text layer-name where)
+            (tp--update-layer-regions layer-name where))))))
+  (setq tp--batch-update-pending nil))
+
+(defmacro tp-with-batch-updates (&rest body)
+  "Execute BODY with reactive updates batched.
+Multiple variable changes within BODY are collected and applied
+together at the end, avoiding redundant buffer modifications.
+
+This is useful when changing multiple reactive variables simultaneously:
+
+  (tp-with-batch-updates
+    (setq my-color \"red\")
+    (setq my-size 14)
+    (setq my-text \"Hello\"))
+
+Without batching, each `setq' would trigger a separate buffer update.
+With batching, all updates are consolidated and applied once at the end."
+  (declare (indent 0) (debug t))
+  `(let ((tp--batch-update-active t)
+         (tp--batch-update-pending nil))
+     (tp-debug-log "Starting batch updates")
+     (unwind-protect
+         (progn ,@body)
+       (tp-debug-log "Ending batch updates")
+       (tp--flush-batch-updates))))
 
 (defun tp--update-layer-computed (layer-name override-alist)
   "Update computed reactive variables for LAYER-NAME with OVERRIDE-ALIST.
@@ -609,10 +728,26 @@ This is called when a reactive variable bound to tp-text changes.
 
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
-  - If WHERE is nil, update all buffers that have the text property (setq case)."
+  - If WHERE is nil, update all buffers that have the text property (setq case).
+
+If a transform function is registered for LAYER-NAME via `:transform',
+it will be applied to the text before updating."
   (let ((props (tp-layer-props layer-name t)))  ; include tp-name for reactive tracking
     (when props
-      (let ((new-text (plist-get props 'tp-text)))
+      (let* ((raw-text (plist-get props 'tp-text))
+             ;; Apply transformation if registered
+             (transform-fn (cdr (assoc layer-name tp-layer-transforms)))
+             (new-text (if (and transform-fn raw-text (stringp raw-text))
+                           (condition-case err
+                               (let ((result (funcall transform-fn raw-text)))
+                                 (tp-debug-log "  Transform %s: %S -> %S"
+                                               layer-name raw-text result)
+                                 result)
+                             (error
+                              (message "tp: transform error for %s: %s"
+                                       layer-name err)
+                              raw-text))
+                         raw-text)))
         (when (and new-text (stringp new-text))
           (if (and where (bufferp where) (buffer-live-p where))
               ;; setq-local case: only update the specific buffer
@@ -688,43 +823,53 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
           (list (plist-put props 'tp-text current-text) end object)))
        ;; tp-text has a string value - replace the text in the region
        ((stringp tp-text-val)
-        (if (stringp object)
-            ;; For strings: create a new string with tp-text content
-            ;; The new string replaces the original, with props applied
-            (let ((new-string (copy-sequence tp-text-val)))
-              (list props (length new-string) new-string))
-          ;; For buffers: replace text and adjust end position
-          (let ((old-text (if object
-                              (with-current-buffer object
-                                (buffer-substring-no-properties start end))
-                            (buffer-substring-no-properties start end))))
-            (if (equal old-text tp-text-val)
-                ;; Same text, no replacement needed
-                (list props end object)
-              ;; Need to replace text
-              (let ((existing-props (when preserve-props
-                                      (if object
-                                          (with-current-buffer object
-                                            (text-properties-at start))
-                                        (text-properties-at start)))))
-                (save-excursion
-                  (if object
-                      (with-current-buffer object
-                        (let ((inhibit-read-only t))
-                          (delete-region start end)
-                          (goto-char start)
-                          (insert tp-text-val)))
-                    (let ((inhibit-read-only t))
-                      (delete-region start end)
-                      (goto-char start)
-                      (insert tp-text-val))))
-                (let ((new-end (+ start (length tp-text-val))))
-                  ;; Re-apply existing properties to new text region if preserving
-                  (when existing-props
-                    (cl-loop for (key val) on existing-props by #'cddr
-                             do (put-text-property
-                                 start new-end key val object)))
-                  (list props new-end object)))))))
+        ;; Apply transform if layer has one registered
+        (let* ((layer-name (plist-get props 'tp-name))
+               (transform-fn (when layer-name (cdr (assoc layer-name tp-layer-transforms))))
+               (final-text (if transform-fn
+                               (condition-case err
+                                   (funcall transform-fn tp-text-val)
+                                 (error
+                                  (message "tp: transform error for %s: %s" layer-name err)
+                                  tp-text-val))
+                             tp-text-val)))
+          (if (stringp object)
+              ;; For strings: create a new string with tp-text content
+              ;; The new string replaces the original, with props applied
+              (let ((new-string (copy-sequence final-text)))
+                (list props (length new-string) new-string))
+            ;; For buffers: replace text and adjust end position
+            (let ((old-text (if object
+                                (with-current-buffer object
+                                  (buffer-substring-no-properties start end))
+                              (buffer-substring-no-properties start end))))
+              (if (equal old-text final-text)
+                  ;; Same text, no replacement needed
+                  (list props end object)
+                ;; Need to replace text
+                (let ((existing-props (when preserve-props
+                                        (if object
+                                            (with-current-buffer object
+                                              (text-properties-at start))
+                                          (text-properties-at start)))))
+                  (save-excursion
+                    (if object
+                        (with-current-buffer object
+                          (let ((inhibit-read-only t))
+                            (delete-region start end)
+                            (goto-char start)
+                            (insert final-text)))
+                      (let ((inhibit-read-only t))
+                        (delete-region start end)
+                        (goto-char start)
+                        (insert final-text))))
+                  (let ((new-end (+ start (length final-text))))
+                    ;; Re-apply existing properties to new text region if preserving
+                    (when existing-props
+                      (cl-loop for (key val) on existing-props by #'cddr
+                               do (put-text-property
+                                   start new-end key val object)))
+                    (list props new-end object))))))))
        ;; Other types - return unchanged
        (t (list props end object))))))
 
@@ -2016,13 +2161,13 @@ Example:
 
 (defun tp--parse-define-layer-args (args)
   "Parse ARGS for tp-define-layer function.
-Returns plist with keys :props, :data, :watch, :compute.
-- Keyword arguments: :props PLIST [:data DATA] [:watch WATCH] [:compute COMPUTE]"
-  (let (props data watch compute has-keywords)
+Returns plist with keys :props, :data, :watch, :compute, :transform.
+- Keyword arguments: :props PLIST [:data DATA] [:watch WATCH] [:compute COMPUTE] [:transform FN]"
+  (let (props data watch compute transform has-keywords)
     (cond
      ;; Check for keyword arguments format
      ((and (keywordp (car args))
-           (memq (car args) '(:props :data :watch :compute)))
+           (memq (car args) '(:props :data :watch :compute :transform)))
       (setq has-keywords t)
       ;; Parse keyword arguments
       (let ((rest args))
@@ -2032,6 +2177,7 @@ Returns plist with keys :props, :data, :watch, :compute.
             (:data (setq data (cadr rest) rest (cddr rest)))
             (:watch (setq watch (cadr rest) rest (cddr rest)))
             (:compute (setq compute (cadr rest) rest (cddr rest)))
+            (:transform (setq transform (cadr rest) rest (cddr rest)))
             (_ (error "Unknown keyword in tp-define-layer: %s" (car rest))))))
       ;; Validate: if :watch, :compute, or :data present, :props must be present
       (when (and (or watch compute data) (null props))
@@ -2041,18 +2187,18 @@ Returns plist with keys :props, :data, :watch, :compute.
            (listp (car args)))
       (setq props (car args)))
      (t (error "Invalid tp-define-layer format")))
-    (list :props props :data data :watch watch :compute compute)))
+    (list :props props :data data :watch watch :compute compute :transform transform)))
 
 (defun tp-define-layer (name &rest args)
   "Define a single text property layer named NAME.
 
 This function supports two formats:
 
-Format 1 - Direct plist (no :watch/:compute/:data support):
+Format 1 - Direct plist (no :watch/:compute/:data/:transform support):
   (tp-define-layer \\='layer-name
     \\='(display \"🌑\" face (:height 1.0)))
 
-Format 2 - With :props, :data, :watch, and/or :compute (Vue 3 style reactivity):
+Format 2 - With :props, :data, :watch, :compute, and/or :transform (Vue 3 style reactivity):
   (tp-define-layer \\='layer-name
     ;; props: $-prefixed symbols are reactive variables; auto-defined if not bound
     :props \\='(face (:foreground $my-color) help-echo $full-name)
@@ -2062,7 +2208,9 @@ Format 2 - With :props, :data, :watch, and/or :compute (Vue 3 style reactivity):
     :compute \\='((full-name (lambda () (concat first-name \" \" last-name))))
     ;; watch: list of (VAR-NAME CALLBACK) - side effects when vars change
     :watch \\='((my-color (lambda (new old layer)
-                        (message \"Color changed from %s to %s\" old new)))))
+                        (message \"Color changed from %s to %s\" old new))))
+    ;; transform: function to transform tp-text values before display
+    :transform (lambda (text) (upcase text)))
 
 Reactive Variables:
   If any symbol in :props starts with $, it is treated as a reactive variable.
@@ -2079,6 +2227,10 @@ Reactive Variables:
 :watch - A list of (VAR-SYMBOL CALLBACK) pairs. CALLBACK is called when
   VAR-SYMBOL changes, receiving (NEW-VALUE OLD-VALUE LAYER-NAME).
 
+:transform - A function that receives the tp-text value and returns a
+  transformed string. Useful for formatting numbers, dates, or other values
+  before display. Example: (lambda (text) (format \"$%.2f\" (string-to-number text)))
+
 Note: When using :watch, :compute, or :data, you MUST use :props to specify
 the text properties explicitly.
 
@@ -2090,6 +2242,7 @@ The layer is stored in `tp-layer-alist'."
          (data (plist-get parsed :data))
          (watch (plist-get parsed :watch))
          (compute (plist-get parsed :compute))
+         (transform (plist-get parsed :transform))
          (reactive-syms (tp--collect-reactive-symbols properties))
          ;; Collect computed variable names (they become reactive too)
          (computed-vars (when compute (mapcar #'car compute)))
@@ -2105,6 +2258,13 @@ The layer is stored in `tp-layer-alist'."
                               (append data
                                       props-vars
                                       computed-vars))))
+    ;; Register or unregister transform function
+    (if transform
+        (if (assoc name tp-layer-transforms)
+            (setcdr (assoc name tp-layer-transforms) transform)
+          (push (cons name transform) tp-layer-transforms))
+      ;; Remove any existing transform when redefining without one
+      (setq tp-layer-transforms (assq-delete-all name tp-layer-transforms)))
     (if (or all-reactive-syms data compute)
         ;; Has reactive features - register dependencies and resolve at runtime
         (progn
@@ -2708,17 +2868,19 @@ If resolution fails, return PLIST unchanged (for backward compatibility)."
 (defun tp-layer-reset ()
   "Reset all layer definitions.
 Clears both `tp-layer-alist' and `tp-layer-groups'.
-Also resets all reactive text property watchers and dependencies."
+Also resets all reactive text property watchers, dependencies, and transforms."
   (interactive)
   (tp-reactive-reset)
   (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil))
+  (setq tp-layer-groups nil)
+  (setq tp-layer-transforms nil))
 
 (defun tp-undefine-layer (name)
   "Remove layer NAME from `tp-layer-alist'.
-Also unregisters any reactive dependencies for this layer."
+Also unregisters any reactive dependencies and transforms for this layer."
   (tp--unregister-reactive-deps name)
-  (setq tp-layer-alist (assq-delete-all name tp-layer-alist)))
+  (setq tp-layer-alist (assq-delete-all name tp-layer-alist))
+  (setq tp-layer-transforms (assq-delete-all name tp-layer-transforms)))
 
 (defun tp-undefine-group (name)
   "Remove layer group NAME from `tp-layer-groups'."
