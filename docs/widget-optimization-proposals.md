@@ -54,17 +54,17 @@
                     "\n"
                     (plist-get slots :footer))))
 
-;; 使用 - 通过 :slotname-slot 关键字传递内容
+;; 使用 - 通过 (slot-<name> content...) sexp 格式传递内容
 (tp-widget-parse
  '(card :title "My Card"
-        :header-slot "Header Content"
-        :content-slot "Main Content"
-        :footer-slot "Footer"))
+        (slot-header "Header Content")
+        (slot-content "Main Content")
+        (slot-footer "Footer")))
 
 ;; 命名插槽也支持嵌套组件
 (tp-widget-parse
- '(layout :left-slot (emphasis "Bold Text")
-          :right-slot "Plain Text"))
+ '(layout (slot-left (emphasis "Bold Text"))
+          (slot-right "Plain Text")))
 ```
 
 **作用**:

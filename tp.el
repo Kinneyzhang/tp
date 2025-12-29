@@ -3578,11 +3578,11 @@ Named Slots Example:
                       (plist-get slots :content) \"\\n\"
                       (plist-get slots :footer))))
 
-  ;; Usage:
+  ;; Usage - named slots use (slot<name> content...) sexp format:
   (tp-widget-parse
-   \\='(card :header-slot \"Title\"
-          :content-slot \"Body text\"
-          :footer-slot \"Footer\"))
+   \\='(card (slot-header \"Title\")
+          (slot-content \"Body text\")
+          (slot-footer \"Footer\")))
 
 Component Inheritance Example:
   (tp-define-widget base-button
@@ -3718,6 +3718,21 @@ Returns nil if no default is specified."
        (not (null slot-def))
        (symbolp (car slot-def))))
 
+(defun tp--widget-is-slot-sexp-p (form slot-def)
+  "Return non-nil if FORM is a named slot sexp like (slot-header content...).
+SLOT-DEF is the list of defined slot names."
+  (and (listp form)
+       (symbolp (car form))
+       (let ((name (symbol-name (car form))))
+         (and (string-prefix-p "slot-" name)
+              (memq (intern (substring name 5)) slot-def)))))
+
+(defun tp--widget-extract-slot-name (slot-sexp)
+  "Extract the slot name from SLOT-SEXP like (slot-header content...).
+Returns the slot name as a symbol (e.g., \\='header)."
+  (let ((name (symbol-name (car slot-sexp))))
+    (intern (substring name 5))))
+
 (defun tp-widget-parse (widget-form)
   "Parse and render a widget invocation.
 
@@ -3727,8 +3742,10 @@ supports slots).
 
 The format is: (WIDGET-NAME :prop1 val1 :prop2 val2 ... SLOT-VALUES...)
 
-For named slots, use :slotname-slot keywords:
-  (WIDGET-NAME :prop1 val1 :header-slot \"Header\" :content-slot \"Content\")
+For named slots, use (slot-<name> content...) sexp format:
+  (WIDGET-NAME :prop1 val1
+               (slot-header \"Header\")
+               (slot-content \"Content\"))
 
 Keyword arguments must come before slot values. Slot values are all
 remaining elements after the keyword-value pairs. Each slot value can be:
@@ -3764,33 +3781,38 @@ Returns the rendered string with text properties applied."
             (collected-props nil)
             (collected-named-slots nil)
             (slot-parts nil))
-        ;; Parse keyword arguments (including named slot keywords like :header-slot)
+        ;; Parse keyword arguments first
         (while (and args (keywordp (car args)))
-          (let* ((key (car args))
-                 (key-name (symbol-name key))
-                 (val (cadr args)))
-            ;; Check if this is a named slot keyword (ends with -slot)
-            (if (and named-slots-p (string-suffix-p "-slot" key-name))
-                (let* ((slot-name-str (substring key-name 1 (- (length key-name) 5)))
-                       (slot-name (intern slot-name-str)))
-                  (when (memq slot-name slot-def)
-                    (push (cons (intern (format ":%s" slot-name-str))
-                                (tp--widget-process-slot-value val))
-                          collected-named-slots)))
-              (push (cons key val) collected-props))
+          (let ((key (car args))
+                (val (cadr args)))
+            (push (cons key val) collected-props)
             (setq args (cddr args))))
-        ;; The remaining arguments are default slot values (if slot is supported)
+        ;; Process remaining arguments (slot values or named slot sexps)
         (when args
           (if slot-def
               (if named-slots-p
-                  ;; For named slots, remaining args go to :default slot if defined
-                  (when (memq 'default slot-def)
-                    (setq slot-value (tp--widget-process-slot-args args)))
+                  ;; Named slots mode - look for (slot-<name> ...) sexps
+                  (dolist (arg args)
+                    (if (tp--widget-is-slot-sexp-p arg slot-def)
+                        ;; This is a named slot sexp
+                        (let* ((slot-name (tp--widget-extract-slot-name arg))
+                               (slot-keyword (intern (format ":%s" slot-name)))
+                               (slot-content (cdr arg)))
+                          (push (cons slot-keyword
+                                      (tp--widget-process-slot-args slot-content))
+                                collected-named-slots))
+                      ;; Not a slot sexp - could be default slot content
+                      (when (memq 'default slot-def)
+                        (push (tp--widget-process-slot-value arg) slot-parts))))
                 ;; Single slot mode
                 (setq slot-value (tp--widget-process-slot-args args)))
             ;; Slot not supported - warn about ignored arguments
             (warn "tp-widget-parse: Widget `%s' does not support slot content. \
 Ignoring arguments: %S" widget-name args)))
+        ;; Combine default slot parts if any
+        (when (and named-slots-p slot-parts)
+          (push (cons :default (apply #'concat (nreverse slot-parts)))
+                collected-named-slots))
         ;; Build named slots plist if using named slots
         (when named-slots-p
           (let ((slots-plist nil))

@@ -3663,9 +3663,9 @@ When using tp-set (direct property setting), tp-name is NOT added."
                         "|"
                         (or (plist-get slots :footer) ""))))
     (let ((result (tp-widget-parse
-                   '(card :header-slot "Title"
-                          :content-slot "Body"
-                          :footer-slot "End"))))
+                   '(card (slot-header "Title")
+                          (slot-content "Body")
+                          (slot-footer "End")))))
       (should (equal result "Title|Body|End")))))
 
 (ert-deftest tp-test-widget-named-slots-partial ()
@@ -3681,7 +3681,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
                         "|"
                         (or (plist-get slots :footer) "[no-footer]"))))
     ;; Only provide some slots
-    (let ((result (tp-widget-parse '(card :content-slot "Main"))))
+    (let ((result (tp-widget-parse '(card (slot-content "Main")))))
       (should (equal result "[no-header]|Main|[no-footer]")))))
 
 (ert-deftest tp-test-widget-named-slots-with-props ()
@@ -3700,8 +3700,8 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (let ((result (tp-widget-parse
                    '(article :title "My Post"
                              :author "John"
-                             :intro-slot "Introduction..."
-                             :body-slot "Main content..."))))
+                             (slot-intro "Introduction...")
+                             (slot-body "Main content...")))))
       (should (equal result "# My Post by John\nIntroduction...\nMain content...")))))
 
 (ert-deftest tp-test-widget-named-slots-with-nested-widgets ()
@@ -3719,8 +3719,8 @@ When using tp-set (direct property setting), tp-name is NOT added."
                         "|"
                         (or (plist-get slots :right) "") "]")))
     (let ((result (tp-widget-parse
-                   '(layout :left-slot (emphasis "Bold")
-                            :right-slot "Plain"))))
+                   '(layout (slot-left (emphasis "Bold"))
+                            (slot-right "Plain")))))
       (should (equal result "[*Bold*|Plain]")))))
 
 ;;; ============================================================
