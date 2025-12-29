@@ -3646,5 +3646,210 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (let ((result (tp-widget-parse '(no-slot-widget :value "test" "ignored slot"))))
       (should (equal result "test (slot: nil)")))))
 
+;;; ============================================================
+;;; Named Slots Tests
+;;; ============================================================
+
+(ert-deftest tp-test-widget-named-slots-basic ()
+  "Test widget with named slots."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    (tp-define-twidget card
+      :slots '(header content footer)
+      :render (lambda (_props slots)
+                (concat (or (plist-get slots :header) "")
+                        "|"
+                        (or (plist-get slots :content) "")
+                        "|"
+                        (or (plist-get slots :footer) ""))))
+    (let ((result (tp-widget-parse
+                   '(card :header-slot "Title"
+                          :content-slot "Body"
+                          :footer-slot "End"))))
+      (should (equal result "Title|Body|End")))))
+
+(ert-deftest tp-test-widget-named-slots-partial ()
+  "Test widget with partial named slots."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    (tp-define-twidget card
+      :slots '(header content footer)
+      :render (lambda (_props slots)
+                (concat (or (plist-get slots :header) "[no-header]")
+                        "|"
+                        (or (plist-get slots :content) "[no-content]")
+                        "|"
+                        (or (plist-get slots :footer) "[no-footer]"))))
+    ;; Only provide some slots
+    (let ((result (tp-widget-parse '(card :content-slot "Main"))))
+      (should (equal result "[no-header]|Main|[no-footer]")))))
+
+(ert-deftest tp-test-widget-named-slots-with-props ()
+  "Test widget with both props and named slots."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    (tp-define-twidget article
+      :props '((title . "Untitled") author)
+      :slots '(intro body)
+      :render (lambda (props slots)
+                (format "# %s by %s\n%s\n%s"
+                        (plist-get props :title)
+                        (or (plist-get props :author) "Anonymous")
+                        (or (plist-get slots :intro) "")
+                        (or (plist-get slots :body) ""))))
+    (let ((result (tp-widget-parse
+                   '(article :title "My Post"
+                             :author "John"
+                             :intro-slot "Introduction..."
+                             :body-slot "Main content..."))))
+      (should (equal result "# My Post by John\nIntroduction...\nMain content...")))))
+
+(ert-deftest tp-test-widget-named-slots-with-nested-widgets ()
+  "Test named slots containing nested widgets."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    (tp-define-twidget emphasis
+      :slot t
+      :render (lambda (_props slot)
+                (concat "*" slot "*")))
+    (tp-define-twidget layout
+      :slots '(left right)
+      :render (lambda (_props slots)
+                (concat "[" (or (plist-get slots :left) "")
+                        "|"
+                        (or (plist-get slots :right) "") "]")))
+    (let ((result (tp-widget-parse
+                   '(layout :left-slot (emphasis "Bold")
+                            :right-slot "Plain"))))
+      (should (equal result "[*Bold*|Plain]")))))
+
+;;; ============================================================
+;;; Component Inheritance Tests
+;;; ============================================================
+
+(ert-deftest tp-test-widget-extends-basic ()
+  "Test basic widget inheritance."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    ;; Define parent widget
+    (tp-define-twidget base-text
+      :props '((prefix . ""))
+      :slot t
+      :render (lambda (props slot)
+                (concat (plist-get props :prefix) slot)))
+    ;; Define child widget that extends parent
+    (tp-define-twidget bold-text
+      :extends 'base-text
+      :props '((prefix . "[B]"))
+      :render (lambda (props slot parent-render)
+                (let ((result (funcall parent-render props slot)))
+                  (upcase result))))
+    (let ((result (tp-widget-parse '(bold-text "hello"))))
+      (should (equal result "[B]HELLO")))))
+
+(ert-deftest tp-test-widget-extends-inherits-slot ()
+  "Test that child widget inherits slot from parent."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    ;; Parent has slot t
+    (tp-define-twidget parent-with-slot
+      :slot t
+      :render (lambda (_props slot)
+                (concat "P:" slot)))
+    ;; Child doesn't specify slot, should inherit
+    (tp-define-twidget child-inherits-slot
+      :extends 'parent-with-slot
+      :render (lambda (_props slot parent-render)
+                (funcall parent-render nil (concat "C:" slot))))
+    (let ((result (tp-widget-parse '(child-inherits-slot "content"))))
+      (should (equal result "P:C:content")))))
+
+(ert-deftest tp-test-widget-extends-merges-props ()
+  "Test that child widget merges props with parent."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    ;; Parent has props a and b with defaults
+    (tp-define-twidget parent-props
+      :props '((a . "A") (b . "B"))
+      :slot t
+      :render (lambda (props slot)
+                (format "%s|%s|%s"
+                        (plist-get props :a)
+                        (plist-get props :b)
+                        slot)))
+    ;; Child overrides default for a, adds c
+    (tp-define-twidget child-props
+      :extends 'parent-props
+      :props '((a . "AA") c)
+      :render (lambda (props slot parent-render)
+                (format "[c=%s]%s"
+                        (or (plist-get props :c) "nil")
+                        (funcall parent-render props slot))))
+    (let ((result (tp-widget-parse '(child-props :c "C" "text"))))
+      (should (equal result "[c=C]AA|B|text")))))
+
+(ert-deftest tp-test-widget-extends-chain ()
+  "Test multi-level widget inheritance chain."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    ;; Grandparent
+    (tp-define-twidget grandparent
+      :slot t
+      :render (lambda (_props slot)
+                (concat "[GP:" slot "]")))
+    ;; Parent extends grandparent
+    (tp-define-twidget parent
+      :extends 'grandparent
+      :render (lambda (_props slot parent-render)
+                (funcall parent-render nil (concat "P:" slot))))
+    ;; Child extends parent
+    (tp-define-twidget child
+      :extends 'parent
+      :render (lambda (_props slot parent-render)
+                (funcall parent-render nil (concat "C:" slot))))
+    (let ((result (tp-widget-parse '(child "text"))))
+      (should (equal result "[GP:P:C:text]")))))
+
+(ert-deftest tp-test-widget-extends-override-slot ()
+  "Test child can override parent's slot setting."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    ;; Parent has no slot (nil by default)
+    (tp-define-twidget parent-no-slot
+      :props '((prefix . "P:"))
+      :render (lambda (props slot)
+                (concat (plist-get props :prefix) (or slot "no-slot"))))
+    ;; Child explicitly sets slot to t
+    (tp-define-twidget child-with-slot
+      :extends 'parent-no-slot
+      :slot t
+      :render (lambda (props slot parent-render)
+                (funcall parent-render props slot)))
+    (let ((def (cdr (assoc 'child-with-slot tp-widget-alist))))
+      ;; Child should have slot t (explicit override)
+      (should (eq (plist-get def :slot) t)))
+    ;; Test the widget works
+    (let ((result (tp-widget-parse '(child-with-slot "content"))))
+      (should (equal result "P:content")))))
+
+(ert-deftest tp-test-widget-extends-override-slot-to-nil ()
+  "Test child can explicitly override parent's slot to nil."
+  (tp-test-with-temp-buffer
+    (tp-widget-reset)
+    ;; Parent has slot t
+    (tp-define-twidget parent-with-slot
+      :slot t
+      :render (lambda (_props slot)
+                (or slot "empty")))
+    ;; Child explicitly sets slot to nil
+    (tp-define-twidget child-no-slot
+      :extends 'parent-with-slot
+      :slot nil
+      :render (lambda (_props slot parent-render)
+                (format "child: %s" (funcall parent-render nil slot))))
+    (let ((def (cdr (assoc 'child-no-slot tp-widget-alist))))
+      ;; Child should have slot nil (explicit override, not inherited)
+      (should (null (plist-get def :slot))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

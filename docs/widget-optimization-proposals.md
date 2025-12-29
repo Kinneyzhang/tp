@@ -38,7 +38,7 @@
 
 ---
 
-### 2. 命名插槽（Named Slots）
+### 2. 命名插槽（Named Slots） ✅ 已实现
 
 **参考**: Vue3 的 `<slot name="header">`, `v-slot:header`
 
@@ -54,21 +54,24 @@
                     "\n"
                     (plist-get slots :footer))))
 
-;; 使用
+;; 使用 - 通过 :slotname-slot 关键字传递内容
 (tp-widget-parse
  '(card :title "My Card"
         :header-slot "Header Content"
         :content-slot "Main Content"
         :footer-slot "Footer"))
+
+;; 命名插槽也支持嵌套组件
+(tp-widget-parse
+ '(layout :left-slot (emphasis "Bold Text")
+          :right-slot "Plain Text"))
 ```
 
 **作用**:
 - 支持更灵活的内容分发
 - 组件可以有多个内容区域
 
-**是否必要**: ⭐⭐⭐ 中等优先级
-- 当组件需要在不同位置插入内容时非常有用
-- 类似 Vue/React 的 slot 概念
+**状态**: ✅ 已实现
 
 ---
 
@@ -106,7 +109,7 @@
 
 ---
 
-### 4. 组件继承/组合（Component Inheritance/Composition）
+### 4. 组件继承/组合（Component Inheritance/Composition） ✅ 已实现
 
 **参考**: Vue3 的 `mixins`, `extends`
 
@@ -124,15 +127,37 @@
   :render (lambda (props slot parent-render)
             (let ((result (funcall parent-render props slot)))
               (tp-add result 'face '(:foreground "blue")))))
+
+;; 支持多级继承链
+(tp-define-widget grandparent
+  :slot t
+  :render (lambda (_props slot) (concat "[GP:" slot "]")))
+
+(tp-define-widget parent
+  :extends 'grandparent
+  :render (lambda (_props slot parent-render)
+            (funcall parent-render nil (concat "P:" slot))))
+
+(tp-define-widget child
+  :extends 'parent
+  :render (lambda (_props slot parent-render)
+            (funcall parent-render nil (concat "C:" slot))))
+
+;; (tp-widget-parse '(child "text")) => "[GP:P:C:text]"
 ```
+
+**特性**:
+- `:extends` 指定父组件
+- 子组件继承父组件的 `:props` 和 `:slot`
+- 子组件的 `:props` 覆盖父组件的默认值
+- 渲染函数接收 `parent-render` 参数，可调用父组件的渲染逻辑
+- 支持多级继承链
 
 **作用**:
 - 代码复用
 - 创建组件变体
 
-**是否必要**: ⭐⭐⭐ 中等优先级
-- 对于创建组件库非常有用
-- 避免重复代码
+**状态**: ✅ 已实现
 
 ---
 
@@ -314,18 +339,18 @@
 
 ## 优先级总结
 
-| 优化项 | 优先级 | 复杂度 | 价值 |
-|-------|-------|-------|-----|
-| 响应式状态 | ⭐⭐⭐⭐ | 中 | 高 |
-| 事件系统 | ⭐⭐⭐⭐ | 中 | 高 |
-| 命名插槽 | ⭐⭐⭐ | 低 | 中 |
-| 组件继承 | ⭐⭐⭐ | 中 | 中 |
-| 条件渲染辅助 | ⭐⭐⭐ | 低 | 中 |
-| 生命周期钩子 | ⭐⭐ | 低 | 低 |
-| 作用域插槽 | ⭐⭐ | 高 | 中 |
-| 依赖注入 | ⭐⭐ | 中 | 低 |
-| 类型验证 | ⭐⭐ | 低 | 低 |
-| 异步组件 | ⭐ | 高 | 低 |
+| 优化项 | 优先级 | 复杂度 | 价值 | 状态 |
+|-------|-------|-------|-----|------|
+| 响应式状态 | ⭐⭐⭐⭐ | 中 | 高 | 待实现 |
+| 事件系统 | ⭐⭐⭐⭐ | 中 | 高 | 待实现 |
+| 命名插槽 | ⭐⭐⭐ | 低 | 中 | ✅ 已实现 |
+| 组件继承 | ⭐⭐⭐ | 中 | 中 | ✅ 已实现 |
+| 条件渲染辅助 | ⭐⭐⭐ | 低 | 中 | 待实现 |
+| 生命周期钩子 | ⭐⭐ | 低 | 低 | 待实现 |
+| 作用域插槽 | ⭐⭐ | 高 | 中 | 待实现 |
+| 依赖注入 | ⭐⭐ | 中 | 低 | 待实现 |
+| 类型验证 | ⭐⭐ | 低 | 低 | 待实现 |
+| 异步组件 | ⭐ | 高 | 低 | 待实现 |
 
 ---
 
@@ -335,11 +360,13 @@
    - 这两个特性对交互式组件最重要
    - 可以利用现有的 tp reactive 系统
 
-2. **第二阶段**: 命名插槽 + 条件渲染辅助
-   - 提升组件的灵活性和开发体验
+2. **第二阶段**: ~~命名插槽~~ ✅ + 条件渲染辅助
+   - ~~提升组件的灵活性和开发体验~~
+   - 命名插槽已实现
 
-3. **第三阶段**: 组件继承 + 生命周期钩子
-   - 对于构建组件库有价值
+3. **第三阶段**: ~~组件继承~~ ✅ + 生命周期钩子
+   - ~~对于构建组件库有价值~~
+   - 组件继承已实现
 
 4. **第四阶段**: 其他高级特性
    - 根据实际需求决定
