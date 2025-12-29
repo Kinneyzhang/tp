@@ -3541,6 +3541,9 @@ Returns the modified object (string) or nil for buffer operations."
   "Alist of widget definitions: (WIDGET-NAME . DEFINITION).
 Each DEFINITION is a plist with :props, :slot, and :render keys.")
 
+;; Alias for backward compatibility
+(defvaralias 'tp-twidget-alist 'tp-widget-alist)
+
 (defmacro tp-define-widget (name &rest args)
   "Define a text widget (widget) named NAME.
 
@@ -3548,25 +3551,42 @@ ARGS should include:
   :props - A quoted list of property definitions. Each can be:
            - A symbol: required property accessed via keyword
            - A cons cell (SYMBOL . DEFAULT): property with default value
-  :slot  - A quoted symbol naming the slot (last positional argument)
+  :slot  - Boolean value. nil (default) means widget does not support slot.
+           t means widget supports slot content.
   :render - A lambda (props slot) that returns the rendered string
 
 The render function receives:
   - PROPS: a plist of resolved property values (with :keyword keys)
-  - SLOT: the slot value (last positional argument)
+  - SLOT: the slot content. When :slot is t, this is a string containing
+          all slot values concatenated together. Slot values can be plain
+          strings or nested widget-forms (which are recursively parsed).
+          When :slot is nil, SLOT will be nil.
+
+Slot values are all elements that remain after extracting the plist
+(keyword-value pairs) from the widget invocation. Multiple slot values
+are supported and can include both strings and nested widget-forms.
 
 Example:
   (tp-define-widget button
-    :props \\='(action (bgcolor . \"green\"))
-    :slot \\='label
+    :props \\='(action (bgcolor . \"orange\"))
+    :slot t
     :render (lambda (props slot)
               (let ((action (plist-get props :action))
                     (bgcolor (plist-get props :bgcolor)))
                 (tp-add (format \"%s%s%s\"
-                                (tp-set \" \" \\='tp-space 2)
-                                slot (tp-set \" \" \\='tp-space 2))
-                        \\='face \\=`(:background ,bgcolor)
-                        \\='tp-button \\=`(:action ,action)))))"
+                                (tp-set \" \" \\='tp-space 6)
+                                slot (tp-set \" \" \\='tp-space 6))
+                        \\='tp-button \\=`(:bgcolor ,bgcolor :action ,action)))))
+
+  (tp-define-widget p
+    :slot t
+    :render (lambda (_props slot) slot))
+
+  ;; Usage with multiple slot values:
+  (tp-widget-parse \\='(p \"happy hacking \"
+                       (text \"emacs\")
+                       (button :action (lambda () (message \"clicked!\"))
+                               \"click\")))"
   (declare (indent defun))
   (let ((props nil)
         (slot nil)
@@ -3582,11 +3602,13 @@ Example:
     `(tp--define-widget-internal ',name ,props ,slot ,render)))
 
 (defalias 'define-twidget 'tp-define-widget)
+(defalias 'tp-define-twidget 'tp-define-widget)
+(defalias 'tp-twidget-reset 'tp-widget-reset)
 
 (defun tp--define-widget-internal (name props slot render)
   "Internal function to define a widget NAME with PROPS, SLOT, and RENDER.
 PROPS is a list of property definitions.
-SLOT is the slot name symbol.
+SLOT is a boolean indicating whether the widget supports slot content.
 RENDER is the render function."
   (let ((definition (list :props props :slot slot :render render))
         (existing (assoc name tp-widget-alist)))
@@ -3617,19 +3639,22 @@ Returns nil if no default is specified."
   "Parse and render a widget invocation.
 
 WIDGET-FORM is a list starting with the widget name, followed by
-keyword-value pairs for props, and ending with a single slot value.
+keyword-value pairs for props, and then slot values (if the widget
+supports slots).
 
-The format is: (WIDGET-NAME :prop1 val1 :prop2 val2 ... SLOT-VALUE)
+The format is: (WIDGET-NAME :prop1 val1 :prop2 val2 ... SLOT-VALUES...)
 
-Keyword arguments must come before the slot value. The slot value
-is the last non-keyword argument and must be exactly one value.
+Keyword arguments must come before slot values. Slot values are all
+remaining elements after the keyword-value pairs. Each slot value can be:
+  - A string: used directly
+  - A list starting with a widget name: recursively parsed as a widget
 
 Example:
   (tp-widget-parse
-   \\='(button :action (lambda ()
-                      (interactive)
-                      (message \"button clicked!\"))
-            \"CLICK\"))
+   \\='(p \"happy hacking \"
+       (text \"emacs\")
+       (button :action (lambda () (message \"clicked!\"))
+               \"click\")))
 
 Returns the rendered string with text properties applied."
   (unless (and (listp widget-form) (symbolp (car widget-form)))
@@ -3640,26 +3665,39 @@ Returns the rendered string with text properties applied."
     (unless definition
       (error "Undefined widget: %S" widget-name))
     (let* ((prop-defs (plist-get definition :props))
-           (slot-name (plist-get definition :slot))
+           (slot-supported (plist-get definition :slot))
            (render-fn (plist-get definition :render))
            (parsed-props nil)
            (slot-value nil))
       ;; Parse the widget invocation arguments
-      ;; Extract keyword arguments and the slot (last positional argument)
+      ;; Extract keyword arguments and collect slot values
       (let ((args rest)
-            (collected-props nil))
+            (collected-props nil)
+            (slot-parts nil))
         ;; Parse keyword arguments
         (while (and args (keywordp (car args)))
           (let ((key (car args))
                 (val (cadr args)))
             (push (cons key val) collected-props)
             (setq args (cddr args))))
-        ;; The remaining argument(s) should be the slot value (exactly one)
-        (when args
-          (setq slot-value (car args))
-          (when (cdr args)
-            (warn "tp-widget-parse: Extra arguments after slot\
- value ignored: %S" (cdr args))))
+        ;; The remaining arguments are slot values (if slot is supported)
+        (when (and slot-supported args)
+          ;; Process each slot value
+          (dolist (slot-item args)
+            (cond
+             ;; String: use directly
+             ((stringp slot-item)
+              (push slot-item slot-parts))
+             ;; List starting with a defined widget name: recursively parse
+             ((and (listp slot-item)
+                   (symbolp (car slot-item))
+                   (assoc (car slot-item) tp-widget-alist))
+              (push (tp-widget-parse slot-item) slot-parts))
+             ;; Other values: convert to string
+             (t
+              (push (format "%s" slot-item) slot-parts))))
+          ;; Combine all slot parts into one string
+          (setq slot-value (apply #'concat (nreverse slot-parts))))
         ;; Build the props plist with defaults
         (dolist (prop-def prop-defs)
           (let* ((prop-name (tp--widget-prop-name prop-def))
