@@ -3681,23 +3681,28 @@ Returns the rendered string with text properties applied."
             (push (cons key val) collected-props)
             (setq args (cddr args))))
         ;; The remaining arguments are slot values (if slot is supported)
-        (when (and slot-supported args)
-          ;; Process each slot value
-          (dolist (slot-item args)
-            (cond
-             ;; String: use directly
-             ((stringp slot-item)
-              (push slot-item slot-parts))
-             ;; List starting with a defined widget name: recursively parse
-             ((and (listp slot-item)
-                   (symbolp (car slot-item))
-                   (assoc (car slot-item) tp-widget-alist))
-              (push (tp-widget-parse slot-item) slot-parts))
-             ;; Other values: convert to string
-             (t
-              (push (format "%s" slot-item) slot-parts))))
-          ;; Combine all slot parts into one string
-          (setq slot-value (apply #'concat (nreverse slot-parts))))
+        (when args
+          (if slot-supported
+              ;; Process each slot value
+              (progn
+                (dolist (slot-item args)
+                  (cond
+                   ;; String: use directly
+                   ((stringp slot-item)
+                    (push slot-item slot-parts))
+                   ;; List starting with a defined widget name: recursively parse
+                   ((and (listp slot-item)
+                         (symbolp (car slot-item))
+                         (assoc (car slot-item) tp-widget-alist))
+                    (push (tp-widget-parse slot-item) slot-parts))
+                   ;; Other values: convert to string
+                   (t
+                    (push (format "%s" slot-item) slot-parts))))
+                ;; Combine all slot parts into one string
+                (setq slot-value (apply #'concat (nreverse slot-parts))))
+            ;; Slot not supported - warn about ignored arguments
+            (warn "tp-widget-parse: Widget `%s' does not support slot content. \
+Ignoring arguments: %S" widget-name args)))
         ;; Build the props plist with defaults
         (dolist (prop-def prop-defs)
           (let* ((prop-name (tp--widget-prop-name prop-def))
