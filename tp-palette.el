@@ -71,72 +71,72 @@
 ;; ============================================
 
 (defvar tp-palette-syntax-keyword
-  '(:fg ("#a626a4" . "#c678dd") :bg (nil . nil)
+  '(:fg ("#a626a4" . "#c678dd") :bg nil
         :border ("#a626a4" . "#c678dd"))
   "关键字样式，如 if, else, def, class 等。紫色调。")
 
 (defvar tp-palette-syntax-string
-  '(:fg ("#50a14f" . "#98c379") :bg (nil . nil)
+  '(:fg ("#50a14f" . "#98c379") :bg nil
         :border ("#50a14f" . "#98c379"))
   "字符串样式。绿色调。")
 
 (defvar tp-palette-syntax-comment
-  '(:fg ("#a0a1a7" . "#5c6370") :bg (nil . nil)
+  '(:fg ("#a0a1a7" . "#5c6370") :bg nil
         :border ("#a0a1a7" . "#5c6370"))
   "注释样式。灰色调。")
 
 (defvar tp-palette-syntax-function
-  '(:fg ("#4078f2" . "#61afef") :bg (nil . nil)
+  '(:fg ("#4078f2" . "#61afef") :bg nil
         :border ("#4078f2" . "#61afef"))
   "函数名样式。蓝色调。")
 
 (defvar tp-palette-syntax-variable
-  '(:fg ("#e45649" . "#e06c75") :bg (nil . nil)
+  '(:fg ("#e45649" . "#e06c75") :bg nil
         :border ("#e45649" . "#e06c75"))
   "变量名样式。红色调。")
 
 (defvar tp-palette-syntax-constant
-  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+  '(:fg ("#986801" . "#d19a66") :bg nil
         :border ("#986801" . "#d19a66"))
   "常量样式。橙色调。")
 
 (defvar tp-palette-syntax-type
-  '(:fg ("#c18401" . "#e5c07b") :bg (nil . nil)
+  '(:fg ("#c18401" . "#e5c07b") :bg nil
         :border ("#c18401" . "#e5c07b"))
   "类型样式，如类名、结构体名。黄色调。")
 
 (defvar tp-palette-syntax-number
-  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+  '(:fg ("#986801" . "#d19a66") :bg nil
         :border ("#986801" . "#d19a66"))
   "数字样式。橙色调。")
 
 (defvar tp-palette-syntax-operator
-  '(:fg ("#0184bc" . "#56b6c2") :bg (nil . nil)
+  '(:fg ("#0184bc" . "#56b6c2") :bg nil
         :border ("#0184bc" . "#56b6c2"))
   "运算符样式。青色调。")
 
 (defvar tp-palette-syntax-preprocessor
-  '(:fg ("#a626a4" . "#c678dd") :bg (nil . nil)
+  '(:fg ("#a626a4" . "#c678dd") :bg nil
         :border ("#a626a4" . "#c678dd"))
   "预处理器样式，如 #include, #define。紫色调。")
 
 (defvar tp-palette-syntax-builtin
-  '(:fg ("#0184bc" . "#56b6c2") :bg (nil . nil)
+  '(:fg ("#0184bc" . "#56b6c2") :bg nil
         :border ("#0184bc" . "#56b6c2"))
   "内置函数/方法样式。青色调。")
 
 (defvar tp-palette-syntax-regexp
-  '(:fg ("#50a14f" . "#98c379") :bg (nil . nil)
+  '(:fg ("#50a14f" . "#98c379") :bg nil
         :border ("#50a14f" . "#98c379"))
   "正则表达式样式。绿色调。")
 
 (defvar tp-palette-syntax-attribute
-  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+  '(:fg ("#986801" . "#d19a66") :bg nil
         :border ("#986801" . "#d19a66"))
   "属性/装饰器样式。橙色调。")
 
 (defvar tp-palette-syntax-tag
-  '(:fg ("#e45649" . "#e06c75") :bg (nil . nil)
+  '(:fg ("#e45649" . "#e06c75") :bg nil
         :border ("#e45649" . "#e06c75"))
   "HTML/XML 标签样式。红色调。")
 
@@ -199,7 +199,7 @@
   "危险按钮样式（红色删除按钮）。")
 
 (defvar tp-palette-button-outline
-  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
+  '(:fg ("#0969da" . "#58a6ff") :bg nil
         :border ("#0969da" . "#58a6ff"))
   "轮廓按钮样式。")
 
@@ -299,7 +299,7 @@
 ;; ============================================
 
 (defvar tp-palette-region
-  '(:fg (nil . nil) :bg ("#add6ff" . "#264f78")
+  '(:fg nil :bg ("#add6ff" . "#264f78")
         :border ("#54aeff" . "#388bfd"))
   "选区样式。")
 
@@ -309,7 +309,7 @@
   "光标样式。")
 
 (defvar tp-palette-line-highlight
-  '(:fg (nil . nil) :bg ("#f6f8fa" . "#161b22")
+  '(:fg nil :bg ("#f6f8fa" . "#161b22")
         :border ("#eaeef2" . "#21262d"))
   "当前行高亮样式。")
 
@@ -377,12 +377,12 @@
   "Org 引用块样式。")
 
 (defvar tp-palette-org-link
-  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
+  '(:fg ("#0969da" . "#58a6ff") :bg nil
         :border ("#0969da" . "#58a6ff"))
   "Org 链接样式。")
 
 (defvar tp-palette-org-date
-  '(:fg ("#8250df" . "#a371f7") :bg (nil . nil)
+  '(:fg ("#8250df" . "#a371f7") :bg nil
         :border ("#8250df" . "#a371f7"))
   "Org 日期样式。")
 
@@ -469,42 +469,42 @@
 ;; ============================================
 
 (defvar tp-palette-rainbow-1
-  '(:fg ("#e45649" . "#e06c75") :bg (nil . nil)
+  '(:fg ("#e45649" . "#e06c75") :bg nil
         :border ("#e45649" . "#e06c75"))
   "彩虹括号第一层样式（红色）。")
 
 (defvar tp-palette-rainbow-2
-  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+  '(:fg ("#986801" . "#d19a66") :bg nil
         :border ("#986801" . "#d19a66"))
   "彩虹括号第二层样式（橙色）。")
 
 (defvar tp-palette-rainbow-3
-  '(:fg ("#c18401" . "#e5c07b") :bg (nil . nil)
+  '(:fg ("#c18401" . "#e5c07b") :bg nil
         :border ("#c18401" . "#e5c07b"))
   "彩虹括号第三层样式（黄色）。")
 
 (defvar tp-palette-rainbow-4
-  '(:fg ("#50a14f" . "#98c379") :bg (nil . nil)
+  '(:fg ("#50a14f" . "#98c379") :bg nil
         :border ("#50a14f" . "#98c379"))
   "彩虹括号第四层样式（绿色）。")
 
 (defvar tp-palette-rainbow-5
-  '(:fg ("#0184bc" . "#56b6c2") :bg (nil . nil)
+  '(:fg ("#0184bc" . "#56b6c2") :bg nil
         :border ("#0184bc" . "#56b6c2"))
   "彩虹括号第五层样式（青色）。")
 
 (defvar tp-palette-rainbow-6
-  '(:fg ("#4078f2" . "#61afef") :bg (nil . nil)
+  '(:fg ("#4078f2" . "#61afef") :bg nil
         :border ("#4078f2" . "#61afef"))
   "彩虹括号第六层样式（蓝色）。")
 
 (defvar tp-palette-rainbow-7
-  '(:fg ("#a626a4" . "#c678dd") :bg (nil . nil)
+  '(:fg ("#a626a4" . "#c678dd") :bg nil
         :border ("#a626a4" . "#c678dd"))
   "彩虹括号第七层样式（紫色）。")
 
 (defvar tp-palette-rainbow-8
-  '(:fg ("#bf3989" . "#db61a2") :bg (nil . nil)
+  '(:fg ("#bf3989" . "#db61a2") :bg nil
         :border ("#bf3989" . "#db61a2"))
   "彩虹括号第八层样式（粉色）。")
 
@@ -591,17 +591,17 @@
 ;; ============================================
 
 (defvar tp-palette-markdown-heading
-  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
+  '(:fg ("#0969da" . "#58a6ff") :bg nil
         :border ("#0969da" . "#58a6ff"))
   "Markdown 标题样式。")
 
 (defvar tp-palette-markdown-bold
-  '(:fg ("#24292f" . "#e6edf3") :bg (nil . nil)
+  '(:fg ("#24292f" . "#e6edf3") :bg nil
         :border ("#24292f" . "#e6edf3"))
   "Markdown 粗体样式。")
 
 (defvar tp-palette-markdown-italic
-  '(:fg ("#57606a" . "#8b949e") :bg (nil . nil)
+  '(:fg ("#57606a" . "#8b949e") :bg nil
         :border ("#57606a" . "#8b949e"))
   "Markdown 斜体样式。")
 
@@ -611,7 +611,7 @@
   "Markdown 行内代码样式。")
 
 (defvar tp-palette-markdown-link
-  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
+  '(:fg ("#0969da" . "#58a6ff") :bg nil
         :border ("#0969da" . "#58a6ff"))
   "Markdown 链接样式。")
 
@@ -621,7 +621,7 @@
   "Markdown 引用块样式。")
 
 (defvar tp-palette-markdown-list
-  '(:fg ("#9a6700" . "#d29922") :bg (nil . nil)
+  '(:fg ("#9a6700" . "#d29922") :bg nil
         :border ("#9a6700" . "#d29922"))
   "Markdown 列表标记样式。")
 
