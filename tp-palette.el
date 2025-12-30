@@ -745,17 +745,33 @@
 
 ;;; Utilities
 
+(defun tp-palette--get-color (symbol key)
+  "Get color value for KEY from palette SYMBOL.
+SYMBOL should be a symbol bound to a palette plist.
+KEY should be one of :fg, :bg, or :border.
+Returns nil if SYMBOL is unbound or doesn't contain KEY."
+  (when (and (symbolp symbol) (boundp symbol))
+    (let ((plist (symbol-value symbol)))
+      (when (plistp plist)
+        (tp-parse-color (plist-get plist key))))))
+
 (defun tp-palette-fg-color (symbol)
-  "Get the foreground color from palette SYMBOL."
-  (tp-parse-color (plist-get (symbol-value symbol) :fg)))
+  "Get the foreground color from palette SYMBOL.
+SYMBOL should be a symbol bound to a palette plist with a :fg key.
+Returns nil if SYMBOL is unbound or doesn't contain :fg."
+  (tp-palette--get-color symbol :fg))
 
 (defun tp-palette-bg-color (symbol)
-  "Get the background color from palette SYMBOL."
-  (tp-parse-color (plist-get (symbol-value symbol) :bg)))
+  "Get the background color from palette SYMBOL.
+SYMBOL should be a symbol bound to a palette plist with a :bg key.
+Returns nil if SYMBOL is unbound or doesn't contain :bg."
+  (tp-palette--get-color symbol :bg))
 
 (defun tp-palette-border-color (symbol)
-  "Get the border color from palette SYMBOL."
-  (tp-parse-color (plist-get (symbol-value symbol) :border)))
+  "Get the border color from palette SYMBOL.
+SYMBOL should be a symbol bound to a palette plist with a :border key.
+Returns nil if SYMBOL is unbound or doesn't contain :border."
+  (tp-palette--get-color symbol :border))
 
 (provide 'tp-palette)
 ;;; tp-palette.el ends here

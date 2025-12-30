@@ -124,7 +124,9 @@ This is a list of (LAYER-NAME . CHANGED-VARS) pairs pending update.")
     yank-handler auto-composed evaporate face-alias)
   "List of built-in Emacs text property names.
 These property names are reserved and cannot be used as layer names in `define-tp'.
-Layer names that conflict with these will cause errors during text property operations.")
+An error is signaled at macro expansion time (when the `define-tp' form is
+evaluated) if a reserved name is used, preventing the layer definition from
+being created.")
 
 (defun tp--builtin-text-property-p (name)
   "Return non-nil if NAME is a built-in text property name.
