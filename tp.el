@@ -3723,76 +3723,18 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
         ((null color) nil)
         (t (error "Invalid format of color %S" color))))
 
-;;; Built-in colors
-
-(defvar tp-ant-fg-text          '("#000000E0" . "#FFFFFFD9")) ; text
-(defvar tp-ant-fg-text-2        '("#000000A6" . "#FFFFFFA6")) ; secondary
-(defvar tp-ant-fg-text-3        '("#00000073" . "#FFFFFF73")) ; tertiary
-(defvar tp-ant-fg-text-4        '("#00000040" . "#FFFFFF40")) ; quaternary
-(defvar tp-ant-fg-link          '("#1677FF"   . "#1668DC"))
-(defvar tp-ant-fg-primary       '("#1677FF"   . "#1668DC"))
-(defvar tp-ant-fg-success       '("#52C41A"   . "#49AA19"))
-(defvar tp-ant-fg-warning       '("#FAAD14"   . "#D89614"))
-(defvar tp-ant-fg-error         '("#FF4D4F"   . "#DC4446"))
-(defvar tp-ant-bg-layout        '("#F5F5F5"   . "#000000"))
-(defvar tp-ant-bg-container     '("#FFFFFF"   . "#141414"))
-(defvar tp-ant-bg-elevated      '("#FFFFFF"   . "#1F1F1F"))
-(defvar tp-ant-border-default   '("#D9D9D9"   . "#303030"))
-(defvar tp-ant-border-secondary '("#F0F0F0"   . "#262626"))
-
-(defvar tp-material-fg-text                '("#1D1D1D"   . "#FFFFFF"))
-(defvar tp-material-fg-text-2              '("#4D4D4D"   . "#B3B3B3"))
-(defvar tp-material-fg-primary             '("#1976D2"   . "#90CAF9"))
-(defvar tp-material-fg-secondary           '("#9C27B0"   . "#CE93D8"))
-(defvar tp-material-fg-success             '("#2E7D32"   . "#81C784"))
-(defvar tp-material-fg-warning             '("#ED6C02"   . "#FFB74D"))
-(defvar tp-material-fg-error               '("#D32F2F"   . "#EF9A9A"))
-(defvar tp-material-fg-info                '("#0288D1"   . "#81D4FA"))
-(defvar tp-material-bg-default             '("#FFFFFF"   . "#121212"))
-(defvar tp-material-bg-paper               '("#FFFFFF"   . "#1E1E1E"))
-(defvar tp-material-border-default         '("#E0E0E0"   . "#2A2A2A"))
-
-(defvar tp-bootstrap-fg-text           '("#212529"   . "#F8F9FA"))
-(defvar tp-bootstrap-fg-text-2         '("#6C757D"   . "#ADB5BD"))
-(defvar tp-bootstrap-fg-primary        '("#0D6EFD"   . "#0D6EFD"))
-(defvar tp-bootstrap-fg-secondary      '("#6C757D"   . "#6C757D"))
-(defvar tp-bootstrap-fg-success        '("#198754"   . "#198754"))
-(defvar tp-bootstrap-fg-warning        '("#FFC107"   . "#FFC107"))
-(defvar tp-bootstrap-fg-danger         '("#DC3545"   . "#DC3545"))
-(defvar tp-bootstrap-fg-info           '("#0DCAF0"   . "#0DCAF0"))
-(defvar tp-bootstrap-fg-link           '("#0D6EFD"   . "#6EA8FE"))
-(defvar tp-bootstrap-bg-body           '("#FFFFFF"   . "#212529"))
-(defvar tp-bootstrap-bg-surface        '("#F8F9FA"   . "#2B3035"))
-(defvar tp-bootstrap-bg-elevated       '("#FFFFFF"   . "#343A40"))
-(defvar tp-bootstrap-border-default    '("#DEE2E6"   . "#495057"))
-
-(defvar tp-tailwind-fg-text            '("#0F172A"   . "#E2E8F0")) ; slate-900 . slate-200
-(defvar tp-tailwind-fg-text-2          '("#334155"   . "#CBD5E1")) ; slate-700 . slate-300
-(defvar tp-tailwind-fg-muted           '("#64748B"   . "#94A3B8")) ; slate-500 . slate-400
-(defvar tp-tailwind-fg-primary         '("#3B82F6"   . "#60A5FA")) ; blue-500 . blue-400
-(defvar tp-tailwind-fg-success         '("#22C55E"   . "#4ADE80")) ; green-500 . green-400
-(defvar tp-tailwind-fg-warning         '("#F59E0B"   . "#FBBF24")) ; amber-500 . amber-400
-(defvar tp-tailwind-fg-error           '("#EF4444"   . "#F87171")) ; red-500 . red-400
-(defvar tp-tailwind-fg-info            '("#06B6D4"   . "#22D3EE")) ; cyan-500 . cyan-400
-(defvar tp-tailwind-bg-base            '("#FFFFFF"   . "#0B1220"))
-(defvar tp-tailwind-bg-subtle          '("#F8FAFC"   . "#0F172A")) ; slate-50 . slate-900
-(defvar tp-tailwind-bg-muted           '("#F1F5F9"   . "#111827")) ; slate-100 . gray-900
-(defvar tp-tailwind-border-default     '("#E2E8F0"   . "#1F2937")) ; slate-200 . gray-800
+(require 'tp-palette)
 
 ;;; Built-in text properties
 
 (define-tp tp-button (plist)
-  (let ((color (tp-parse-color (or (plist-get plist :color)
-                                   tp-ant-fg-success)))
-        (bgcolor (tp-parse-color (or (plist-get plist :bgcolor)
-                                     tp-ant-bg-container)))
-        (border-color (tp-parse-color tp-ant-border-default))
+  (let ((palette (plist-get plist :palette))
         (action (plist-get plist :action)))
-    `( face ( :box ( :color ,border-color
+    `( face ( :box ( :color ,(tp-palette-border-color palette)
                      :line-width (1 . 1)
                      :style released-button)
-              :foreground ,color
-              :background ,bgcolor)
+              :foreground ,(tp-palette-fg-color palette)
+              :background ,(tp-palette-bg-color palette))
        keymap ,(let ((keymap (make-sparse-keymap)))
                  (define-key keymap (kbd "<RET>") action)
                  (define-key keymap [mouse-1] action)
@@ -3810,6 +3752,11 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
                  boldp (plist-get props :bold))))
     `(face (:height ,height
                     ,@(when boldp '(:weight bold))))))
+
+(define-tp tp-palette (symbol)
+  (let ((plist (symbol-value symbol)))
+    `(face ( :foreground ,(tp-parse-color (plist-get plist :fg))
+             :background ,(tp-parse-color (plist-get plist :bg))))))
 
 (provide 'tp)
 ;;; tp.el ends here
