@@ -1,3 +1,22 @@
+;;; tp-palette.el --- Color palette definitions for tp.el -*- lexical-binding: t -*-
+
+;; Copyright (C) 2024
+
+;;; Commentary:
+
+;; This file provides color palette definitions for tp.el.
+;; Colors are designed to work well in both light and dark themes.
+;; Each palette entry has the format:
+;;   (:fg (LIGHT-FG . DARK-FG) :bg (LIGHT-BG . DARK-BG) :border (LIGHT-BORDER . DARK-BORDER))
+;;
+;; Color scheme inspired by:
+;; - GitHub Primer Design System
+;; - Tailwind CSS Color Palette
+;; - Material Design Color System
+;; - One Dark / One Light themes
+
+;;; Code:
+
 ;; ============================================
 ;; 基础文本样式 (Basic Text Styles)
 ;; ============================================
@@ -48,62 +67,78 @@
 
 ;; ============================================
 ;; 代码高亮样式 (Code Syntax Highlighting Styles)
+;; Based on One Dark/Light and popular editor themes
 ;; ============================================
 
 (defvar tp-palette-syntax-keyword
-  '(:fg ("#cf222e" . "#ff7b72") :bg ("#fff5f5" . "#2d1f1f")
-        :border ("#ffcecb" . "#5c3d3d"))
-  "关键字样式，如 if, else, def, class 等。")
+  '(:fg ("#a626a4" . "#c678dd") :bg (nil . nil)
+        :border ("#a626a4" . "#c678dd"))
+  "关键字样式，如 if, else, def, class 等。紫色调。")
 
 (defvar tp-palette-syntax-string
-  '(:fg ("#0a3069" . "#a5d6ff") :bg ("#f0f7ff" . "#1a2634")
-        :border ("#c8e1ff" . "#3d5a73"))
-  "字符串样式。")
+  '(:fg ("#50a14f" . "#98c379") :bg (nil . nil)
+        :border ("#50a14f" . "#98c379"))
+  "字符串样式。绿色调。")
 
 (defvar tp-palette-syntax-comment
-  '(:fg ("#6e7781" . "#8b949e") :bg ("#f6f8fa" . "#161b22")
-        :border ("#e1e4e8" . "#30363d"))
-  "注释样式。")
+  '(:fg ("#a0a1a7" . "#5c6370") :bg (nil . nil)
+        :border ("#a0a1a7" . "#5c6370"))
+  "注释样式。灰色调。")
 
 (defvar tp-palette-syntax-function
-  '(:fg ("#8250df" . "#d2a8ff") :bg ("#fbefff" . "#271d36")
-        :border ("#d8b9ff" . "#553d7a"))
-  "函数名样式。")
+  '(:fg ("#4078f2" . "#61afef") :bg (nil . nil)
+        :border ("#4078f2" . "#61afef"))
+  "函数名样式。蓝色调。")
 
 (defvar tp-palette-syntax-variable
-  '(:fg ("#953800" . "#ffa657") :bg ("#fff8f0" . "#2e2318")
-        :border ("#ffd8b5" . "#5c4427"))
-  "变量名样式。")
+  '(:fg ("#e45649" . "#e06c75") :bg (nil . nil)
+        :border ("#e45649" . "#e06c75"))
+  "变量名样式。红色调。")
 
 (defvar tp-palette-syntax-constant
-  '(:fg ("#0550ae" . "#79c0ff") :bg ("#f0f6ff" . "#1a2433")
-        :border ("#b6d7ff" . "#3d5573"))
-  "常量样式。")
+  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+        :border ("#986801" . "#d19a66"))
+  "常量样式。橙色调。")
 
 (defvar tp-palette-syntax-type
-  '(:fg ("#116329" . "#7ee787") :bg ("#f0fff4" . "#1a2e1f")
-        :border ("#a7f0ba" . "#3d6647"))
-  "类型样式，如类名、结构体名。")
+  '(:fg ("#c18401" . "#e5c07b") :bg (nil . nil)
+        :border ("#c18401" . "#e5c07b"))
+  "类型样式，如类名、结构体名。黄色调。")
 
 (defvar tp-palette-syntax-number
-  '(:fg ("#0550ae" . "#79c0ff") :bg ("#f0f6ff" . "#1a2433")
-        :border ("#b6d7ff" . "#3d5573"))
-  "数字样式。")
+  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+        :border ("#986801" . "#d19a66"))
+  "数字样式。橙色调。")
+
+(defvar tp-palette-syntax-operator
+  '(:fg ("#0184bc" . "#56b6c2") :bg (nil . nil)
+        :border ("#0184bc" . "#56b6c2"))
+  "运算符样式。青色调。")
 
 (defvar tp-palette-syntax-preprocessor
-  '(:fg ("#cf222e" . "#ff7b72") :bg ("#fff5f5" . "#2d1f1f")
-        :border ("#ffcecb" . "#5c3d3d"))
-  "预处理器样式，如 #include, #define。")
+  '(:fg ("#a626a4" . "#c678dd") :bg (nil . nil)
+        :border ("#a626a4" . "#c678dd"))
+  "预处理器样式，如 #include, #define。紫色调。")
 
 (defvar tp-palette-syntax-builtin
-  '(:fg ("#0550ae" . "#79c0ff") :bg ("#f0f6ff" . "#1a2433")
-        :border ("#b6d7ff" . "#3d5573"))
-  "内置函数/方法样式。")
+  '(:fg ("#0184bc" . "#56b6c2") :bg (nil . nil)
+        :border ("#0184bc" . "#56b6c2"))
+  "内置函数/方法样式。青色调。")
 
 (defvar tp-palette-syntax-regexp
-  '(:fg ("#116329" . "#7ee787") :bg ("#f0fff4" . "#1a2e1f")
-        :border ("#a7f0ba" . "#3d6647"))
-  "正则表达式样式。")
+  '(:fg ("#50a14f" . "#98c379") :bg (nil . nil)
+        :border ("#50a14f" . "#98c379"))
+  "正则表达式样式。绿色调。")
+
+(defvar tp-palette-syntax-attribute
+  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+        :border ("#986801" . "#d19a66"))
+  "属性/装饰器样式。橙色调。")
+
+(defvar tp-palette-syntax-tag
+  '(:fg ("#e45649" . "#e06c75") :bg (nil . nil)
+        :border ("#e45649" . "#e06c75"))
+  "HTML/XML 标签样式。红色调。")
 
 ;; ============================================
 ;; UI 界面样式 (UI Styles)
@@ -164,7 +199,7 @@
   "危险按钮样式（红色删除按钮）。")
 
 (defvar tp-palette-button-outline
-  '(:fg ("#0969da" . "#58a6ff") :bg ("transparent" . "transparent")
+  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
         :border ("#0969da" . "#58a6ff"))
   "轮廓按钮样式。")
 
@@ -264,7 +299,7 @@
 ;; ============================================
 
 (defvar tp-palette-region
-  '(:fg ("unspecified" . "unspecified") :bg ("#add6ff" . "#264f78")
+  '(:fg (nil . nil) :bg ("#add6ff" . "#264f78")
         :border ("#54aeff" . "#388bfd"))
   "选区样式。")
 
@@ -274,7 +309,7 @@
   "光标样式。")
 
 (defvar tp-palette-line-highlight
-  '(:fg ("unspecified" . "unspecified") :bg ("#f6f8fa" . "#161b22")
+  '(:fg (nil . nil) :bg ("#f6f8fa" . "#161b22")
         :border ("#eaeef2" . "#21262d"))
   "当前行高亮样式。")
 
@@ -342,12 +377,12 @@
   "Org 引用块样式。")
 
 (defvar tp-palette-org-link
-  '(:fg ("#0969da" . "#58a6ff") :bg ("transparent" . "transparent")
+  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
         :border ("#0969da" . "#58a6ff"))
   "Org 链接样式。")
 
 (defvar tp-palette-org-date
-  '(:fg ("#8250df" . "#a371f7") :bg ("transparent" . "transparent")
+  '(:fg ("#8250df" . "#a371f7") :bg (nil . nil)
         :border ("#8250df" . "#a371f7"))
   "Org 日期样式。")
 
@@ -434,44 +469,293 @@
 ;; ============================================
 
 (defvar tp-palette-rainbow-1
-  '(:fg ("#0969da" . "#58a6ff") :bg ("transparent" . "transparent")
-        :border ("#0969da" . "#58a6ff"))
-  "彩虹括号第一层样式。")
+  '(:fg ("#e45649" . "#e06c75") :bg (nil . nil)
+        :border ("#e45649" . "#e06c75"))
+  "彩虹括号第一层样式（红色）。")
 
 (defvar tp-palette-rainbow-2
-  '(:fg ("#8250df" . "#a371f7") :bg ("transparent" . "transparent")
-        :border ("#8250df" . "#a371f7"))
-  "彩虹括号第二层样式。")
+  '(:fg ("#986801" . "#d19a66") :bg (nil . nil)
+        :border ("#986801" . "#d19a66"))
+  "彩虹括号第二层样式（橙色）。")
 
 (defvar tp-palette-rainbow-3
-  '(:fg ("#1a7f37" . "#3fb950") :bg ("transparent" . "transparent")
-        :border ("#1a7f37" . "#3fb950"))
-  "彩虹括号第三层样式。")
+  '(:fg ("#c18401" . "#e5c07b") :bg (nil . nil)
+        :border ("#c18401" . "#e5c07b"))
+  "彩虹括号第三层样式（黄色）。")
 
 (defvar tp-palette-rainbow-4
-  '(:fg ("#953800" . "#ffa657") :bg ("transparent" .  "transparent")
-        :border ("#953800" . "#ffa657"))
-  "彩虹括号第四层样式。")
+  '(:fg ("#50a14f" . "#98c379") :bg (nil . nil)
+        :border ("#50a14f" . "#98c379"))
+  "彩虹括号第四层样式（绿色）。")
 
 (defvar tp-palette-rainbow-5
-  '(:fg ("#bf3989" . "#db61a2") :bg ("transparent" . "transparent")
-        :border ("#bf3989" . "#db61a2"))
-  "彩虹括号第五层样式。")
+  '(:fg ("#0184bc" . "#56b6c2") :bg (nil . nil)
+        :border ("#0184bc" . "#56b6c2"))
+  "彩虹括号第五层样式（青色）。")
 
 (defvar tp-palette-rainbow-6
-  '(:fg ("#0598bc" . "#39c5cf") :bg ("transparent" . "transparent")
-        :border ("#0598bc" . "#39c5cf"))
-  "彩虹括号第六层样式。")
+  '(:fg ("#4078f2" . "#61afef") :bg (nil . nil)
+        :border ("#4078f2" . "#61afef"))
+  "彩虹括号第六层样式（蓝色）。")
+
+(defvar tp-palette-rainbow-7
+  '(:fg ("#a626a4" . "#c678dd") :bg (nil . nil)
+        :border ("#a626a4" . "#c678dd"))
+  "彩虹括号第七层样式（紫色）。")
+
+(defvar tp-palette-rainbow-8
+  '(:fg ("#bf3989" . "#db61a2") :bg (nil . nil)
+        :border ("#bf3989" . "#db61a2"))
+  "彩虹括号第八层样式（粉色）。")
+
+;; ============================================
+;; 更多强调色 (Additional Accent Colors)
+;; Inspired by Tailwind CSS color palette
+;; ============================================
+
+(defvar tp-palette-accent-teal
+  '(:fg ("#0d9488" . "#2dd4bf") :bg ("#ccfbf1" . "#134e4a")
+        :border ("#14b8a6" . "#0d9488"))
+  "蓝绿色强调样式。")
+
+(defvar tp-palette-accent-indigo
+  '(:fg ("#4f46e5" . "#818cf8") :bg ("#e0e7ff" . "#312e81")
+        :border ("#6366f1" . "#4f46e5"))
+  "靛蓝色强调样式。")
+
+(defvar tp-palette-accent-rose
+  '(:fg ("#e11d48" . "#fb7185") :bg ("#ffe4e6" . "#4c0519")
+        :border ("#f43f5e" . "#e11d48"))
+  "玫瑰色强调样式。")
+
+(defvar tp-palette-accent-amber
+  '(:fg ("#d97706" . "#fbbf24") :bg ("#fef3c7" . "#451a03")
+        :border ("#f59e0b" . "#d97706"))
+  "琥珀色强调样式。")
+
+(defvar tp-palette-accent-lime
+  '(:fg ("#65a30d" . "#a3e635") :bg ("#ecfccb" . "#1a2e05")
+        :border ("#84cc16" . "#65a30d"))
+  "青柠色强调样式。")
+
+(defvar tp-palette-accent-emerald
+  '(:fg ("#059669" . "#34d399") :bg ("#d1fae5" . "#064e3b")
+        :border ("#10b981" . "#059669"))
+  "翡翠绿强调样式。")
+
+(defvar tp-palette-accent-sky
+  '(:fg ("#0284c7" . "#38bdf8") :bg ("#e0f2fe" . "#0c4a6e")
+        :border ("#0ea5e9" . "#0284c7"))
+  "天蓝色强调样式。")
+
+(defvar tp-palette-accent-violet
+  '(:fg ("#7c3aed" . "#a78bfa") :bg ("#ede9fe" . "#2e1065")
+        :border ("#8b5cf6" . "#7c3aed"))
+  "紫罗兰色强调样式。")
+
+(defvar tp-palette-accent-fuchsia
+  '(:fg ("#c026d3" . "#e879f9") :bg ("#fae8ff" . "#4a044e")
+        :border ("#d946ef" . "#c026d3"))
+  "洋红色强调样式。")
+
+;; ============================================
+;; 更多徽章样式 (Additional Badge Styles)
+;; ============================================
+
+(defvar tp-palette-badge-info
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#0969da" . "#1f6feb")
+        :border ("#0550ae" . "#388bfd"))
+  "信息徽章样式。")
+
+(defvar tp-palette-badge-purple
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#8250df" . "#8957e5")
+        :border ("#6e40c9" . "#a371f7"))
+  "紫色徽章样式。")
+
+(defvar tp-palette-badge-pink
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#bf3989" . "#db61a2")
+        :border ("#99306f" . "#f28cb1"))
+  "粉色徽章样式。")
+
+;; ============================================
+;; 按钮扩展样式 (Additional Button Styles)
+;; ============================================
+
+(defvar tp-palette-button-info
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#0969da" . "#1f6feb")
+        :border ("#0550ae" . "#388bfd"))
+  "信息按钮样式（蓝色）。")
+
+;; ============================================
+;; Markdown 样式 (Markdown Styles)
+;; ============================================
+
+(defvar tp-palette-markdown-heading
+  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
+        :border ("#0969da" . "#58a6ff"))
+  "Markdown 标题样式。")
+
+(defvar tp-palette-markdown-bold
+  '(:fg ("#24292f" . "#e6edf3") :bg (nil . nil)
+        :border ("#24292f" . "#e6edf3"))
+  "Markdown 粗体样式。")
+
+(defvar tp-palette-markdown-italic
+  '(:fg ("#57606a" . "#8b949e") :bg (nil . nil)
+        :border ("#57606a" . "#8b949e"))
+  "Markdown 斜体样式。")
+
+(defvar tp-palette-markdown-code
+  '(:fg ("#0550ae" . "#79c0ff") :bg ("#f6f8fa" . "#161b22")
+        :border ("#d0d7de" . "#30363d"))
+  "Markdown 行内代码样式。")
+
+(defvar tp-palette-markdown-link
+  '(:fg ("#0969da" . "#58a6ff") :bg (nil . nil)
+        :border ("#0969da" . "#58a6ff"))
+  "Markdown 链接样式。")
+
+(defvar tp-palette-markdown-blockquote
+  '(:fg ("#57606a" . "#8b949e") :bg ("#f6f8fa" . "#161b22")
+        :border ("#d0d7de" . "#30363d"))
+  "Markdown 引用块样式。")
+
+(defvar tp-palette-markdown-list
+  '(:fg ("#9a6700" . "#d29922") :bg (nil . nil)
+        :border ("#9a6700" . "#d29922"))
+  "Markdown 列表标记样式。")
+
+;; ============================================
+;; 灰度色阶 (Grayscale Palette)
+;; Inspired by Tailwind CSS neutral colors
+;; ============================================
+
+(defvar tp-palette-gray-50
+  '(:fg ("#24292f" . "#fafafa") :bg ("#fafafa" . "#171717")
+        :border ("#e5e5e5" . "#262626"))
+  "灰度 50 级别。")
+
+(defvar tp-palette-gray-100
+  '(:fg ("#24292f" . "#f5f5f5") :bg ("#f5f5f5" . "#1c1c1c")
+        :border ("#e5e5e5" . "#262626"))
+  "灰度 100 级别。")
+
+(defvar tp-palette-gray-200
+  '(:fg ("#24292f" . "#e5e5e5") :bg ("#e5e5e5" . "#262626")
+        :border ("#d4d4d4" . "#404040"))
+  "灰度 200 级别。")
+
+(defvar tp-palette-gray-300
+  '(:fg ("#24292f" . "#d4d4d4") :bg ("#d4d4d4" . "#404040")
+        :border ("#a3a3a3" . "#525252"))
+  "灰度 300 级别。")
+
+(defvar tp-palette-gray-400
+  '(:fg ("#24292f" . "#a3a3a3") :bg ("#a3a3a3" . "#525252")
+        :border ("#737373" . "#737373"))
+  "灰度 400 级别。")
+
+(defvar tp-palette-gray-500
+  '(:fg ("#ffffff" . "#737373") :bg ("#737373" . "#737373")
+        :border ("#525252" . "#a3a3a3"))
+  "灰度 500 级别。")
+
+(defvar tp-palette-gray-600
+  '(:fg ("#ffffff" . "#525252") :bg ("#525252" . "#a3a3a3")
+        :border ("#404040" . "#d4d4d4"))
+  "灰度 600 级别。")
+
+(defvar tp-palette-gray-700
+  '(:fg ("#ffffff" . "#404040") :bg ("#404040" . "#d4d4d4")
+        :border ("#262626" . "#e5e5e5"))
+  "灰度 700 级别。")
+
+(defvar tp-palette-gray-800
+  '(:fg ("#ffffff" . "#262626") :bg ("#262626" . "#e5e5e5")
+        :border ("#171717" . "#f5f5f5"))
+  "灰度 800 级别。")
+
+(defvar tp-palette-gray-900
+  '(:fg ("#ffffff" . "#171717") :bg ("#171717" . "#f5f5f5")
+        :border ("#0a0a0a" . "#fafafa"))
+  "灰度 900 级别。")
+
+;; ============================================
+;; 优先级样式 (Priority Styles)
+;; ============================================
+
+(defvar tp-palette-priority-highest
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#cf222e" . "#da3633")
+        :border ("#a40e26" . "#f85149"))
+  "最高优先级样式（红色）。")
+
+(defvar tp-palette-priority-high
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#bc4c00" . "#f0883e")
+        :border ("#953800" . "#ffa657"))
+  "高优先级样式（橙色）。")
+
+(defvar tp-palette-priority-medium
+  '(:fg ("#24292f" . "#24292f") :bg ("#ffd33d" . "#d29922")
+        :border ("#bf8700" . "#bb8009"))
+  "中等优先级样式（黄色）。")
+
+(defvar tp-palette-priority-low
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#1a7f37" . "#238636")
+        :border ("#116329" . "#2ea043"))
+  "低优先级样式（绿色）。")
+
+(defvar tp-palette-priority-lowest
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#0969da" . "#1f6feb")
+        :border ("#0550ae" . "#388bfd"))
+  "最低优先级样式（蓝色）。")
+
+;; ============================================
+;; 进度状态样式 (Progress Status Styles)
+;; ============================================
+
+(defvar tp-palette-status-pending
+  '(:fg ("#57606a" . "#8b949e") :bg ("#f6f8fa" . "#21262d")
+        :border ("#d0d7de" . "#30363d"))
+  "待处理状态样式（灰色）。")
+
+(defvar tp-palette-status-in-progress
+  '(:fg ("#0969da" . "#58a6ff") :bg ("#ddf4ff" . "#1f3d5c")
+        :border ("#54aeff" . "#388bfd"))
+  "进行中状态样式（蓝色）。")
+
+(defvar tp-palette-status-review
+  '(:fg ("#8250df" . "#a371f7") :bg ("#fbefff" . "#271d36")
+        :border ("#c297ff" . "#6e40c9"))
+  "审核中状态样式（紫色）。")
+
+(defvar tp-palette-status-completed
+  '(:fg ("#1a7f37" . "#3fb950") :bg ("#dafbe1" . "#1b4721")
+        :border ("#4ac26b" . "#238636"))
+  "已完成状态样式（绿色）。")
+
+(defvar tp-palette-status-cancelled
+  '(:fg ("#cf222e" . "#f85149") :bg ("#ffebe9" . "#542426")
+        :border ("#ff8182" . "#f85149"))
+  "已取消状态样式（红色）。")
+
+(defvar tp-palette-status-on-hold
+  '(:fg ("#9a6700" . "#d29922") :bg ("#fff8c5" . "#3d2e00")
+        :border ("#d4a72c" . "#9e6a03"))
+  "暂停状态样式（黄色）。")
 
 ;;; Utilities
 
 (defun tp-palette-fg-color (symbol)
+  "Get the foreground color from palette SYMBOL."
   (tp-parse-color (plist-get (symbol-value symbol) :fg)))
 
 (defun tp-palette-bg-color (symbol)
+  "Get the background color from palette SYMBOL."
   (tp-parse-color (plist-get (symbol-value symbol) :bg)))
 
 (defun tp-palette-border-color (symbol)
+  "Get the border color from palette SYMBOL."
   (tp-parse-color (plist-get (symbol-value symbol) :border)))
 
 (provide 'tp-palette)
+;;; tp-palette.el ends here

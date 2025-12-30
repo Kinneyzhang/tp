@@ -98,6 +98,39 @@ This is a list of (LAYER-NAME . CHANGED-VARS) pairs pending update.")
 (defvar tp--batch-update-active nil
   "When non-nil, we are inside a `tp-with-batch-updates' form.")
 
+;;; --- Built-in Text Property Names ---
+
+(defconst tp--builtin-text-properties
+  '(;; Display and appearance
+    face font-lock-face mouse-face display invisible intangible
+    ;; Interaction and help
+    help-echo cursor keymap local-map pointer
+    ;; Stickiness
+    front-sticky rear-nonsticky
+    ;; Text modification
+    read-only insert-in-front-hooks insert-behind-hooks
+    modification-hooks point-entered point-left
+    ;; Font and composition
+    fontified composition hard cursor-intangible
+    ;; Line properties
+    line-height line-spacing wrap-prefix line-prefix
+    ;; Field and input
+    field inhibit-line-move-field-capture
+    ;; Button and widget
+    button category follow-link action
+    ;; Syntax and parsing
+    syntax-table
+    ;; Misc
+    yank-handler auto-composed evaporate face-alias)
+  "List of built-in Emacs text property names.
+These property names are reserved and cannot be used as layer names in `define-tp'.
+Layer names that conflict with these will cause errors during text property operations.")
+
+(defun tp--builtin-text-property-p (name)
+  "Return non-nil if NAME is a built-in text property name.
+NAME should be a symbol."
+  (memq name tp--builtin-text-properties))
+
 ;;;============================================================================
 ;;; Layer 1: Basic Utility Functions
 ;;;============================================================================
@@ -2329,10 +2362,17 @@ ARGLIST must be either:
 - A list containing exactly one symbol for parameterized layers
 
 BODY is the property list expression. For parameterized layers,
-it will be evaluated with the argument bound."
+it will be evaluated with the argument bound.
+
+Note: NAME cannot be a built-in Emacs text property name like `face',
+`display', `invisible', etc. See `tp--builtin-text-properties' for the
+complete list of reserved names."
   (declare (indent defun))
   (unless (listp arglist)
     (error "define-tp ARGLIST must be a list"))
+  ;; Check for built-in text property name conflict
+  (when (tp--builtin-text-property-p name)
+    (error "define-tp: '%s' is a built-in Emacs text property name and cannot be used as a layer name" name))
   (cond
    ;; Non-parameterized: empty arglist - store as (LAYER-NAME nil BODY-FORM)
    ((null arglist)

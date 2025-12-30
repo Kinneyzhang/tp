@@ -3574,5 +3574,53 @@ When using tp-set (direct property setting), tp-name is NOT added."
       ;; Cleanup
       (ignore-errors (makunbound 'tp-test-text)))))
 
+;;; ============================================================
+;;; Built-in Text Property Name Validation Tests
+;;; ============================================================
+
+(ert-deftest tp-test-builtin-text-property-check ()
+  "Test that tp--builtin-text-property-p correctly identifies built-in properties."
+  ;; Check known built-in properties
+  (should (tp--builtin-text-property-p 'face))
+  (should (tp--builtin-text-property-p 'display))
+  (should (tp--builtin-text-property-p 'invisible))
+  (should (tp--builtin-text-property-p 'help-echo))
+  (should (tp--builtin-text-property-p 'keymap))
+  (should (tp--builtin-text-property-p 'mouse-face))
+  (should (tp--builtin-text-property-p 'read-only))
+  (should (tp--builtin-text-property-p 'front-sticky))
+  (should (tp--builtin-text-property-p 'rear-nonsticky))
+  ;; Check non-built-in properties
+  (should-not (tp--builtin-text-property-p 'tp-my-custom-layer))
+  (should-not (tp--builtin-text-property-p 'my-layer))
+  (should-not (tp--builtin-text-property-p 'custom-property)))
+
+(ert-deftest tp-test-define-tp-rejects-builtin-names ()
+  "Test that define-tp rejects built-in text property names."
+  (tp-test-with-temp-buffer
+    ;; Test that using 'face as a layer name raises an error
+    (should-error
+     (eval '(define-tp face () '(help-echo "test"))))
+    ;; Test that using 'display as a layer name raises an error
+    (should-error
+     (eval '(define-tp display () '(face bold))))
+    ;; Test that using 'invisible as a layer name raises an error
+    (should-error
+     (eval '(define-tp invisible () '(face bold))))
+    ;; Test that using 'keymap as a layer name raises an error
+    (should-error
+     (eval '(define-tp keymap () '(face bold))))
+    ;; Test that valid names work fine
+    (should (define-tp tp-test-valid-layer () '(face bold)))))
+
+(ert-deftest tp-test-define-tp-parameterized-rejects-builtin ()
+  "Test that parameterized define-tp also rejects built-in names."
+  (tp-test-with-temp-buffer
+    ;; Parameterized layer with built-in name should fail
+    (should-error
+     (eval '(define-tp display (value) `(face (:height ,value)))))
+    ;; Valid parameterized layer should work
+    (should (define-tp tp-test-param-valid (value) `(face (:height ,value))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
