@@ -3728,8 +3728,10 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
 ;;; Built-in text properties
 
 (define-tp tp-button (plist)
-  (let ((palette (plist-get plist :palette))
-        (action (plist-get plist :action)))
+  (let* ((palette (plist-get plist :palette))
+         (palette (intern (concat "tp-palette-"
+                                  (symbol-name palette))))
+         (action (plist-get plist :action)))
     `( face ( :box ( :color ,(tp-palette-border-color palette)
                      :line-width (1 . 1)
                      :style released-button)
