@@ -3769,16 +3769,17 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
 
 ;;; Built-in text properties
 
+(define-tp tp-palette (symbol)
+  (let ((palette (intern (concat "tp-palette-"
+                                 (symbol-name symbol)))))
+    `(face ( :foreground ,(tp-palette-fg-color palette)
+             :background ,(tp-palette-bg-color palette)
+             :box (:color ,(tp-palette-border-color palette))))))
+
 (define-tp tp-button (plist)
-  (let* ((palette (plist-get plist :palette))
-         (palette (intern (concat "tp-palette-"
-                                  (symbol-name palette))))
-         (action (plist-get plist :action)))
-    `( face ( :box ( :color ,(tp-palette-border-color palette)
-                     :line-width (1 . 1)
-                     :style released-button)
-              :foreground ,(tp-palette-fg-color palette)
-              :background ,(tp-palette-bg-color palette))
+  (let ((palette (plist-get plist :palette))
+        (action (plist-get plist :action)))
+    `( tp-palette ,palette 
        keymap ,(let ((keymap (make-sparse-keymap)))
                  (define-key keymap (kbd "<RET>") action)
                  (define-key keymap [mouse-1] action)
@@ -3796,11 +3797,6 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
                  boldp (plist-get props :bold))))
     `(face (:height ,height
                     ,@(when boldp '(:weight bold))))))
-
-(define-tp tp-palette (symbol)
-  (let ((plist (symbol-value symbol)))
-    `(face ( :foreground ,(tp-parse-color (plist-get plist :fg))
-             :background ,(tp-parse-color (plist-get plist :bg))))))
 
 (provide 'tp)
 ;;; tp.el ends here
