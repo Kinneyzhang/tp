@@ -455,9 +455,46 @@ You can also use reactive `tp-text` directly in property lists without defining 
 2. **Preserves existing properties**: When using `tp-set` or `tp-add` to set `tp-text`, existing text properties are preserved.
 3. **Non-reactive properties don't add tp-name**: If there are no reactive variables (`$` prefix) in the text properties, `tp-name` and other reactive-specific properties won't be added, maintaining native text property behavior.
 
+## Value Transformation with :transform
+
+The `:transform` keyword allows you to register a transformation function that processes `tp-text` values before they are displayed. This is useful for formatting numbers, dates, or other values:
+
+```lisp
+;; Number formatting
+(tp-define-layer 'price-display
+  :props '(tp-text $price)
+  :data '((price . "99.9"))
+  :transform (lambda (text)
+               (format "$%.2f" (string-to-number text))))
+;; 99.9 displays as $99.00
+
+;; Date formatting
+(tp-define-layer 'date-display
+  :props '(tp-text $timestamp)
+  :data '((timestamp . "1703865600"))
+  :transform (lambda (text)
+               (format-time-string "%Y-%m-%d" 
+                 (seconds-to-time (string-to-number text)))))
+
+;; Uppercase conversion
+(tp-define-layer 'uppercase-text
+  :props '(tp-text $content)
+  :data '((content . "hello"))
+  :transform #'upcase)
+;; "hello" displays as "HELLO"
+```
+
+The transform function:
+- Receives the raw `tp-text` string value
+- Returns the transformed string for display
+- Is applied both on initial display and reactive updates
+- Errors in transform functions are caught and logged
+
+> 📖 **For more optimization features like batched updates and debug mode, see [Reactive System Optimization](reactive-optimization-en.md)**
+
 ## Summary
 
-tp.el's reactive text properties feature brings a modern reactive programming experience to Emacs development. By using `$`-prefixed reactive variables, `:data` to define state, `:compute` for derived values, and `:watch` to monitor changes, you can build a more dynamic and maintainable text property system.
+tp.el's reactive text properties feature brings a modern reactive programming experience to Emacs development. By using `$`-prefixed reactive variables, `:data` to define state, `:compute` for derived values, `:watch` to monitor changes, and `:transform` for value formatting, you can build a more dynamic and maintainable text property system.
 
 Key points:
 1. **Reactive Variables**: Use `$` prefix to reference variables
@@ -465,5 +502,6 @@ Key points:
 3. **:data**: Define additional reactive state and initial values
 4. **:compute**: Define computed properties derived from other variables
 5. **:watch**: Watch variable changes and execute side effects
-6. **Automatic Updates**: Change variable values, all related text updates automatically
-7. **Reactive Text (tp-text)**: Make text content itself reactive
+6. **:transform**: Transform tp-text values before display
+7. **Automatic Updates**: Change variable values, all related text updates automatically
+8. **Reactive Text (tp-text)**: Make text content itself reactive

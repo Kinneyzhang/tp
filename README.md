@@ -98,9 +98,12 @@
   - [:data - Additional Reactive State](#data---additional-reactive-state)
   - [:compute - Computed Properties](#compute---computed-properties)
   - [:watch - Side Effect Callbacks](#watch---side-effect-callbacks)
+  - [:transform - Value Transformation](#transform---value-transformation)
   - [Anonymous Reactive Layers](#anonymous-reactive-layers)
   - [Layer Name Resolution in APIs](#layer-name-resolution-in-apis)
   - [Reactive Layer Groups](#reactive-layer-groups)
+  - [Batched Updates](#batched-updates)
+  - [Debug Mode](#debug-mode)
   - [Resetting Reactive State](#resetting-reactive-state)
   - [Complete Example: Theme-Aware Text](#complete-example-theme-aware-text)
 - [Practical Examples](#practical-examples)
@@ -2526,6 +2529,8 @@ Return t if OBJECT has no text properties.
 ## Reactive Text Properties
 
 > 📖 **For a comprehensive guide with detailed examples, see [Reactive Text Properties Complete Guide](docs/reactive-text-properties-en.md)**
+>
+> 📖 **For advanced optimization features, see [Reactive System Optimization](docs/reactive-optimization-en.md)**
 
 **Reactive Text Properties** is tp.el's groundbreaking innovation that brings reactive programming paradigms to Emacs text properties. Inspired by modern frontend frameworks like Vue.js, this feature enables text properties to automatically update when underlying variable values change.
 
@@ -2654,6 +2659,41 @@ The `:watch` keyword lets you execute callbacks when reactive variables change:
 ;; Message: "Layer monitored-layer: color changed from red to green"
 ```
 
+### :transform - Value Transformation
+
+The `:transform` keyword allows you to register a transformation function that processes `tp-text` values before they are displayed. This is useful for formatting numbers, dates, or other values:
+
+```elisp
+;; Number formatting
+(tp-define-layer 'price-display
+  :props '(tp-text $price)
+  :data '((price . "99.9"))
+  :transform (lambda (text)
+               (format "$%.2f" (string-to-number text))))
+;; 99.9 displays as $99.00
+
+;; Date formatting
+(tp-define-layer 'date-display
+  :props '(tp-text $timestamp)
+  :data '((timestamp . "1703865600"))
+  :transform (lambda (text)
+               (format-time-string "%Y-%m-%d" 
+                 (seconds-to-time (string-to-number text)))))
+
+;; Uppercase conversion
+(tp-define-layer 'uppercase-text
+  :props '(tp-text $content)
+  :data '((content . "hello"))
+  :transform #'upcase)
+;; "hello" displays as "HELLO"
+```
+
+The transform function:
+- Receives the raw `tp-text` string value
+- Returns the transformed string for display
+- Is applied both on initial display and reactive updates
+- Errors in transform functions are caught and logged
+
 ### Anonymous Reactive Layers
 
 You can use reactive variables even without `tp-define-layer`. When you use `$`-prefixed symbols in an anonymous plist, tp.el automatically generates a unique layer name:
@@ -2696,6 +2736,64 @@ Layer groups can also use reactive features:
               :data ((warning-color . "orange")))
   '("error"   :props (face (:foreground $error-color))
               :data ((error-color . "red"))))
+```
+
+### Batched Updates
+
+When modifying multiple reactive variables simultaneously, each `setq` triggers a separate buffer update. Use `tp-with-batch-updates` to consolidate all changes and apply them once at the end:
+
+```elisp
+(tp-define-layer 'themed-text
+  :props '(face (:foreground $fg-color :background $bg-color))
+  :data '((fg-color . "white") (bg-color . "black")))
+
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 12 'themed-text)
+  
+  ;; Without batching: each setq triggers a buffer update
+  (setq fg-color "yellow")  ; First update
+  (setq bg-color "navy")    ; Second update
+  
+  ;; With batching: all changes applied once at the end
+  (tp-with-batch-updates
+    (setq fg-color "red")
+    (setq bg-color "blue")))  ; Only one update
+```
+
+Benefits of batched updates:
+- Reduces redundant buffer modifications
+- Improves performance when changing multiple variables
+- Ensures consistent state when multiple variables are interdependent
+
+### Debug Mode
+
+tp.el provides a debug mode to help understand reactive update flow:
+
+```elisp
+;; Enable debug mode
+(setq tp-debug-mode t)
+
+;; Also show debug info in minibuffer (optional)
+(setq tp-debug-echo t)
+
+;; View debug log
+(tp-debug-show)
+
+;; Clear debug log
+(tp-debug-clear)
+```
+
+Debug log includes:
+- Variable change notifications (old → new value)
+- Layer update tracking
+- Batch update start/end
+- Transform application info
+
+Example debug output:
+```
+[12:34:56.789] Variable my-color changed: "red" -> "blue" (where: global)
+[12:34:56.790]   Updating layer test-layer (tp-text affected: no)
 ```
 
 ### Resetting Reactive State

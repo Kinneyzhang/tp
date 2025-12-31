@@ -97,9 +97,12 @@
   - [:data - 附加响应式状态](#data---附加响应式状态)
   - [:compute - 计算属性](#compute---计算属性)
   - [:watch - 副作用回调](#watch---副作用回调)
+  - [:transform - 值转换](#transform---值转换)
   - [匿名响应式层](#匿名响应式层)
   - [API 中的层名解析](#api-中的层名解析)
   - [响应式层组](#响应式层组)
+  - [批量更新](#批量更新)
+  - [调试模式](#调试模式)
   - [重置响应式状态](#重置响应式状态)
   - [完整示例：主题感知文本](#完整示例主题感知文本)
 - [实用示例](#实用示例)
@@ -2515,6 +2518,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ## 响应式文本属性
 
 > 📖 **完整的详细指南和示例，请参阅 [响应式文本属性完全指南](docs/reactive-text-properties.md)**
+>
+> 📖 **高级优化功能，请参阅 [响应式系统优化文档](docs/reactive-optimization.md)**
 
 **响应式文本属性**是 tp.el 的突破性创新，它将响应式编程范式带入了 Emacs 文本属性。受 Vue.js 等现代前端框架启发，这个功能使文本属性能够在底层变量值改变时自动更新。
 
@@ -2643,6 +2648,41 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; 消息: "层 monitored-layer: 颜色从 red 改为 green"
 ```
 
+### :transform - 值转换
+
+`:transform` 关键字允许你注册一个转换函数，在 `tp-text` 值显示之前对其进行处理。这对于格式化数字、日期或其他值非常有用：
+
+```elisp
+;; 数字格式化
+(tp-define-layer 'price-display
+  :props '(tp-text $price)
+  :data '((price . "99.9"))
+  :transform (lambda (text)
+               (format "$%.2f" (string-to-number text))))
+;; 99.9 显示为 $99.00
+
+;; 日期格式化
+(tp-define-layer 'date-display
+  :props '(tp-text $timestamp)
+  :data '((timestamp . "1703865600"))
+  :transform (lambda (text)
+               (format-time-string "%Y-%m-%d" 
+                 (seconds-to-time (string-to-number text)))))
+
+;; 大写转换
+(tp-define-layer 'uppercase-text
+  :props '(tp-text $content)
+  :data '((content . "hello"))
+  :transform #'upcase)
+;; "hello" 显示为 "HELLO"
+```
+
+转换函数的特点：
+- 接收原始的 `tp-text` 字符串值
+- 返回用于显示的转换后字符串
+- 在初始显示和响应式更新时都会应用
+- 转换函数中的错误会被捕获并记录
+
 ### 匿名响应式层
 
 即使不使用 `tp-define-layer`，你也可以使用响应式变量。当你在匿名 plist 中使用 `$` 前缀的符号时，tp.el 会自动生成唯一的层名：
@@ -2685,6 +2725,64 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
               :data ((warning-color . "orange")))
   '("error"   :props (face (:foreground $error-color))
               :data ((error-color . "red"))))
+```
+
+### 批量更新
+
+同时修改多个响应式变量时，每个 `setq` 都会触发一次缓冲区更新。使用 `tp-with-batch-updates` 可以合并所有更改，在结束时一次性应用：
+
+```elisp
+(tp-define-layer 'themed-text
+  :props '(face (:foreground $fg-color :background $bg-color))
+  :data '((fg-color . "white") (bg-color . "black")))
+
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 12 'themed-text)
+  
+  ;; 不使用批量更新：每个 setq 都会触发一次缓冲区更新
+  (setq fg-color "yellow")  ; 第一次更新
+  (setq bg-color "navy")    ; 第二次更新
+  
+  ;; 使用批量更新：所有变化在结束时一次性应用
+  (tp-with-batch-updates
+    (setq fg-color "red")
+    (setq bg-color "blue")))  ; 只更新一次
+```
+
+批量更新的好处：
+- 减少冗余的缓冲区修改
+- 提高同时更改多个变量时的性能
+- 当多个变量相互依赖时确保状态一致
+
+### 调试模式
+
+tp.el 提供调试模式来帮助理解响应式更新流程：
+
+```elisp
+;; 启用调试模式
+(setq tp-debug-mode t)
+
+;; 同时在 minibuffer 显示调试信息（可选）
+(setq tp-debug-echo t)
+
+;; 查看调试日志
+(tp-debug-show)
+
+;; 清除调试日志
+(tp-debug-clear)
+```
+
+调试日志包含：
+- 变量变化通知（旧值 → 新值）
+- 层更新追踪
+- 批量更新开始/结束
+- 转换应用信息
+
+调试输出示例：
+```
+[12:34:56.789] Variable my-color changed: "red" -> "blue" (where: global)
+[12:34:56.790]   Updating layer test-layer (tp-text affected: no)
 ```
 
 ### 重置响应式状态

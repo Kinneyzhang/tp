@@ -208,6 +208,27 @@ tp.el 采用分层架构设计，每一层建立在下层功能之上：
 |------|------|------|
 | `tp--handle-tp-text-property` | 处理 tp-text 属性 | - |
 
+#### 批量更新
+| 函数/宏 | 描述 | 依赖 |
+|---------|------|------|
+| `tp-with-batch-updates` | 批量更新宏 | tp--flush-batch-updates |
+| `tp--flush-batch-updates` | 刷新待处理的批量更新 | tp--update-layer-regions, tp--update-reactive-text |
+
+#### 值转换
+| 变量/函数 | 描述 | 依赖 |
+|-----------|------|------|
+| `tp-layer-transforms` | 存储层转换函数的 alist | - |
+| `:transform` 选项 | 在 tp-define-layer 中指定转换函数 | tp-layer-transforms |
+
+#### 调试工具
+| 变量/函数 | 描述 | 依赖 |
+|-----------|------|------|
+| `tp-debug-mode` | 启用/禁用调试模式 | - |
+| `tp-debug-echo` | 是否在 minibuffer 显示调试信息 | - |
+| `tp-debug-log` | 记录调试信息 | tp-debug-mode, tp-debug-echo |
+| `tp-debug-show` | 显示 *tp-debug* 缓冲区 | - |
+| `tp-debug-clear` | 清除调试日志 | - |
+
 ---
 
 ### 第五层：高级 API

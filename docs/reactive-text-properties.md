@@ -455,9 +455,46 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 2. **保留现有属性**：使用 `tp-set` 或 `tp-add` 设置 `tp-text` 时，现有的文本属性会被保留。
 3. **非响应式属性不添加 tp-name**：如果文本属性中没有响应式变量（`$` 前缀），则不会添加 `tp-name` 等响应式专用属性，保持原生文本属性行为。
 
+## 使用 :transform 进行值转换
+
+`:transform` 关键字允许你注册一个转换函数，在 `tp-text` 值显示之前对其进行处理。这对于格式化数字、日期或其他值非常有用：
+
+```lisp
+;; 数字格式化
+(tp-define-layer 'price-display
+  :props '(tp-text $price)
+  :data '((price . "99.9"))
+  :transform (lambda (text)
+               (format "$%.2f" (string-to-number text))))
+;; 99.9 显示为 $99.00
+
+;; 日期格式化
+(tp-define-layer 'date-display
+  :props '(tp-text $timestamp)
+  :data '((timestamp . "1703865600"))
+  :transform (lambda (text)
+               (format-time-string "%Y-%m-%d" 
+                 (seconds-to-time (string-to-number text)))))
+
+;; 大写转换
+(tp-define-layer 'uppercase-text
+  :props '(tp-text $content)
+  :data '((content . "hello"))
+  :transform #'upcase)
+;; "hello" 显示为 "HELLO"
+```
+
+转换函数的特点：
+- 接收原始的 `tp-text` 字符串值
+- 返回用于显示的转换后字符串
+- 在初始显示和响应式更新时都会应用
+- 转换函数中的错误会被捕获并记录
+
+> 📖 **更多优化功能如批量更新和调试模式，请参阅 [响应式系统优化文档](reactive-optimization.md)**
+
 ## 总结
 
-tp.el 的响应式文本属性功能为 Emacs 开发带来了现代化的响应式编程体验。通过使用 `$` 前缀的响应式变量、`:data` 定义状态、`:compute` 计算派生值、`:watch` 监听变化，你可以构建出更加动态、易于维护的文本属性系统。
+tp.el 的响应式文本属性功能为 Emacs 开发带来了现代化的响应式编程体验。通过使用 `$` 前缀的响应式变量、`:data` 定义状态、`:compute` 计算派生值、`:watch` 监听变化、`:transform` 格式化值，你可以构建出更加动态、易于维护的文本属性系统。
 
 核心要点：
 1. **响应式变量**：使用 `$` 前缀引用变量
@@ -465,5 +502,6 @@ tp.el 的响应式文本属性功能为 Emacs 开发带来了现代化的响应�
 3. **:data**：定义额外的响应式状态和初始值
 4. **:compute**：定义由其他变量派生的计算属性
 5. **:watch**：监听变量变化并执行副作用
-6. **自动更新**：改变变量值，所有相关文本自动更新
-7. **响应式文本 (tp-text)**：让文本内容本身也能响应式更新
+6. **:transform**：在显示之前转换 tp-text 值
+7. **自动更新**：改变变量值，所有相关文本自动更新
+8. **响应式文本 (tp-text)**：让文本内容本身也能响应式更新
