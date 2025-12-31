@@ -3622,5 +3622,85 @@ When using tp-set (direct property setting), tp-name is NOT added."
     ;; Valid parameterized layer should work
     (should (define-tp tp-test-param-valid (value) `(face (:height ,value))))))
 
+;;; ============================================================
+;;; Nested Layer Resolution Tests
+;;; ============================================================
+
+(ert-deftest tp-test-nested-layer-resolution ()
+  "Test that nested custom layers are resolved to built-in properties.
+When a layer's body returns a plist containing other custom layer names,
+those should be recursively expanded to their built-in properties."
+  (tp-test-with-temp-buffer
+    ;; Define a base layer that returns built-in properties
+    (define-tp tp-test-base-layer (color)
+      `(face (:foreground ,color :background "white")))
+    ;; Define a wrapper layer that uses the base layer
+    (define-tp tp-test-wrapper-layer (plist)
+      (let ((color (plist-get plist :color)))
+        `(tp-test-base-layer ,color
+          help-echo "wrapper")))
+    ;; Use the wrapper layer
+    (let ((result (tp-set "test" 'tp-test-wrapper-layer '(:color "red"))))
+      ;; The face property should be resolved from tp-test-base-layer
+      (should (equal (plist-get (get-text-property 0 'face result) :foreground) "red"))
+      (should (equal (plist-get (get-text-property 0 'face result) :background) "white"))
+      ;; help-echo should also be present
+      (should (equal (get-text-property 0 'help-echo result) "wrapper"))
+      ;; tp-test-base-layer should NOT be present as a property
+      (should (null (get-text-property 0 'tp-test-base-layer result))))))
+
+(ert-deftest tp-test-nested-layer-resolution-with-tp-palette ()
+  "Test nested layer resolution with tp-palette and tp-button pattern.
+This tests the exact use case from the issue: tp-button uses tp-palette
+internally, and the final result should have face properties, not tp-palette."
+  (tp-test-with-temp-buffer
+    ;; Re-define tp-palette and tp-button since tp-test-with-temp-buffer resets tp-layer-alist
+    (define-tp tp-palette (symbol)
+      (let ((palette (intern (concat "tp-palette-"
+                                     (symbol-name symbol)))))
+        `(face ( :foreground ,(tp-palette-fg-color palette)
+                 :background ,(tp-palette-bg-color palette)
+                 :box (:color ,(tp-palette-border-color palette))))))
+    (define-tp tp-button (plist)
+      (let ((palette (plist-get plist :palette))
+            (action (plist-get plist :action)))
+        `( tp-palette ,palette 
+           keymap ,(let ((keymap (make-sparse-keymap)))
+                     (define-key keymap (kbd "<RET>") action)
+                     (define-key keymap [mouse-1] action)
+                     keymap))))
+    ;; Test that using tp-button resolves tp-palette to face properties
+    (let ((result (tp-set "emacs" 'tp-button '(:palette org-code))))
+      ;; The face property should be resolved from tp-palette
+      (let ((face-prop (get-text-property 0 'face result)))
+        (should face-prop)
+        (should (plist-get face-prop :foreground))
+        (should (plist-get face-prop :background))
+        (should (plist-get face-prop :box)))
+      ;; keymap should also be present
+      (should (get-text-property 0 'keymap result))
+      ;; tp-palette should NOT be present as a property
+      (should (null (get-text-property 0 'tp-palette result))))))
+
+(ert-deftest tp-test-deeply-nested-layer-resolution ()
+  "Test that deeply nested layers (3 levels) are fully resolved."
+  (tp-test-with-temp-buffer
+    ;; Define 3 levels of nesting
+    (define-tp tp-test-level1 (val)
+      `(face (:foreground ,val)))
+    (define-tp tp-test-level2 (val)
+      `(tp-test-level1 ,val help-echo "level2"))
+    (define-tp tp-test-level3 (val)
+      `(tp-test-level2 ,val display "level3"))
+    ;; Use the most deeply nested layer
+    (let ((result (tp-set "test" 'tp-test-level3 "blue")))
+      ;; All properties should be resolved
+      (should (equal (plist-get (get-text-property 0 'face result) :foreground) "blue"))
+      (should (equal (get-text-property 0 'help-echo result) "level2"))
+      (should (equal (get-text-property 0 'display result) "level3"))
+      ;; None of the custom layer names should be present
+      (should (null (get-text-property 0 'tp-test-level1 result)))
+      (should (null (get-text-property 0 'tp-test-level2 result))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

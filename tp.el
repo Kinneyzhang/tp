@@ -2634,7 +2634,8 @@ Also includes tp-name automatically if the layer has reactive dependencies regis
 Handles two storage formats:
 1. Old format (from tp--set-layer-props): (LAYER-NAME . PLIST) - flat plist
 2. Unified format (from define-tp): (LAYER-NAME ARGLIST BODY-FORM)
-For parameterized layers (ARGLIST non-nil), returns nil - use `tp-layer-props-with-arg'."
+For parameterized layers (ARGLIST non-nil), returns nil - use `tp-layer-props-with-arg'.
+Recursively expands any nested layer names in the returned plist."
   (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
     ;; Auto-include tp-name for layers with reactive deps
     (let ((needs-tp-name (or include-tp-name
@@ -2654,14 +2655,21 @@ For parameterized layers (ARGLIST non-nil), returns nil - use `tp-layer-props-wi
             ;; Non-parameterized - evaluate body and return props
             (let ((plist (eval body)))
               (when plist
+                ;; Recursively expand nested layer names
+                (when (tp--plist-has-layer-key-p plist)
+                  (setq plist (tp--expand-layer-in-plist plist)))
                 (if needs-tp-name
                     (append plist (list 'tp-name layer-name))
                   plist))))))
        ;; Old format: entry is just a flat plist
        (t
-        (if needs-tp-name
-            (append entry (list 'tp-name layer-name))
-          entry))))))
+        (let ((plist entry))
+          ;; Recursively expand nested layer names
+          (when (tp--plist-has-layer-key-p plist)
+            (setq plist (tp--expand-layer-in-plist plist)))
+          (if needs-tp-name
+              (append plist (list 'tp-name layer-name))
+            plist)))))))
 
 (defun tp-layer-parameterized-p (layer-name)
   "Return non-nil if LAYER-NAME is a parameterized layer.
@@ -2678,7 +2686,8 @@ where ARGLIST is a non-nil list of argument symbols."
 (defun tp-layer-props-with-arg (layer-name arg &optional include-tp-name)
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
-If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer."
+If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer.
+Recursively expands any nested layer names in the returned plist."
   (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
     ;; entry is (ARGLIST BODY-FORM)
     (let ((arglist (car entry))
@@ -2688,6 +2697,9 @@ If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer."
                ;; Evaluate the body with the argument bound
                (plist (eval `(let ((,arg-sym ',arg)) ,body))))
           (when plist
+            ;; Recursively expand nested layer names
+            (when (tp--plist-has-layer-key-p plist)
+              (setq plist (tp--expand-layer-in-plist plist)))
             (if include-tp-name
                 (append plist (list 'tp-name layer-name))
               plist)))))))
@@ -2706,10 +2718,16 @@ If INCLUDE-TP-NAME is non-nil, each layer's props will include tp-name."
        (or (assoc sym tp-layer-alist)
            (assoc sym tp-layer-groups))))
 
+(defun tp--plist-has-layer-key-p (plist)
+  "Return non-nil if PLIST contains any layer names as keys."
+  (cl-loop for (key _val) on plist by #'cddr
+           thereis (tp--is-layer-name-p key)))
+
 (defun tp--expand-layer-in-plist (props)
   "Expand any layer names found in PROPS plist.
 Scans through PROPS treating it as a plist (key value pairs).
 When a key is a layer/group name, expands it with its properties.
+Recursively expands until no more layer names are found in the result.
 Does NOT add tp-name - this is for direct property setting (tp-set/add/reset).
 Returns the expanded plist."
   (let ((result nil)
@@ -2736,6 +2754,9 @@ Returns the expanded plist."
                      ;; Reverse so first layer's properties are applied last (take precedence)
                      (apply #'append (reverse layer-props-list)))))))
             (when layer-props
+              ;; Recursively expand if the layer props contain more layer names
+              (when (tp--plist-has-layer-key-p layer-props)
+                (setq layer-props (tp--expand-layer-in-plist layer-props)))
               (setq result (append result layer-props)))))
          ;; Regular property - keep as-is
          (t
