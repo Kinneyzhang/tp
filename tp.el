@@ -1066,8 +1066,8 @@ Supports multiple calling conventions:
       (setq props (car props)))
     ;; Merge duplicate keys in the plist (for single-call property setting)
     ;; This must happen before tp--resolve-props to properly handle face merging
-    ;; Use (cddr props) for O(1) check instead of (> (length props) 2)
-    (when (and (listp props) (cddr props))
+    ;; Use (cdddr props) for O(1) check - need at least 4 elements (2 key-value pairs) for possible duplicates
+    (when (and (listp props) (cdddr props))
       (setq props (tp--merge-duplicate-keys props)))
     ;; Resolve props: handles layer/group names and anonymous reactive plists
     (when props
@@ -2868,8 +2868,8 @@ Returns the expanded plist."
           (setq result (append result (list key val)))))
         (setq remaining (cddr remaining))))
     ;; Merge duplicate keys in the expanded result
-    ;; Use (cddr result) for O(1) check instead of (> (length result) 2)
-    (if (cddr result)
+    ;; Use (cdddr result) for O(1) check - need at least 4 elements (2 key-value pairs) for possible duplicates
+    (if (cdddr result)
         (tp--merge-duplicate-keys result)
       result)))
 
@@ -2938,8 +2938,13 @@ For group names, includes `tp-layers' property with the full layer stack."
           ;; Recursively resolve extra properties (they may also contain layer names)
           (let ((expanded-props
                  (if (and layer-props extra-props)
-                     (let ((resolved-extra (tp--expand-layer-in-plist extra-props)))
-                       (append layer-props resolved-extra))
+                     (let* ((resolved-extra (tp--expand-layer-in-plist extra-props))
+                            (combined (append layer-props resolved-extra)))
+                       ;; Merge duplicate keys after combining layer props with extra props
+                       ;; Need at least 4 elements (2 key-value pairs) for possible duplicates
+                       (if (cdddr combined)
+                           (tp--merge-duplicate-keys combined)
+                         combined))
                    layer-props)))
             ;; After expansion, check for reactive symbols in the merged props
             ;; (original props may contain $vars that need reactive tracking)
