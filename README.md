@@ -183,6 +183,28 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
   ```
 - ✅ **Deep Merge**: `tp-add` recursively merges nested plist structures
 - ✅ **Smart Face Merging**: Symbol faces are automatically prepended to face lists, plist faces are deep merged
+- ✅ **Automatic Duplicate Property Merging in Single Call**: When the same property (e.g., `face`) is specified multiple times in a single `tp-set`/`tp-add`/`tp-reset` call, they are automatically merged
+
+```elisp
+;; Merge multiple faces in a single call
+(tp-set "emacs"
+        'face 'bold
+        'face '(:background "green")
+        'face '(:foreground "red"))
+;; Result: face is ((:background "green" :foreground "red") bold)
+
+;; Later values override earlier ones for the same sub-property
+(tp-set "emacs"
+        'face '(:foreground "red")
+        'face '(:foreground "yellow"))
+;; Result: foreground is "yellow"
+
+;; Use with tp-palette layer
+(tp-set "emacs"
+        'tp-palette 'info
+        'face '(:foreground "red"))
+;; Result: tp-palette's face is merged with (:foreground "red")
+```
 
 ### Innovative Property Layer System
 
@@ -471,6 +493,25 @@ LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or 
   :data ((my-color . "blue")))
 (tp-set " " 'my-style)
 ;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
+
+;; Merge multiple faces in a single call (duplicate properties auto-merged)
+(tp-set "emacs"
+        'face 'bold
+        'face '(:background "green")
+        'face '(:foreground "red"))
+;; => Three faces merged into one: ((:background "green" :foreground "red") bold)
+
+;; Later values override earlier ones for the same sub-property
+(tp-set "emacs"
+        'face '(:foreground "red")
+        'face '(:foreground "yellow"))
+;; => face's :foreground is "yellow" (later overrides earlier)
+
+;; Use with tp-palette layer, merging extra face properties
+(tp-set "emacs"
+        'tp-palette 'info
+        'face '(:foreground "red"))
+;; => tp-palette's face is merged with (:foreground "red"), :foreground is overridden
 ```
 
 ---

@@ -244,6 +244,106 @@ NEW values override BASE values."
                   (t val))))))
     result))
 
+(defun tp--merge-face-values (face1 face2)
+  "Merge two face values into one.
+FACE1 is the earlier value, FACE2 is the later value.
+For face plists (like (:foreground \"red\")), merge with later overriding.
+For symbol faces, create a list with FACE2 taking precedence.
+Returns the merged face value."
+  (cond
+   ;; No earlier face - just use later face
+   ((null face1) face2)
+   ;; No later face - just use earlier face
+   ((null face2) face1)
+   ;; Both are plists - merge with later overriding earlier
+   ((and (listp face1) (keywordp (car-safe face1))
+         (listp face2) (keywordp (car-safe face2)))
+    (tp--deep-merge-plist face1 face2))
+   ;; Later is a plist, earlier is a symbol or list of faces
+   ((and (listp face2) (keywordp (car-safe face2)))
+    (cond
+     ((symbolp face1)
+      (list face2 face1))
+     ((listp face1)
+      (cons face2 face1))
+     (t face2)))
+   ;; Earlier is a plist, later is a symbol
+   ((and (listp face1) (keywordp (car-safe face1))
+         (symbolp face2))
+    (list face2 face1))
+   ;; Later is a symbol - prepend to earlier
+   ((symbolp face2)
+    (cond
+     ((symbolp face1)
+      (if (eq face1 face2)
+          face2
+        (list face2 face1)))
+     ((listp face1)
+      (if (member face2 face1)
+          (cons face2 (remove face2 face1))  ; Move to front
+        (cons face2 face1)))
+     (t face2)))
+   ;; Later is a list of faces - prepend to earlier
+   ((listp face2)
+    (cond
+     ((symbolp face1)
+      (if (member face1 face2)
+          face2
+        (append face2 (list face1))))
+     ((listp face1)
+      (append face2
+              (cl-remove-if (lambda (f) (member f face2)) face1)))
+     (t face2)))
+   (t face2)))
+
+(defun tp--merge-duplicate-keys (plist)
+  "Merge duplicate keys in PLIST into a single key-value pair.
+For `face' and `font-lock-face' properties, values are merged so that
+later values take precedence over earlier ones for the same sub-properties.
+For other properties, later values override earlier ones.
+
+This function is designed for single-call property setting where multiple
+properties of the same type can be specified and should be merged.
+
+Example:
+  (tp--merge-duplicate-keys \\='(face bold face (:foreground \"red\")))
+  => (face ((:foreground \"red\") bold))
+
+  (tp--merge-duplicate-keys \\='(face (:background \"blue\") face (:foreground \"red\")))
+  => (face (:background \"blue\" :foreground \"red\"))
+
+  (tp--merge-duplicate-keys \\='(prop1 a prop2 b prop1 c))
+  => (prop1 c prop2 b)"
+  (let ((key-values (make-hash-table :test 'eq))
+        (key-order nil))
+    ;; Collect all values for each key in order
+    (cl-loop for (key val) on plist by #'cddr
+             do (progn
+                  (unless (gethash key key-values)
+                    (push key key-order))
+                  (puthash key
+                           (cons val (gethash key key-values))
+                           key-values)))
+    ;; Reverse key-order to get original order
+    (setq key-order (nreverse key-order))
+    ;; Build result plist by merging values for each key
+    (let ((result nil))
+      (dolist (key key-order)
+        (let ((values (nreverse (gethash key key-values))))  ; Reverse to get original order
+          (if (= (length values) 1)
+              ;; Single value - use as-is
+              (setq result (append result (list key (car values))))
+            ;; Multiple values - merge them
+            (let ((merged-val
+                   (cond
+                    ;; Face properties - use special face merging
+                    ((memq key '(face font-lock-face mouse-face))
+                     (cl-reduce #'tp--merge-face-values values))
+                    ;; Other properties - later overrides earlier
+                    (t (car (last values))))))
+              (setq result (append result (list key merged-val)))))))
+      result)))
+
 (defun tp--get-nested (value path)
   "Get nested value from VALUE following PATH (list of keys).
 Supports plists, alists, and list-of-keys extraction."
@@ -964,6 +1064,11 @@ Supports multiple calling conventions:
     ;; Unwrap double-wrapped properties
     (when (and (listp props) (listp (car-safe props)))
       (setq props (car props)))
+    ;; Merge duplicate keys in the plist (for single-call property setting)
+    ;; This must happen before tp--resolve-props to properly handle face merging
+    ;; Use (cddr props) for O(1) check instead of (> (length props) 2)
+    (when (and (listp props) (cddr props))
+      (setq props (tp--merge-duplicate-keys props)))
     ;; Resolve props: handles layer/group names and anonymous reactive plists
     (when props
       (setq props (or (tp--resolve-props props) props)))
@@ -2762,7 +2867,11 @@ Returns the expanded plist."
          (t
           (setq result (append result (list key val)))))
         (setq remaining (cddr remaining))))
-    result))
+    ;; Merge duplicate keys in the expanded result
+    ;; Use (cddr result) for O(1) check instead of (> (length result) 2)
+    (if (cddr result)
+        (tp--merge-duplicate-keys result)
+      result)))
 
 (defun tp--resolve-props (props)
   "Resolve PROPS to a property list with layer metadata.

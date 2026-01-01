@@ -182,6 +182,28 @@
   ```
 - ✅ **深度合并**：`tp-add` 递归合并嵌套的 plist 结构
 - ✅ **Face 智能合并**：符号 face 自动前置到 face 列表，plist face 深度合并
+- ✅ **单次设置中的重复属性自动合并**：在一次 `tp-set`/`tp-add`/`tp-reset` 调用中，如果同一属性（如 `face`）被指定多次，它们会自动合并
+
+```elisp
+;; 单次调用中合并多个 face
+(tp-set "emacs"
+        'face 'bold
+        'face '(:background "green")
+        'face '(:foreground "red"))
+;; 结果: face 是 ((:background "green" :foreground "red") bold)
+
+;; 同一子属性后面的覆盖前面的
+(tp-set "emacs"
+        'face '(:foreground "red")
+        'face '(:foreground "yellow"))
+;; 结果: foreground 是 "yellow"
+
+;; 与 tp-palette 层配合使用
+(tp-set "emacs"
+        'tp-palette 'info
+        'face '(:foreground "red"))
+;; 结果: tp-palette 的 face 与 (:foreground "red") 合并
+```
 
 ### 创新的属性层系统
 
@@ -462,6 +484,25 @@ LAYER-NAME 可以是通过 `tp-define-layer` 定义的层名称或通过 `tp-def
   :data '((my-color . "blue")))
 (tp-set " " 'my-style)
 ;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
+
+;; 单次调用中合并多个 face（重复属性自动合并）
+(tp-set "emacs"
+        'face 'bold
+        'face '(:background "green")
+        'face '(:foreground "red"))
+;; => 三个 face 合并为一个: ((:background "green" :foreground "red") bold)
+
+;; 同一子属性后面的值覆盖前面的
+(tp-set "emacs"
+        'face '(:foreground "red")
+        'face '(:foreground "yellow"))
+;; => face 的 :foreground 是 "yellow"（后面的覆盖前面的）
+
+;; 与 tp-palette 层配合使用，合并额外的 face 属性
+(tp-set "emacs"
+        'tp-palette 'info
+        'face '(:foreground "red"))
+;; => tp-palette 的 face 与 (:foreground "red") 合并，:foreground 被覆盖
 ```
 
 ---

@@ -3702,5 +3702,163 @@ internally, and the final result should have face properties, not tp-palette."
       (should (null (get-text-property 0 'tp-test-level1 result)))
       (should (null (get-text-property 0 'tp-test-level2 result))))))
 
+;;; ============================================================
+;;; Duplicate Property Merging Tests
+;;; ============================================================
+
+(ert-deftest tp-test-merge-duplicate-face-symbols ()
+  "Test that multiple face symbols in one call are merged into a face list."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs"
+                          'face 'bold
+                          'face 'italic)))
+      ;; Should be a list with italic first (later takes precedence)
+      (let ((face-prop (get-text-property 0 'face result)))
+        (should (listp face-prop))
+        (should (memq 'bold face-prop))
+        (should (memq 'italic face-prop))
+        ;; italic should come before bold (later value takes precedence)
+        (should (< (cl-position 'italic face-prop)
+                   (cl-position 'bold face-prop)))))))
+
+(ert-deftest tp-test-merge-duplicate-face-plists ()
+  "Test that multiple face plists in one call are merged."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs"
+                          'face '(:background "green")
+                          'face '(:foreground "red"))))
+      (let ((face-prop (get-text-property 0 'face result)))
+        ;; Should be a merged plist
+        (should (plist-get face-prop :background))
+        (should (plist-get face-prop :foreground))
+        (should (equal (plist-get face-prop :background) "green"))
+        (should (equal (plist-get face-prop :foreground) "red"))))))
+
+(ert-deftest tp-test-merge-duplicate-face-later-overrides ()
+  "Test that later face plist values override earlier ones for same key."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs"
+                          'face '(:foreground "red")
+                          'face '(:foreground "yellow"))))
+      (let ((face-prop (get-text-property 0 'face result)))
+        ;; Later value should override
+        (should (equal (plist-get face-prop :foreground) "yellow"))))))
+
+(ert-deftest tp-test-merge-face-symbol-and-plist ()
+  "Test merging face symbol with face plist."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs"
+                          'face 'bold
+                          'face '(:background "green")
+                          'face '(:foreground "red"))))
+      (let ((face-prop (get-text-property 0 'face result)))
+        ;; Should be a list with plist and symbol
+        (should (listp face-prop))
+        ;; First element should be the merged plist (plists merge together)
+        (should (listp (car face-prop)))
+        (should (keywordp (caar face-prop)))
+        ;; Check the merged plist has both properties
+        (let ((merged-plist (car face-prop)))
+          (should (equal (plist-get merged-plist :background) "green"))
+          (should (equal (plist-get merged-plist :foreground) "red")))
+        ;; bold should be in the list
+        (should (memq 'bold face-prop))))))
+
+(ert-deftest tp-test-merge-other-props-later-overrides ()
+  "Test that non-face duplicate properties use later value."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs"
+                          'help-echo "first"
+                          'help-echo "second")))
+      (should (equal (get-text-property 0 'help-echo result) "second")))))
+
+(ert-deftest tp-test-merge-with-palette-layer ()
+  "Test merging face from tp-palette layer with extra face property."
+  (tp-test-with-temp-buffer
+    ;; Redefine tp-palette since tp-test-with-temp-buffer resets tp-layer-alist
+    (define-tp tp-palette (symbol)
+      (let ((palette (intern (concat "tp-palette-"
+                                     (symbol-name symbol)))))
+        `(face ( :foreground ,(tp-palette-fg-color palette)
+                 :background ,(tp-palette-bg-color palette)
+                 :box (:color ,(tp-palette-border-color palette))))))
+    (let ((result (tp-set "emacs"
+                          'tp-palette 'info
+                          'face '(:foreground "red"))))
+      (let ((face-prop (get-text-property 0 'face result)))
+        ;; The face from tp-palette should be merged with :foreground "red"
+        ;; With :foreground "red" overriding the palette's foreground
+        (should (equal (plist-get face-prop :foreground) "red"))
+        ;; Background from palette should still be present
+        (should (plist-get face-prop :background))
+        ;; Box from palette should still be present
+        (should (plist-get face-prop :box))))))
+
+(ert-deftest tp-test-merge-multiple-layers-with-face ()
+  "Test merging multiple layers that each contribute face properties."
+  (tp-test-with-temp-buffer
+    (define-tp tp-test-layer1 ()
+      '(face (:foreground "blue")))
+    (define-tp tp-test-layer2 ()
+      '(face (:background "yellow")))
+    (let ((result (tp-set "emacs"
+                          'tp-test-layer1 t
+                          'tp-test-layer2 t
+                          'face '(:weight bold))))
+      (let ((face-prop (get-text-property 0 'face result)))
+        ;; All face properties should be merged
+        (should (equal (plist-get face-prop :foreground) "blue"))
+        (should (equal (plist-get face-prop :background) "yellow"))
+        (should (equal (plist-get face-prop :weight) 'bold))))))
+
+(ert-deftest tp-test-merge-in-region-form ()
+  "Test duplicate property merging in region form."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-set 1 6 '(face bold face (:foreground "green")))
+    (let ((face-prop (tp-at 1 'face)))
+      ;; Should be a list with plist and symbol
+      (should (listp face-prop))
+      ;; Check properties
+      (should (or (memq 'bold face-prop)
+                  (eq face-prop 'bold))))))
+
+(ert-deftest tp-test-tp-add-merge-faces ()
+  "Test that tp-add also merges duplicate face properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-add 1 6 '(face bold face (:foreground "red")))
+    (let ((face-prop (tp-at 1 'face)))
+      ;; Should have both face values merged
+      (should (listp face-prop))
+      (should (memq 'bold face-prop))
+      ;; Check for the plist part with :foreground
+      (should (cl-some (lambda (f)
+                         (and (listp f)
+                              (keywordp (car f))
+                              (equal (plist-get f :foreground) "red")))
+                       face-prop)))))
+
+(ert-deftest tp-test-tp-reset-merge-faces ()
+  "Test that tp-reset also merges duplicate face properties."
+  (tp-test-with-temp-buffer
+    (insert "Hello World")
+    (tp-reset 1 6 '(face bold face (:foreground "red")))
+    (let ((face-prop (tp-at 1 'face)))
+      ;; Should have both face values merged
+      (should (listp face-prop))
+      (should (memq 'bold face-prop)))))
+
+(ert-deftest tp-test-merge-mouse-face ()
+  "Test that mouse-face properties are also merged."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs"
+                          'mouse-face 'highlight
+                          'mouse-face '(:background "blue"))))
+      (let ((mouse-face-prop (get-text-property 0 'mouse-face result)))
+        ;; Should be a list with plist and symbol
+        (should (listp mouse-face-prop))
+        (should (memq 'highlight mouse-face-prop))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
