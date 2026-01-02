@@ -183,25 +183,23 @@
 ;; 按钮样式 (Button Styles)
 ;; ============================================
 
-(defvar tp-palette-button-primary
-  '(:fg ("#ffffff" . "#ffffff") :bg ("#1f883d" . "#238636")
-        :border ("#1a7f37" . "#2ea043"))
-  "主要按钮样式（绿色确认按钮）。")
+(defvar tp-palette-btn-primary
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#007bff" . "#007bff")))
 
-(defvar tp-palette-button-secondary
-  '(:fg ("#24292f" . "#c9d1d9") :bg ("#f6f8fa" . "#21262d")
-        :border ("#d0d7de" . "#30363d"))
-  "次级按钮样式。")
+(defvar tp-palette-btn-secondary
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#6c757d" . "#6c757d")))
 
-(defvar tp-palette-button-danger
-  '(:fg ("#ffffff" . "#ffffff") :bg ("#cf222e" .  "#da3633")
-        :border ("#a40e26" . "#f85149"))
-  "危险按钮样式（红色删除按钮）。")
+(defvar tp-palette-btn-info
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#17a2b8" . "#17a2b8")))
 
-(defvar tp-palette-button-outline
-  '(:fg ("#0969da" . "#58a6ff") :bg nil
-        :border ("#0969da" . "#58a6ff"))
-  "轮廓按钮样式。")
+(defvar tp-palette-btn-success
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#28a745" . "#28a745")))
+
+(defvar tp-palette-btn-warning
+  '(:fg ("#000000" . "#000000") :bg ("#ffc107" . "#ffc107")))
+
+(defvar tp-palette-btn-danger
+  '(:fg ("#ffffff" . "#ffffff") :bg ("#dc3545" . "#dc3545")))
 
 ;; ============================================
 ;; 输入框样式 (Input Styles)
