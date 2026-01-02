@@ -388,7 +388,8 @@
 
 (defvar tp-palette-org-tag
   '(:fg ("#57606a" . "#8b949e") :bg ("#f6f8fa" .  "#21262d")
-        :border ("#d0d7de" .  "#30363d"))
+        :border ("#d0d7de" .  "#888"))
+  ;; #30363d
   "Org 标签样式。")
 
 ;; ============================================
@@ -750,6 +751,8 @@
 SYMBOL should be a symbol bound to a palette plist.
 KEY should be one of :fg, :bg, or :border.
 Returns nil if SYMBOL is unbound or doesn't contain KEY."
+  (setq symbol (intern (concat "tp-palette-"
+                               (symbol-name symbol))))
   (when (and (symbolp symbol) (boundp symbol))
     (let ((plist (symbol-value symbol)))
       (when (plistp plist)

@@ -3904,12 +3904,19 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
 
 ;;; Built-in text properties
 
-(define-tp tp-palette (symbol)
-  (let ((palette (intern (concat "tp-palette-"
-                                 (symbol-name symbol)))))
-    `(face ( :foreground ,(tp-palette-fg-color palette)
-             :background ,(tp-palette-bg-color palette)
-             :box (:color ,(tp-palette-border-color palette))))))
+(define-tp tp-palette (palette)
+  `(face (,@(when-let ((color (tp-palette-fg-color palette)))
+              `(:foreground ,color))
+          ,@(when-let ((color (tp-palette-bg-color palette)))
+              `(:background ,color))
+          ,@(when-let ((color (tp-palette-border-color palette)))
+              `(:box (:color ,color))))))
+
+(define-tp tp-fg (color)
+  `(face (:foreground ,color)))
+
+(define-tp tp-bg (color)
+  `(face (:background ,color)))
 
 (define-tp tp-button (plist)
   (let ((palette (plist-get plist :palette))
