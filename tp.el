@@ -2680,13 +2680,53 @@ and the group itself is stored in `tp-layer-groups'."
     (tp--set-group-layers name layer-names)
     (assoc name tp-layer-groups)))
 
-(defmacro define-tp-group (name &rest elements)
-  "Define a layer group named NAME containing multiple layers.
+(defun tp--define-layer-group-internal (name arglist elements)
+  "Internal function for define-tps with ARGLIST and ELEMENTS.
+NAME is the group name symbol.
+ARGLIST is nil for non-parameterized groups, or a list with one symbol.
+ELEMENTS is the list of layer definitions."
+  (if arglist
+      ;; Parameterized group - store for later evaluation
+      (let ((entry (list arglist elements)))
+        (if (assoc name tp-layer-groups)
+            (setf (cdr (assoc name tp-layer-groups)) entry)
+          (push (cons name entry) tp-layer-groups))
+        (assoc name tp-layer-groups))
+    ;; Non-parameterized - define immediately using tp-define-layer-group
+    (apply #'tp-define-layer-group name elements)))
 
-This macro provides a convenient syntax for `tp-define-layer-group'.
-All layer definitions should use quoted list format.
+(defun tp--define-layer-group-unified (name arglist body-form)
+  "Define a parameterized layer group NAME with ARGLIST and BODY-FORM.
+Stores the group in `tp-layer-groups' with format: (GROUP-NAME ARGLIST BODY-FORM)."
+  (let ((entry (list arglist body-form)))
+    (if (assoc name tp-layer-groups)
+        (setf (cdr (assoc name tp-layer-groups)) entry)
+      (push (cons name entry) tp-layer-groups)))
+  (assoc name tp-layer-groups))
 
-Supported formats for each element in ELEMENTS:
+(defmacro define-tps (name arglist &rest body)
+  "Define a text property group named NAME.
+
+This macro defines a group of text properties (layers) that can be used together.
+It follows the same format as `define-tp' for consistency.
+
+ARGLIST must be either:
+- An empty list () for non-parameterized groups
+- A list containing exactly one symbol for parameterized groups
+
+BODY contains the layer definitions, which should be quoted lists.
+
+Format 1 - Non-parameterized (empty arglist):
+  (define-tps my-moon-phases ()
+    \\='(display \"🌑\")
+    \\='(display \"🌕\"))
+
+Format 2 - Parameterized (with argument):
+  (define-tps my-status (color)
+    \\=`((face (:foreground ,color)))
+    \\='(face (:weight bold)))
+
+Supported formats for each element in BODY:
 
 Format 1 - Existing layer reference:
   \\='existing-layer-name
@@ -2705,15 +2745,29 @@ Format 5 - Named layer with :props, :data, :watch, and/or :compute:
                :data ((my-color . \"red\"))
                :watch ((my-color (lambda (new old layer) (message \"Changed!\")))))
 
-Example:
-  (define-tp-group my-group
-    \\='existing-layer
-    \\='(face bold)
-    \\='(\"named\" . (face italic)))
-
-See `tp-define-layer-group' for full documentation."
+Note: NAME cannot be a built-in Emacs text property name like `face',
+`display', `invisible', etc. See `tp--builtin-text-properties' for the
+complete list of reserved names."
   (declare (indent defun))
-  `(tp-define-layer-group ',name ,@elements))
+  (unless (listp arglist)
+    (error "define-tps ARGLIST must be a list"))
+  ;; Check for built-in text property name conflict
+  (when (tp--builtin-text-property-p name)
+    (error "define-tps: '%s' is a built-in Emacs text property name and cannot be used as a group name" name))
+  (cond
+   ;; Non-parameterized: empty arglist
+   ((null arglist)
+    `(tp--define-layer-group-internal ',name nil (list ,@body)))
+   ;; Parameterized: single argument
+   ((and (= (length arglist) 1)
+         (symbolp (car arglist)))
+    `(tp--define-layer-group-unified ',name ',arglist '(list ,@body)))
+   (t
+    (error "define-tps ARGLIST must be empty or contain exactly one symbol"))))
+
+;; For backward compatibility, keep define-tp-group as an alias
+(defalias 'define-tp-group 'define-tps
+  "Alias for `define-tps' for backward compatibility.")
 
 (defun tp--set-layer-props (layer-name properties)
   "Set PROPERTIES for layer LAYER-NAME in `tp-layer-alist'.
