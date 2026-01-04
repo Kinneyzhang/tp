@@ -1455,12 +1455,23 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 **格式二 - 有参数（带单个参数）：**
 
 ```elisp
-(define-tps tp-themed-status (color)
-  `(("success" . (face (:foreground ,color))))
-  '("warning" . (face (:foreground "orange"))))
+;; 先定义参数化的单独层
+(define-tp tp-color1 (color)
+  `(face (:foreground ,color)))
+(define-tp tp-color2 (color)
+  `(face (:foreground ,color)))
+(define-tp tp-bg ()
+  '(face (:background "green")))
 
-;; 用法:
-;; 层组可以使用参数创建相关的层
+;; 定义参数化的层组，引用上面定义的层
+(define-tps tp-themed-status (color)
+  `(tp-color1 ,color)      ;; 使用层组参数
+  '(tp-color2 "red")       ;; 使用固定参数
+  'tp-bg)                  ;; 引用无参数层
+
+;; 用法 - 设置多层属性:
+(tp-set "emacs" 'tp-themed-status "orange")
+;; 结果: 三个层堆叠，tp-color1 为顶层，使用 "orange" 颜色
 ```
 
 **支持的层定义格式：**
@@ -1547,6 +1558,25 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
 ;; => (display "🌕" tp-name moon-phases-full)
+
+;; 参数化层组，引用其他已定义的层
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (define-tp tp-test-l1 (color)
+    `(face (:foreground ,color)))
+  (define-tp tp-test-l2 (color)
+    `(face (:foreground ,color)))
+  (define-tp tp-test-l3 ()
+    '(face (:background "green")))
+  (define-tps tp-test-group1 (color)
+    `(tp-test-l1 ,color)      ;; 使用层组参数
+    '(tp-test-l2 "red")       ;; 使用固定参数
+    'tp-test-l3)              ;; 引用无参数层
+  (tp-set "emacs" 'tp-test-group1 "orange"))
+;; => #("emacs" 0 5 (face (:foreground "orange") tp-name tp-test-l1
+;;                        tp-layers ((face (:foreground "red") tp-name tp-test-l2)
+;;                                   (face (:background "green") tp-name tp-test-l3))))
 ```
 
 ---

@@ -1460,6 +1460,28 @@ Define multiple related custom text properties. The name does not need to be quo
 (tp-set 1 6 'tp-moon-phases)
 ```
 
+**Format 2 - Parameterized (with single argument):**
+
+```elisp
+;; First define parameterized individual layers
+(define-tp tp-color1 (color)
+  `(face (:foreground ,color)))
+(define-tp tp-color2 (color)
+  `(face (:foreground ,color)))
+(define-tp tp-bg ()
+  '(face (:background "green")))
+
+;; Define parameterized layer group referencing the layers above
+(define-tps tp-themed-status (color)
+  `(tp-color1 ,color)      ;; Use group parameter
+  '(tp-color2 "red")       ;; Use fixed parameter
+  'tp-bg)                  ;; Reference non-parameterized layer
+
+;; Usage - sets multi-layer properties:
+(tp-set "emacs" 'tp-themed-status "orange")
+;; Result: Three layers stacked, tp-color1 is top layer with "orange" color
+```
+
 **Supported layer definition formats within the group:**
 
 1. **Anonymous layers** (named as NAME-0, NAME-1, etc.):
@@ -1541,6 +1563,25 @@ The first layer in the definition is the top layer (visible by default).
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
 ;; => (display "🌕" tp-name moon-phases-full)
+
+;; Parameterized layer group referencing other defined layers
+(progn
+  (setq tp-layer-alist nil)
+  (setq tp-layer-groups nil)
+  (define-tp tp-test-l1 (color)
+    `(face (:foreground ,color)))
+  (define-tp tp-test-l2 (color)
+    `(face (:foreground ,color)))
+  (define-tp tp-test-l3 ()
+    '(face (:background "green")))
+  (define-tps tp-test-group1 (color)
+    `(tp-test-l1 ,color)      ;; Use group parameter
+    '(tp-test-l2 "red")       ;; Use fixed parameter
+    'tp-test-l3)              ;; Reference non-parameterized layer
+  (tp-set "emacs" 'tp-test-group1 "orange"))
+;; => #("emacs" 0 5 (face (:foreground "orange") tp-name tp-test-l1
+;;                        tp-layers ((face (:foreground "red") tp-name tp-test-l2)
+;;                                   (face (:background "green") tp-name tp-test-l3))))
 ```
 
 ---
