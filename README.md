@@ -1547,7 +1547,8 @@ Get properties for a layer or all layers in a group.
   (setq tp-layer-groups nil)
   (define-tp layer1 () '(face bold))
   (define-tp layer2 () '(face italic))
-  (tp-define-layer-group 'my-group 'layer1 'layer2)
+  (define-tps my-group ()
+    'layer1 'layer2)
   (length (tp-group-props 'my-group)))
 ;; => 2
 ```
@@ -1579,7 +1580,8 @@ Remove layer or group definition.
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
   (define-tp l1 () '(face bold))
-  (tp-define-layer-group 'my-group 'l1)
+  (define-tps my-group ()
+    'l1)
   (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
 ;; => nil

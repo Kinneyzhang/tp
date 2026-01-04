@@ -2865,11 +2865,26 @@ Recursively expands any nested layer names in the returned plist."
 
 (defun tp-group-props (group-name &optional include-tp-name)
   "Return list of properties for all layers in GROUP-NAME.
-If INCLUDE-TP-NAME is non-nil, each layer's props will include tp-name."
-  (when-let ((layers (cdr (assoc group-name tp-layer-groups))))
-    (mapcar (lambda (layer)
-              (tp-layer-props layer include-tp-name))
-            layers)))
+If INCLUDE-TP-NAME is non-nil, each layer's props will include tp-name.
+Handles both old format (list of layer names) and new unified format
+from `define-tps` (parameterized groups store ARGLIST and BODY-FORM)."
+  (when-let ((entry (cdr (assoc group-name tp-layer-groups))))
+    ;; Check if it's the unified format from define-tps (ARGLIST BODY-FORM)
+    ;; Unified format: (ARGLIST BODY-FORM) where ARGLIST is a list of symbols or nil
+    ;; Old format: (layer1 layer2 ...) where each element is a symbol referring to a layer
+    (cond
+     ;; Unified parameterized format: (ARGLIST BODY-FORM) with non-nil ARGLIST
+     ((and (= (length entry) 2)
+           (listp (car entry))
+           (not (null (car entry)))
+           (cl-every #'symbolp (car entry)))
+      ;; Parameterized group - can't get props without argument
+      nil)
+     ;; Old format or non-parameterized define-tps: list of layer names
+     (t
+      (mapcar (lambda (layer)
+                (tp-layer-props layer include-tp-name))
+              entry)))))
 
 (defun tp--is-layer-name-p (sym)
   "Return non-nil if SYM is a defined layer, parameterized layer, or group name."
