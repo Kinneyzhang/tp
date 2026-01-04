@@ -1816,7 +1816,7 @@ Returns list of (START END VALUE) intervals."
     (defvar tp-test-var-color "red" "Test color variable.")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reactive-layer '(face (:foreground $tp-test-var-color)))
+          (define-tp test-reactive-layer () '(face (:foreground $tp-test-var-color)))
           ;; Check the layer is defined with resolved value
           (let ((props (cdr (assoc 'test-reactive-layer tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
@@ -1838,7 +1838,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-reactive-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reactive-update '(face (:foreground $tp-test-reactive-color)))
+          (define-tp test-reactive-update () '(face (:foreground $tp-test-reactive-color)))
           ;; Verify initial value
           (let ((props (cdr (assoc 'test-reactive-update tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
@@ -1857,7 +1857,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-region-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reactive-region '(face (:foreground $tp-test-region-color)))
+          (define-tp test-reactive-region () '(face (:foreground $tp-test-region-color)))
           (insert "Hello World")
           ;; Apply the layer to text
           (tp-push-layer 1 6 'test-reactive-region)
@@ -1877,7 +1877,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-reset-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reactive-reset '(face (:foreground $tp-test-reset-color)))
+          (define-tp test-reactive-reset () '(face (:foreground $tp-test-reset-color)))
           (should tp-reactive-deps)
           (tp-reactive-reset)
           (should-not tp-reactive-deps))
@@ -1891,7 +1891,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-reset2-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reactive-reset2 '(face (:foreground $tp-test-reset2-color)))
+          (define-tp test-reactive-reset2 () '(face (:foreground $tp-test-reset2-color)))
           (should tp-reactive-deps)
           (tp-layer-reset)
           (should-not tp-reactive-deps))
@@ -1905,7 +1905,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-group-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer-group 'test-reactive-group
+          (define-tps test-reactive-group ()
             '("first" :props (face (:foreground $tp-test-group-color)))
             '("second" :props (face (:foreground "blue"))))
           ;; Check the reactive layer is defined with resolved value
@@ -1930,7 +1930,7 @@ Returns list of (START END VALUE) intervals."
     (setq tp-test-undef-color "red")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-undef-reactive '(face (:foreground $tp-test-undef-color)))
+          (define-tp test-undef-reactive () '(face (:foreground $tp-test-undef-color)))
           ;; Check the dependency is registered
           (should (assoc 'tp-test-undef-color tp-reactive-deps))
           (let* ((deps (cdr (assoc 'tp-test-undef-color tp-reactive-deps)))
@@ -1977,7 +1977,7 @@ This tests the fix for the bug where (tp-set str 'layer-name) would
 incorrectly generate an anonymous tp-name instead of using the layer name."
   (tp-test-with-temp-buffer
     ;; Define a layer with reactive variables
-    (tp-define-layer 'my-entire-string-layer :props '(face (:background $my-entire-string-color))
+    (define-tp my-entire-string-layer () :props '(face (:background $my-entire-string-color))
       :data '((my-entire-string-color . "blue")))
     (let ((str (tp-set " " 'my-entire-string-layer)))
       ;; tp-name should be the defined layer name, not an anonymous tp-anon-X
@@ -2275,7 +2275,7 @@ preserving the native text property behavior."
     (setq tp-test-watch-log nil)
     (unwind-protect
         (progn
-          (tp-define-layer 'test-watch-layer :props '(face (:foreground $tp-test-watch-var))
+          (define-tp test-watch-layer () :props '(face (:foreground $tp-test-watch-var))
             :watch '((tp-test-watch-var
                      (lambda (new old layer)
                        (push (list new old layer) tp-test-watch-log)))))
@@ -2304,7 +2304,7 @@ preserving the native text property behavior."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer 'test-data-layer :props '(face (:foreground $tp-test-data-color))
+          (define-tp test-data-layer () :props '(face (:foreground $tp-test-data-color))
             :data '(tp-test-data-extra))
           ;; Check that variables were auto-defined
           (should (boundp 'tp-test-data-color))
@@ -2325,7 +2325,7 @@ preserving the native text property behavior."
           ;; Set up the source variables
           (setq tp-test-first-name "John")
           (setq tp-test-last-name "Doe")
-          (tp-define-layer 'test-compute-layer
+          (define-tp test-compute-layer ()
             :props '(help-echo $tp-test-full-name)
             :data '(tp-test-first-name tp-test-last-name)
             :compute '((tp-test-full-name
@@ -2355,7 +2355,7 @@ preserving the native text property behavior."
           (setq tp-test-dc-first "Jane")
           (setq tp-test-dc-last "Smith")
           ;; Define layer with :data and :compute
-          (tp-define-layer 'test-dc-layer
+          (define-tp test-dc-layer ()
             :props '(face (:foreground $tp-test-dc-color) help-echo $tp-test-dc-full-name)
             :data '(tp-test-dc-first tp-test-dc-last)
             :compute '((tp-test-dc-full-name
@@ -2377,21 +2377,21 @@ preserving the native text property behavior."
   "Test that :watch requires :props to be explicitly specified."
   (tp-test-with-temp-buffer
     (should-error
-     (tp-define-layer 'test-invalid
+     (define-tp test-invalid ()
        :watch '((some-var (lambda (new old layer) nil)))))))
 
 (ert-deftest tp-test-define-layer-compute-requires-props ()
   "Test that :compute requires :props to be explicitly specified."
   (tp-test-with-temp-buffer
     (should-error
-     (tp-define-layer 'test-invalid
+     (define-tp test-invalid ()
        :compute '((some-var (lambda () "computed")))))))
 
 (ert-deftest tp-test-define-layer-data-requires-props ()
   "Test that :data requires :props to be explicitly specified."
   (tp-test-with-temp-buffer
     (should-error
-     (tp-define-layer 'test-invalid
+     (define-tp test-invalid ()
        :data '(some-var)))))
 
 (ert-deftest tp-test-undefine-layer-clears-watch-compute-data ()
@@ -2399,7 +2399,7 @@ preserving the native text property behavior."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer 'test-undef-wcd
+          (define-tp test-undef-wcd ()
             :props '(face (:foreground $tp-test-undef-color) help-echo $tp-test-undef-full)
             :data '(tp-test-undef-first tp-test-undef-last)
             :watch '((tp-test-undef-color (lambda (n o l) nil)))
@@ -2431,7 +2431,7 @@ preserving the native text property behavior."
     (setq tp-test-group-watch-log nil)
     (unwind-protect
         (progn
-          (tp-define-layer-group 'test-watch-group
+          (define-tps test-watch-group ()
             '("reactive" :props (face (:foreground $tp-test-group-watch-var))
                         :watch ((tp-test-group-watch-var
                                  (lambda (new old layer)
@@ -2458,7 +2458,7 @@ preserving the native text property behavior."
         (progn
           (setq tp-test-group-first "Group")
           (setq tp-test-group-last "Test")
-          (tp-define-layer-group 'test-compute-group
+          (define-tps test-compute-group ()
             '("computed" :props (help-echo $tp-test-group-full)
                         :data (tp-test-group-first tp-test-group-last)
                         :compute '((tp-test-group-full
@@ -2483,7 +2483,7 @@ preserving the native text property behavior."
   (tp-test-with-temp-buffer
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reset-all
+          (define-tp test-reset-all ()
             :props '(face (:foreground $tp-test-reset-color) help-echo $tp-test-reset-full)
             :data '(tp-test-reset-first tp-test-reset-last)
             :watch '((tp-test-reset-color (lambda (n o l) nil)))
@@ -2514,7 +2514,7 @@ preserving the native text property behavior."
           ;; Variables should not exist before
           (should-not (boundp 'tp-test-auto-var1))
           (should-not (boundp 'tp-test-auto-var2))
-          (tp-define-layer 'test-auto-layer :props '(face (:foreground $tp-test-auto-var1))
+          (define-tp test-auto-layer () :props '(face (:foreground $tp-test-auto-var1))
             :data '(tp-test-auto-var2))
           ;; Variables should now exist
           (should (boundp 'tp-test-auto-var1))
@@ -2529,7 +2529,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; Define layer with auto-created variable (nil initial value)
-          (tp-define-layer 'test-local-layer :props '(face (:foreground $tp-test-local-color)))
+          (define-tp test-local-layer () :props '(face (:foreground $tp-test-local-color)))
           ;; Apply layer to text
           (insert "Hello World")
           (tp-set 1 6 'test-local-layer)
@@ -2548,7 +2548,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; Define layer with :data and :compute
-          (tp-define-layer 'test-data-compute-layer
+          (define-tp test-data-compute-layer ()
             :props '(help-echo $tp-test-dc-full)
             :data '(tp-test-dc-first tp-test-dc-last)
             :compute '((tp-test-dc-full
@@ -2578,7 +2578,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; Define layer with :data having initial values
-          (tp-define-layer 'test-data-init-layer
+          (define-tp test-data-init-layer ()
             :props '(face (:foreground $tp-test-init-color) help-echo $tp-test-init-name)
             :data '((tp-test-init-color . "blue")
                    (tp-test-init-name . "Initial Name")
@@ -2605,7 +2605,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; Define a reactive layer
-          (tp-define-layer 'test-multi-buf-layer :props '(face (:foreground $tp-test-multi-color)))
+          (define-tp test-multi-buf-layer () :props '(face (:foreground $tp-test-multi-color)))
           ;; Create first buffer with layer applied
           (setq buf1 (generate-new-buffer " *test-buf1*"))
           (with-current-buffer buf1
@@ -2637,7 +2637,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; Define a reactive layer
-          (tp-define-layer 'test-global-layer :props '(face (:foreground $tp-test-global-color)))
+          (define-tp test-global-layer () :props '(face (:foreground $tp-test-global-color)))
           ;; Create first buffer with layer applied
           (setq buf1 (generate-new-buffer " *test-buf1*"))
           (with-current-buffer buf1
@@ -2670,7 +2670,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition with gray color
-          (tp-define-layer 'test-redef-layer :props '(face (:background $tp-test-redef-color))
+          (define-tp test-redef-layer () :props '(face (:background $tp-test-redef-color))
             :data '((tp-test-redef-color . "gray")))
           ;; Check initial value
           (should (equal tp-test-redef-color "gray"))
@@ -2678,7 +2678,7 @@ preserving the native text property behavior."
           (let ((props (cdr (assoc 'test-redef-layer tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :background) "gray")))
           ;; Re-define with different color
-          (tp-define-layer 'test-redef-layer :props '(face (:background $tp-test-redef-color))
+          (define-tp test-redef-layer () :props '(face (:background $tp-test-redef-color))
             :data '((tp-test-redef-color . "blue")))
           ;; Check variable is updated
           (should (equal tp-test-redef-color "blue"))
@@ -2694,12 +2694,12 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition
-          (tp-define-layer 'test-redef-props :props '(face (:foreground $tp-test-redef-fg))
+          (define-tp test-redef-props () :props '(face (:foreground $tp-test-redef-fg))
             :data '((tp-test-redef-fg . "red")))
           (let ((props (cdr (assoc 'test-redef-props tp-layer-alist))))
             (should (equal (plist-get (plist-get props 'face) :foreground) "red")))
           ;; Re-define with different props structure
-          (tp-define-layer 'test-redef-props
+          (define-tp test-redef-props ()
             :props '(face (:background $tp-test-redef-bg) help-echo "new")
             :data '((tp-test-redef-bg . "yellow")))
           ;; Check new props are applied
@@ -2718,14 +2718,14 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition with $old-var
-          (tp-define-layer 'test-redef-deps :props '(face (:foreground $tp-test-old-var))
+          (define-tp test-redef-deps () :props '(face (:foreground $tp-test-old-var))
             :data '((tp-test-old-var . "red")))
           ;; Check old var is in dependencies
           (should (assoc 'tp-test-old-var tp-reactive-deps))
           (let ((deps (cdr (assoc 'tp-test-old-var tp-reactive-deps))))
             (should (assoc 'test-redef-deps deps)))
           ;; Re-define with $new-var
-          (tp-define-layer 'test-redef-deps :props '(face (:foreground $tp-test-new-var))
+          (define-tp test-redef-deps () :props '(face (:foreground $tp-test-new-var))
             :data '((tp-test-new-var . "blue")))
           ;; Check old var is no longer in dependencies for this layer
           (when-let ((deps (cdr (assoc 'tp-test-old-var tp-reactive-deps))))
@@ -2749,13 +2749,13 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition with old watcher
-          (tp-define-layer 'test-redef-watch :props '(face (:foreground $tp-test-watch-var))
+          (define-tp test-redef-watch () :props '(face (:foreground $tp-test-watch-var))
             :data '((tp-test-watch-var . "red"))
             :watch '((tp-test-watch-var
                      (lambda (new old layer)
                        (push (list 'old new) tp-test-watch-log-old)))))
           ;; Re-define with new watcher
-          (tp-define-layer 'test-redef-watch :props '(face (:foreground $tp-test-watch-var))
+          (define-tp test-redef-watch () :props '(face (:foreground $tp-test-watch-var))
             :data '((tp-test-watch-var . "red"))
             :watch '((tp-test-watch-var
                      (lambda (new old layer)
@@ -2779,14 +2779,14 @@ preserving the native text property behavior."
         (progn
           ;; First definition with old compute
           (setq tp-test-compute-src "hello")
-          (tp-define-layer 'test-redef-compute
+          (define-tp test-redef-compute ()
             :props '(help-echo $tp-test-compute-out)
             :data '(tp-test-compute-src)
             :compute '((tp-test-compute-out
                        (lambda () (upcase tp-test-compute-src)))))
           (should (equal tp-test-compute-out "HELLO"))
           ;; Re-define with different compute
-          (tp-define-layer 'test-redef-compute
+          (define-tp test-redef-compute ()
             :props '(help-echo $tp-test-compute-out)
             :data '(tp-test-compute-src)
             :compute '((tp-test-compute-out
@@ -2806,17 +2806,17 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition with reactive variable
-          (tp-define-layer 'test-reactive-to-static :props '(face (:foreground $tp-test-r2s-color))
+          (define-tp test-reactive-to-static () :props '(face (:foreground $tp-test-r2s-color))
             :data '((tp-test-r2s-color . "red")))
           ;; Check reactive dependency is registered
           (should (assoc 'tp-test-r2s-color tp-reactive-deps))
           ;; Re-define as static (non-reactive)
-          (tp-define-layer 'test-reactive-to-static '(face bold))
+          (define-tp test-reactive-to-static () '(face bold))
           ;; Check reactive dependency is cleared
           (when-let ((deps (cdr (assoc 'tp-test-r2s-color tp-reactive-deps))))
             (should-not (assoc 'test-reactive-to-static deps)))
           ;; Check layer has new static props
-          (let ((props (cdr (assoc 'test-reactive-to-static tp-layer-alist))))
+          (let ((props (tp-layer-props 'test-reactive-to-static)))
             (should (eq (plist-get props 'face) 'bold))))
       ;; Cleanup
       (ignore-errors (makunbound 'tp-test-r2s-color)))))
@@ -2827,13 +2827,13 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition
-          (tp-define-layer-group 'test-redef-group
+          (define-tps test-redef-group ()
             '("layer1" :props (face (:background $tp-test-group-color))
                       :data ((tp-test-group-color . "gray"))))
           ;; Check initial value
           (should (equal tp-test-group-color "gray"))
           ;; Re-define with different color
-          (tp-define-layer-group 'test-redef-group
+          (define-tps test-redef-group ()
             '("layer1" :props (face (:background $tp-test-group-color))
                       :data ((tp-test-group-color . "blue"))))
           ;; Check variable is updated
@@ -2850,7 +2850,7 @@ preserving the native text property behavior."
     (unwind-protect
         (progn
           ;; First definition
-          (tp-define-layer 'test-redef-applied :props '(face (:background $tp-test-applied-color))
+          (define-tp test-redef-applied () :props '(face (:background $tp-test-applied-color))
             :data '((tp-test-applied-color . "gray")))
           ;; Apply to text
           (insert "Hello World")
@@ -2858,10 +2858,10 @@ preserving the native text property behavior."
           ;; Check initial color
           (should (equal (plist-get (get-text-property 1 'face) :background) "gray"))
           ;; Re-define with different color
-          (tp-define-layer 'test-redef-applied :props '(face (:background $tp-test-applied-color))
+          (define-tp test-redef-applied () :props '(face (:background $tp-test-applied-color))
             :data '((tp-test-applied-color . "blue")))
           ;; The text should now have the new color
-          ;; This happens because tp-define-layer calls tp--update-layer-regions
+          ;; This happens because define-tp calls tp--update-layer-regions
           ;; at the end to update all text regions with the new properties
           (should (equal (plist-get (get-text-property 1 'face) :background) "blue")))
       ;; Cleanup
@@ -2948,7 +2948,7 @@ preserving the native text property behavior."
     (setq tp-test-reactive-text "Initial")
     (unwind-protect
         (progn
-          (tp-define-layer 'test-reactive-text-layer
+          (define-tp test-reactive-text-layer ()
             :props '(face bold tp-text $tp-test-reactive-text))
           ;; Apply layer to text
           (insert "Hello World")
@@ -2976,7 +2976,7 @@ the source text should be used and the reactive variable should be updated."
     (unwind-protect
         (progn
           ;; Define layer with tp-text bound to a reactive variable
-          (tp-define-layer 'test-init-text-layer
+          (define-tp test-init-text-layer ()
             :props '(face bold tp-text $tp-test-text-var))
           ;; Apply layer to string - variable is nil, so source text should be used
           (let ((result (tp-set "2" 'test-init-text-layer)))
@@ -2992,7 +2992,7 @@ the source text should be used and the reactive variable should be updated."
           ;; This is necessary because the layer definition caches the resolved
           ;; tp-text value, and we want to test the behavior when the variable
           ;; already has a non-nil value at layer application time.
-          (tp-define-layer 'test-init-text-layer
+          (define-tp test-init-text-layer ()
             :props '(face bold tp-text $tp-test-text-var))
           (let ((result (tp-set "2" 'test-init-text-layer)))
             ;; Result should be the variable value "18", not source "2"
@@ -3019,7 +3019,7 @@ the inserted text should be that string, not the source text."
         (progn
           (setq tp-test-name-part1 "Hello")
           (setq tp-test-name-part2 "World")
-          (tp-define-layer 'test-computed-text-layer
+          (define-tp test-computed-text-layer ()
             :props '(face bold tp-text $tp-test-full-text)
             :data '(tp-test-name-part1 tp-test-name-part2)
             :compute '((tp-test-full-text
@@ -3346,7 +3346,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (unwind-protect
         (progn
           ;; Define a reactive layer
-          (tp-define-layer 'test-batch-layer
+          (define-tp test-batch-layer ()
             :props '(face (:foreground $tp-test-batch-color))
             :data '((tp-test-batch-color . "red")))
           (insert "Hello World")
@@ -3370,7 +3370,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (unwind-protect
         (progn
           ;; Define a reactive layer with multiple vars
-          (tp-define-layer 'test-multi-batch
+          (define-tp test-multi-batch ()
             :props '(face (:foreground $tp-test-fg :background $tp-test-bg))
             :data '((tp-test-fg . "white") (tp-test-bg . "black")))
           (insert "Hello World")
@@ -3427,7 +3427,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (unwind-protect
         (progn
           ;; Define a layer with transform
-          (tp-define-layer 'test-transform-layer
+          (define-tp test-transform-layer ()
             :props '(face bold tp-text $tp-test-value)
             :data '((tp-test-value . "hello"))
             :transform #'upcase)
@@ -3444,7 +3444,7 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (unwind-protect
         (progn
           ;; Define a layer with transform (format as currency)
-          (tp-define-layer 'test-currency-layer
+          (define-tp test-currency-layer ()
             :props '(face bold tp-text $tp-test-amount)
             :data '((tp-test-amount . "100"))
             :transform (lambda (text)
@@ -3466,14 +3466,14 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (unwind-protect
         (progn
           ;; Define with transform
-          (tp-define-layer 'test-redef-transform
+          (define-tp test-redef-transform ()
             :props '(face bold tp-text $tp-test-text)
             :data '((tp-test-text . "hello"))
             :transform #'upcase)
           ;; Check transform is registered
           (should (assoc 'test-redef-transform tp-layer-transforms))
           ;; Redefine without transform
-          (tp-define-layer 'test-redef-transform
+          (define-tp test-redef-transform ()
             :props '(face bold tp-text $tp-test-text)
             :data '((tp-test-text . "hello")))
           ;; Transform should be removed

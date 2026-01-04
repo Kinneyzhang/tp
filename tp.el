@@ -2300,7 +2300,7 @@ Example:
 ;;;============================================================================
 
 (defun tp--parse-define-layer-args (args)
-  "Parse ARGS for tp-define-layer function.
+  "Parse ARGS for tp--define-layer-internal function.
 Returns plist with keys :props, :data, :watch, :compute, :transform.
 - Keyword arguments: :props PLIST [:data DATA] [:watch WATCH] [:compute COMPUTE] [:transform FN]"
   (let (props data watch compute transform has-keywords)
@@ -2318,7 +2318,7 @@ Returns plist with keys :props, :data, :watch, :compute, :transform.
             (:watch (setq watch (cadr rest) rest (cddr rest)))
             (:compute (setq compute (cadr rest) rest (cddr rest)))
             (:transform (setq transform (cadr rest) rest (cddr rest)))
-            (_ (error "Unknown keyword in tp-define-layer: %s" (car rest))))))
+            (_ (error "Unknown keyword in tp--define-layer-internal: %s" (car rest))))))
       ;; Validate: if :watch, :compute, or :data present, :props must be present
       (when (and (or watch compute data) (null props))
         (error "When using :watch, :compute, or :data, :props must be explicitly specified")))
@@ -2326,20 +2326,20 @@ Returns plist with keys :props, :data, :watch, :compute, :transform.
      ((and (= (length args) 1)
            (listp (car args)))
       (setq props (car args)))
-     (t (error "Invalid tp-define-layer format")))
+     (t (error "Invalid tp--define-layer-internal format")))
     (list :props props :data data :watch watch :compute compute :transform transform)))
 
-(defun tp-define-layer (name &rest args)
+(defun tp--define-layer-internal (name &rest args)
   "Define a single text property layer named NAME.
 
 This function supports two formats:
 
 Format 1 - Direct plist (no :watch/:compute/:data/:transform support):
-  (tp-define-layer \\='layer-name
+  (tp--define-layer-internal \\='layer-name
     \\='(display \"🌑\" face (:height 1.0)))
 
 Format 2 - With :props, :data, :watch, :compute, and/or :transform (Vue 3 style reactivity):
-  (tp-define-layer \\='layer-name
+  (tp--define-layer-internal \\='layer-name
     ;; props: $-prefixed symbols are reactive variables; auto-defined if not bound
     :props \\='(face (:foreground $my-color) help-echo $full-name)
     ;; data: additional reactive variables not used in props; auto-defined if not bound
@@ -2444,23 +2444,29 @@ The layer is stored in `tp-layer-alist'."
 (defmacro define-tp (name arglist &rest body)
   "Define a text property layer named NAME.
 
-This macro supports three formats:
+This macro supports four formats:
 
 Format 1 - Non-parameterized simple (empty arglist, simple body):
   (define-tp tp-bold ()
     \\='(face bold))
 
-Format 2 - Parameterized (single argument):
+Format 2 - Parameterized simple (single argument, simple body):
   (define-tp tp-space (pixel)
     \\=`(display (space :width (,pixel))))
 
-Format 3 - With reactive features (supports :props, :data, :compute, :watch, :transform):
+Format 3 - Non-parameterized with reactive features:
   (define-tp my-layer ()
     :props \\='(face (:foreground $my-color))
     :data \\='((my-color . \"red\"))
     :compute \\='((full-name (lambda () (concat first-name \" \" last-name))))
     :watch \\='((my-color (lambda (new old layer) (message \"Color changed!\"))))
     :transform (lambda (text) (upcase text)))
+
+Format 4 - Parameterized with reactive features:
+  (define-tp my-color-layer (color)
+    :props \\=`(face (:foreground ,color))
+    :data \\='((my-var . \"value\"))
+    :compute ...)
 
 Usage:
   (tp-set \"emacs\" \\='tp-bold t)
@@ -2474,7 +2480,7 @@ ARGLIST must be either:
 BODY is either:
 - A single property list expression (simple format)
 - Keyword arguments starting with :props, :data, :compute, :watch, or :transform
-  (reactive format - only supported for non-parameterized layers)
+  (reactive format)
 
 Note: NAME cannot be a built-in Emacs text property name like `face',
 `display', `invisible', etc. See `tp--builtin-text-properties' for the
@@ -2489,10 +2495,15 @@ complete list of reserved names."
   (let ((first-elem (car body)))
     (if (and (keywordp first-elem)
              (memq first-elem '(:props :data :compute :watch :transform)))
-        ;; Reactive format - use tp-define-layer
+        ;; Reactive format
         (if arglist
-            (error "define-tp: reactive features (:props, :data, etc.) are only supported for non-parameterized layers")
-          `(tp-define-layer ',name ,@body))
+            ;; Parameterized reactive: store as function that calls tp--define-layer-internal
+            (let ((arg (car arglist)))
+              `(tp--define-layer-parameterized-reactive
+                ',name ',arglist
+                (lambda (,arg) (list ,@body))))
+          ;; Non-parameterized reactive: use tp--define-layer-internal directly
+          `(tp--define-layer-internal ',name ,@body))
       ;; Simple format (original behavior)
       (let ((simple-body (car body)))
         (cond
@@ -2506,19 +2517,47 @@ complete list of reserved names."
          (t
           (error "define-tp ARGLIST must be empty or contain exactly one symbol")))))))
 
+(defun tp--define-layer-parameterized-reactive (name arglist body-fn)
+  "Define a parameterized layer NAME with ARGLIST and reactive BODY-FN.
+BODY-FN is a function that takes the parameter and returns a keyword plist
+like (:props ... :data ... :compute ... :watch ... :transform ...).
+The layer is stored and evaluated when tp-layer-props-with-arg is called."
+  ;; Store the parameterized reactive definition
+  ;; Format: (ARGLIST BODY-FN) where BODY-FN returns keyword plist
+  (let ((entry (list arglist body-fn)))
+    (if (assoc name tp-layer-alist)
+        (setf (cdr (assoc name tp-layer-alist)) entry)
+      (push (cons name entry) tp-layer-alist)))
+  (assoc name tp-layer-alist))
+
 (defun tp--define-layer-unified (name arglist body)
   "Define a layer NAME with ARGLIST and BODY using unified structure.
 For non-parameterized layers, ARGLIST is nil and BODY is the evaluated plist.
 For parameterized layers, ARGLIST contains one symbol and BODY is the unevaluated form.
-Stores the layer in `tp-layer-alist' with format: (LAYER-NAME ARGLIST BODY-FORM)."
-  ;; Store in tp-layer-alist with unified format: (LAYER-NAME ARGLIST BODY-FORM)
-  ;; For non-parameterized, quote the body so eval returns the plist
-  (let ((stored-body (if arglist body `',body)))
-    (let ((entry (list arglist stored-body)))
-      (if (assoc name tp-layer-alist)
-          (setf (cdr (assoc name tp-layer-alist)) entry)
-        (push (cons name entry) tp-layer-alist))))
-  (assoc name tp-layer-alist))
+Stores the layer in `tp-layer-alist' with format: (LAYER-NAME ARGLIST BODY-FORM).
+
+For non-parameterized layers, if BODY contains reactive symbols ($-prefixed),
+delegates to `tp--define-layer-internal' for proper reactive handling."
+  (if arglist
+      ;; Parameterized - store for later evaluation
+      (let ((entry (list arglist body)))
+        (if (assoc name tp-layer-alist)
+            (setf (cdr (assoc name tp-layer-alist)) entry)
+          (push (cons name entry) tp-layer-alist))
+        (assoc name tp-layer-alist))
+    ;; Non-parameterized - check for reactive symbols
+    (let ((reactive-syms (tp--collect-reactive-symbols body)))
+      (if reactive-syms
+          ;; Has reactive symbols - use tp--define-layer-internal for proper handling
+          (tp--define-layer-internal name body)
+        ;; No reactive symbols - store as static layer
+        ;; Clean up old reactive dependencies if the layer was previously reactive
+        (tp--unregister-reactive-deps name)
+        (let ((entry (list nil `',body)))
+          (if (assoc name tp-layer-alist)
+              (setf (cdr (assoc name tp-layer-alist)) entry)
+            (push (cons name entry) tp-layer-alist))
+          (assoc name tp-layer-alist))))))
 
 (defun tp--layer-group-element-format (element)
   "Determine the format type of ELEMENT.
@@ -2639,7 +2678,7 @@ COMPUTE is the list of computed variable definitions."
         (tp--update-layer-regions layer-name)))
     layer-name))
 
-(defun tp-define-layer-group (name &rest elements)
+(defun tp--define-layer-internal-group (name &rest elements)
   "Define a layer group named NAME containing multiple layers.
 
 This function accepts a list of layer definitions in ELEMENTS.
@@ -2654,7 +2693,7 @@ Each element in ELEMENTS should be one of:
 All property lists should be evaluated (quoted in the call).
 
 Example:
-  (tp-define-layer-group \\='my-group
+  (tp--define-layer-internal-group \\='my-group
     \\='existing-layer
     \\='(face bold)
     \\='(\"named\" . (face italic))
@@ -2707,8 +2746,8 @@ ELEMENTS is the list of layer definitions."
             (setf (cdr (assoc name tp-layer-groups)) entry)
           (push (cons name entry) tp-layer-groups))
         (assoc name tp-layer-groups))
-    ;; Non-parameterized - define immediately using tp-define-layer-group
-    (apply #'tp-define-layer-group name elements)))
+    ;; Non-parameterized - define immediately using tp--define-layer-internal-group
+    (apply #'tp--define-layer-internal-group name elements)))
 
 (defun tp--define-layer-group-unified (name arglist body-form)
   "Define a parameterized layer group NAME with ARGLIST and BODY-FORM.
@@ -3192,7 +3231,7 @@ Returns a list of (START END PROPERTIES) for matching intervals."
 Used by layer stack functions that need tp-name for identification.
 
 LAYER-SPEC can be:
-- A symbol (non-parameterized layer name from define-tp or tp-define-layer)
+- A symbol (non-parameterized layer name from define-tp or tp--define-layer-internal)
 - A list (LAYER-NAME ARG) for parameterized layers from define-tp
 - A plist for inline layer definition
 - A list (NAME &rest PLIST) for named inline layer"

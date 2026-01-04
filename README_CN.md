@@ -273,10 +273,10 @@
 ;; 之后只需改变变量 - 文本自动更新！
 (setq my-color "blue")  ;; 所有 my-highlight 层的文本自动变成蓝色！
 
-;; 高级响应式示例（使用内部函数 tp-define-layer）：
+;; 高级响应式示例（使用 define-tp）：
 ;; 对于需要 :data、:compute、:watch 等高级特性的场景，
-;; 可以使用内部函数 tp-define-layer
-(tp-define-layer 'full-name-layer
+;; 可以使用 define-tp
+(define-tp full-name-layer ()
   :props '(help-echo $full-name face (:foreground $name-color))
   :data '((first-name . "John") (last-name . "Doe"))  ;; 带初始值
   :compute '((full-name (lambda () (concat first-name " " last-name))))
@@ -479,7 +479,7 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
 
 ;; 在整个字符串上使用已定义的层名称
-(tp-define-layer 'my-style
+(define-tp my-style ()
   :props '(face (:foreground $my-color))
   :data '((my-color . "blue")))
 (tp-set " " 'my-style)
@@ -535,7 +535,7 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 ;; => #("Hello" 0 5 (face italic))
 
 ;; 使用已定义的层名称
-(tp-define-layer 'error-style
+(define-tp error-style ()
   '(face (:foreground "red" :weight bold)))
 (with-temp-buffer
   (insert "Hello World")
@@ -583,7 +583,7 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 ;; => (shadow bold)
 
 ;; 使用已定义的层名称
-(tp-define-layer 'highlight-style
+(define-tp highlight-style ()
   '(face (:background "yellow")))
 (with-temp-buffer
   (insert "Hello World")
@@ -888,7 +888,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
 
 ;; 使用已定义的层名称
-(tp-define-layer 'todo-style
+(define-tp todo-style ()
   '(face (:foreground "orange" :weight bold)))
 (with-temp-buffer
   (insert "TODO: fix this. TODO: also this.")
@@ -929,7 +929,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => ((1 . 5) (12 . 17))
 
 ;; 使用已定义的层名称
-(tp-define-layer 'alert-style
+(define-tp alert-style ()
   '(face (:background "red" :foreground "white")))
 (with-temp-buffer
   (insert "TODO: fix this")
@@ -970,7 +970,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => ((1 . 5) (12 . 17))
 
 ;; 使用已定义的层名称
-(tp-define-layer 'underline-style
+(define-tp underline-style ()
   '(face (:underline (:color "blue" :style wave))))
 (with-temp-buffer
   (insert "TODO: fix this")
@@ -1012,7 +1012,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
 
 ;; 使用已定义的层名称
-(tp-define-layer 'number-style
+(define-tp number-style ()
   '(face (:foreground "green")))
 (with-temp-buffer
   (insert "abc 123 def 456")
@@ -1054,7 +1054,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => (face italic)
 
 ;; 使用已定义的层名称
-(tp-define-layer 'code-number
+(define-tp code-number ()
   '(face (:foreground "cyan")))
 (with-temp-buffer
   (insert "abc 123 def 456")
@@ -1096,7 +1096,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 ;; => (face italic help-echo "number")
 
 ;; 使用已定义的层名称
-(tp-define-layer 'bold-underline
+(define-tp bold-underline ()
   '(face (:weight bold :underline t)))
 (with-temp-buffer
   (insert "abc 123 def 456")
@@ -1612,8 +1612,8 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer 'l1 '(face bold))
-  (tp-define-layer-group 'my-group 'l1)
+  (define-tp l1 () '(face bold))
+  (define-tps my-group 'l1)
   (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
 ;; => nil
@@ -1657,7 +1657,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 ;; 定义一个响应式层
 (progn
   (defvar my-reactive-color "red")
-  (tp-define-layer 'reactive-layer
+  (define-tp reactive-layer ()
   :props '(face (:foreground $my-reactive-color)))
   ;; 仅清除响应式绑定
   (tp-reactive-reset)
@@ -1716,7 +1716,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (tp-layer-reset)
   (define-tp base () '(face default))
-  (tp-define-layer 'info '(face (:foreground "blue")))
+  (define-tp info () '(face (:foreground "blue")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -2093,7 +2093,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (tp-layer-reset)
   (define-tp layer1 () '(face bold))
-  (tp-define-layer 'layer2 '(help-echo "tip"))
+  (define-tp layer2 () '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2106,7 +2106,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (tp-layer-reset)
   (define-tp layer1 () '(face bold))
-  (tp-define-layer 'layer2 '(help-echo "tip"))
+  (define-tp layer2 () '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2137,7 +2137,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (tp-layer-reset)
   (define-tp layer1 () '(face bold))
-  (tp-define-layer 'layer2 '(help-echo "tip"))
+  (define-tp layer2 () '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2283,8 +2283,8 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face (:foreground "red")))
-  (tp-define-layer 'layer2 '(face (:foreground "blue")))
+  (define-tp layer1 () '(face (:foreground "red")))
+  (define-tp layer2 () '(face (:foreground "blue")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2468,12 +2468,12 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (tp-layer-reset)
   ;; 为不同高亮目的定义属性层
-  (tp-define-layer 'code-base
+  (define-tp code-base ()
   '(face font-lock-keyword-face))
-  (tp-define-layer 'code-error
+  (define-tp code-error ()
   '(face (:underline (:color "red" :style wave))
      help-echo "语法错误"))
-  (tp-define-layer 'code-debug
+  (define-tp code-debug ()
   '(face (:background "dark blue")))
   (with-temp-buffer
     (insert (make-string 100 ?x))  ; 创建 100 字符缓冲区
@@ -2499,10 +2499,10 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (progn
   (tp-layer-reset)
   ;; 将状态属性层定义为一个组
-  (tp-define-layer 'status-todo '(face (:foreground "gray")))
-  (tp-define-layer 'status-progress '(face (:foreground "yellow")))
-  (tp-define-layer 'status-done '(face (:foreground "green")))
-  (tp-define-layer-group 'task-status 'status-todo 'status-progress 'status-done)
+  (define-tp status-todo () '(face (:foreground "gray")))
+  (define-tp status-progress () '(face (:foreground "yellow")))
+  (define-tp status-done () '(face (:foreground "green")))
+  (define-tps task-status 'status-todo 'status-progress 'status-done)
   ;; 检查组是否已定义
   (length (tp-group-props 'task-status)))
 ;; => 3
@@ -2520,7 +2520,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 ;; 定义临时高亮属性层
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'temp-highlight
+  (define-tp temp-highlight ()
   '(face (:background "yellow")))
   (tp-layer-props 'temp-highlight))
 ;; => (face (:background "yellow") tp-name temp-highlight)
@@ -2559,7 +2559,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 
 ;; 响应式方式（自动更新）
 (defvar my-color "red")
-(tp-define-layer 'my-layer
+(define-tp my-layer ()
   :props '(face (:foreground $my-color)))
 (tp-push-layer 1 10 'my-layer)
 ;; 只需改变变量 - 所有文本自动更新！
@@ -2581,7 +2581,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 ```elisp
 (defvar highlight-color "yellow")
 
-(tp-define-layer 'my-highlight
+(define-tp my-highlight ()
   :props '(face (:background $highlight-color)))
 
 (with-temp-buffer
@@ -2600,7 +2600,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (defvar fg-color "white")
 (defvar bg-color "black")
 
-(tp-define-layer 'themed-text
+(define-tp themed-text ()
   :props '(face (:foreground $fg-color :background $bg-color)))
 
 ;; 改变任一变量都会更新文本
@@ -2613,7 +2613,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 `:data` 关键字定义不直接用于 `:props` 但可以触发计算值更新或被监听的额外响应式变量：
 
 ```elisp
-(tp-define-layer 'user-info
+(define-tp user-info ()
   :props '(help-echo $full-name)
   :data '(first-name last-name)  ;; 不直接用于 props
   :compute '((full-name (lambda () (concat first-name " " last-name)))))
@@ -2624,7 +2624,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 你可以使用 cons cell 指定初始值：
 
 ```elisp
-(tp-define-layer 'user-info
+(define-tp user-info ()
   :props '(help-echo $full-name)
   :data '((first-name . "张") (last-name . "三"))
   :compute '((full-name (lambda () (concat first-name last-name)))))
@@ -2637,7 +2637,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 `:compute` 关键字创建派生值，当它们的依赖项改变时会自动重新计算：
 
 ```elisp
-(tp-define-layer 'progress-display
+(define-tp progress-display ()
   :props '(display $progress-text face (:foreground $progress-color))
   :data '((current . 0) (total . 100))
   :compute '((progress-text (lambda () (format "%d%%" (/ (* current 100) total))))
@@ -2656,7 +2656,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 `:watch` 关键字让你在响应式变量改变时执行回调：
 
 ```elisp
-(tp-define-layer 'monitored-layer
+(define-tp monitored-layer ()
   :props '(face (:foreground $status-color))
   :watch '((status-color 
            (lambda (new-val old-val layer-name)
@@ -2676,7 +2676,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 
 ```elisp
 ;; 数字格式化
-(tp-define-layer 'price-display
+(define-tp price-display ()
   :props '(tp-text $price)
   :data '((price . "99.9"))
   :transform (lambda (text)
@@ -2684,7 +2684,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 ;; 99.9 显示为 $99.00
 
 ;; 日期格式化
-(tp-define-layer 'date-display
+(define-tp date-display ()
   :props '(tp-text $timestamp)
   :data '((timestamp . "1703865600"))
   :transform (lambda (text)
@@ -2692,7 +2692,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
                  (seconds-to-time (string-to-number text)))))
 
 ;; 大写转换
-(tp-define-layer 'uppercase-text
+(define-tp uppercase-text ()
   :props '(tp-text $content)
   :data '((content . "hello"))
   :transform #'upcase)
@@ -2707,7 +2707,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 
 ### 匿名响应式层
 
-即使不使用 `tp-define-layer`，你也可以使用响应式变量。当你在匿名 plist 中使用 `$` 前缀的符号时，tp.el 会自动生成唯一的层名：
+即使不使用 `define-tp`，你也可以使用响应式变量。当你在匿名 plist 中使用 `$` 前缀的符号时，tp.el 会自动生成唯一的层名：
 
 ```elisp
 (defvar my-face-color "blue")
@@ -2724,7 +2724,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 所有文本属性 API（`tp-set`、`tp-match-set`、`tp-regexp-set` 等）现在可以直接接受层名：
 
 ```elisp
-(tp-define-layer 'warning-style
+(define-tp warning-style ()
   :props '(face (:foreground "orange" :weight bold)))
 
 ;; 使用层名代替 plist
@@ -2740,7 +2740,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 层组也可以使用响应式特性：
 
 ```elisp
-(tp-define-layer-group 'status-indicators
+(define-tps status-indicators
   '("success" :props (face (:foreground $success-color))
               :data ((success-color . "green")))
   '("warning" :props (face (:foreground $warning-color))
@@ -2754,7 +2754,7 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 同时修改多个响应式变量时，每个 `setq` 都会触发一次缓冲区更新。使用 `tp-with-batch-updates` 可以合并所有更改，在结束时一次性应用：
 
 ```elisp
-(tp-define-layer 'themed-text
+(define-tp themed-text ()
   :props '(face (:foreground $fg-color :background $bg-color))
   :data '((fg-color . "white") (bg-color . "black")))
 
@@ -2826,13 +2826,13 @@ tp.el 提供调试模式来帮助理解响应式更新流程：
 (defvar theme-accent "cyan")
 
 ;; 定义主题感知层
-(tp-define-layer 'code-keyword
+(define-tp code-keyword ()
   :props '(face (:foreground $theme-accent :weight bold)))
 
-(tp-define-layer 'code-comment
+(define-tp code-comment ()
   :props '(face (:foreground "gray" :slant italic)))
 
-(tp-define-layer 'code-string
+(define-tp code-string ()
   :props '(face (:foreground "green")))
 
 ;; 将层应用到代码

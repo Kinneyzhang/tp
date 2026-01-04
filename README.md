@@ -210,7 +210,7 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 **This is tp.el's most innovative feature**, completely unsupported by native Emacs. The property layer system allows stacking multiple sets of properties on the same text region:
 
 - ✅ **Property Layer Stack Concept**: Multiple property layers stack like a stack, only the top layer is visible, lower layers are preserved
-- ✅ **Property Layer Definition & Reuse**: Define reusable property layers and layer groups via `tp-define-layer`
+- ✅ **Property Layer Definition & Reuse**: Define reusable property layers and layer groups via `define-tp` and `define-tps`
 - ✅ **Rich Property Layer Operations**:
   - Placement: `tp-put-layer` (specific position), `tp-push-layer` (top)
   - Deletion: `tp-delete-layer` (by name/index), `tp-pop-layer` (top layer)
@@ -264,7 +264,7 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 ;; Define a layer with reactive properties
 (defvar my-color "red")  ;; Reactive variable
 
-(tp-define-layer 'my-highlight
+(define-tp my-highlight ()
   :props '(face (:foreground $my-color)))
 
 ;; Apply the layer
@@ -274,7 +274,7 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 (setq my-color "blue")  ;; All text with my-highlight layer updates to blue!
 
 ;; Advanced example with :data, :compute, and :watch
-(tp-define-layer 'full-name-layer
+(define-tp full-name-layer ()
   :props '(help-echo $full-name face (:foreground $name-color))
   :data ((first-name . "John") (last-name . "Doe"))  ;; With initial values
   :compute ((full-name (lambda () (concat first-name " " last-name))))
@@ -442,7 +442,7 @@ Set text properties on a string or buffer region. Replaces only the specified pr
 (tp-set STRING LAYER-NAME)
 ```
 
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 
 **Examples:**
 
@@ -460,7 +460,7 @@ LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or 
 ;; => (1 . 10)
 
 ;; Use a defined layer name
-(tp-define-layer 'warning-style
+(define-tp warning-style ()
   '(face (:foreground "orange" :weight bold)))
 (with-temp-buffer
   (insert "Hello World")
@@ -485,7 +485,7 @@ LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or 
 ;; => #("Hello" 0 5 (face bold mouse-face highlight))
 
 ;; Use a defined layer name on entire string
-(tp-define-layer 'my-style
+(define-tp my-style ()
   :props '(face (:foreground $my-color))
   :data ((my-color . "blue")))
 (tp-set " " 'my-style)
@@ -523,7 +523,7 @@ Completely replace ALL text properties with the specified ones.
 (tp-reset STRING PROPERTY VALUE ...)
 ```
 
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 
 **Examples:**
 
@@ -541,7 +541,7 @@ LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or 
 ;; => #("Hello" 0 5 (face italic))
 
 ;; Use a defined layer name
-(tp-define-layer 'error-style
+(define-tp error-style ()
   '(face (:foreground "red" :weight bold)))
 (with-temp-buffer
   (insert "Hello World")
@@ -561,7 +561,7 @@ Add or update properties with deep merge support for nested plists.
 (tp-add STRING PROPERTY VALUE ...)
 ```
 
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 
 **Examples:**
 
@@ -589,7 +589,7 @@ LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or 
 ;; => (shadow bold)
 
 ;; Use a defined layer name
-(tp-define-layer 'highlight-style
+(define-tp highlight-style ()
   '(face (:background "yellow")))
 (with-temp-buffer
   (insert "Hello World")
@@ -867,7 +867,7 @@ Clear all text properties from a region.
 Set properties on all occurrences of a string pattern.
 PATTERN can be a string (single pattern) or a list of strings (multiple patterns).
 PLIST is a property list like `'(face bold help-echo "tip")`.
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
 
 **Examples:**
@@ -894,7 +894,7 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; => #("Hello world" 0 5 (face bold) 6 11 (face bold))
 
 ;; Use a defined layer name
-(tp-define-layer 'todo-style
+(define-tp todo-style ()
   '(face (:foreground "orange" :weight bold)))
 (with-temp-buffer
   (insert "TODO: fix this. TODO: also this.")
@@ -909,7 +909,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Reset (completely replace) all properties on matches.
 PATTERN can be a string or list of strings (multiple patterns).
 PLIST is a property list like `'(face bold help-echo "tip")`.
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
@@ -935,7 +935,7 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; => ((1 . 5) (12 . 17))
 
 ;; Use a defined layer name
-(tp-define-layer 'alert-style
+(define-tp alert-style ()
   '(face (:background "red" :foreground "white")))
 (with-temp-buffer
   (insert "TODO: fix this")
@@ -950,7 +950,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Add/merge properties on matches with deep merge support.
 PATTERN can be a string or list of strings (multiple patterns).
 PLIST is a property list like `'(face bold help-echo "tip")`.
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
@@ -976,7 +976,7 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; => ((1 . 5) (12 . 17))
 
 ;; Use a defined layer name
-(tp-define-layer 'underline-style
+(define-tp underline-style ()
   '(face (:underline (:color "blue" :style wave))))
 (with-temp-buffer
   (insert "TODO: fix this")
@@ -996,7 +996,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Set properties on all matches of a regular expression.
 PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
 
 **Examples:**
@@ -1018,7 +1018,7 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
 
 ;; Use a defined layer name
-(tp-define-layer 'number-style
+(define-tp number-style ()
   '(face (:foreground "green")))
 (with-temp-buffer
   (insert "abc 123 def 456")
@@ -1033,7 +1033,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Reset (completely replace) all properties on regexp matches.
 PATTERN can be a string or list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
@@ -1060,7 +1060,7 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; => (face italic)
 
 ;; Use a defined layer name
-(tp-define-layer 'code-number
+(define-tp code-number ()
   '(face (:foreground "cyan")))
 (with-temp-buffer
   (insert "abc 123 def 456")
@@ -1075,7 +1075,7 @@ OBJECT is a buffer or string; nil means current buffer.
 Add/merge properties on regexp matches with deep merge support.
 PATTERN can be a string or list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
-LAYER-NAME can be a symbol representing a layer defined by `tp-define-layer` or a group defined by `tp-define-layer-group`.
+LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
@@ -1102,7 +1102,7 @@ OBJECT is a buffer or string; nil means current buffer.
 ;; => (face italic help-echo "number")
 
 ;; Use a defined layer name
-(tp-define-layer 'bold-underline
+(define-tp bold-underline ()
   '(face (:weight bold :underline t)))
 (with-temp-buffer
   (insert "abc 123 def 456")
@@ -1649,7 +1649,7 @@ This is useful when you want to remove all reactive bindings but keep the layer 
 ;; Define a reactive layer
 (progn
   (defvar my-reactive-color "red")
-  (tp-define-layer 'reactive-layer
+  (define-tp reactive-layer ()
   :props '(face (:foreground $my-reactive-color)))
   ;; Clear reactive bindings only
   (tp-reactive-reset)
@@ -2460,12 +2460,12 @@ Return t if OBJECT has no text properties.
 (progn
   (tp-layer-reset)
   ;; Define layers for different highlighting purposes
-  (tp-define-layer 'code-base
+  (define-tp code-base ()
   '(face font-lock-keyword-face))
-  (tp-define-layer 'code-error
+  (define-tp code-error ()
   '(face (:underline (:color "red" :style wave))
      help-echo "Syntax error"))
-  (tp-define-layer 'code-debug
+  (define-tp code-debug ()
   '(face (:background "dark blue")))
   (with-temp-buffer
     (insert (make-string 100 ?x))  ; Create 100-char buffer
@@ -2491,10 +2491,10 @@ Return t if OBJECT has no text properties.
 (progn
   (tp-layer-reset)
   ;; Define status layers as a group
-  (tp-define-layer 'status-todo '(face (:foreground "gray")))
-  (tp-define-layer 'status-progress '(face (:foreground "yellow")))
-  (tp-define-layer 'status-done '(face (:foreground "green")))
-  (tp-define-layer-group 'task-status 'status-todo 'status-progress 'status-done)
+  (define-tp status-todo () '(face (:foreground "gray")))
+  (define-tp status-progress () '(face (:foreground "yellow")))
+  (define-tp status-done () '(face (:foreground "green")))
+  (define-tps task-status 'status-todo 'status-progress 'status-done)
   ;; Check group is defined
   (length (tp-group-props 'task-status)))
 ;; => 3
@@ -2512,7 +2512,7 @@ Return t if OBJECT has no text properties.
 ;; Define temporary highlight layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'temp-highlight
+  (define-tp temp-highlight ()
   '(face (:background "yellow")))
   (tp-layer-props 'temp-highlight))
 ;; => (face (:background "yellow") tp-name temp-highlight)
@@ -2551,7 +2551,7 @@ Traditional text property manipulation requires manually updating all affected t
 
 ;; Reactive approach (automatic updates)
 (defvar my-color "red")
-(tp-define-layer 'my-layer
+(define-tp my-layer ()
   :props '(face (:foreground $my-color)))
 (tp-push-layer 1 10 'my-layer)
 ;; Just change the variable - all text updates automatically!
@@ -2573,7 +2573,7 @@ Traditional text property manipulation requires manually updating all affected t
 ```elisp
 (defvar highlight-color "yellow")
 
-(tp-define-layer 'my-highlight
+(define-tp my-highlight ()
   :props '(face (:background $highlight-color)))
 
 (with-temp-buffer
@@ -2592,7 +2592,7 @@ Traditional text property manipulation requires manually updating all affected t
 (defvar fg-color "white")
 (defvar bg-color "black")
 
-(tp-define-layer 'themed-text
+(define-tp themed-text ()
   :props '(face (:foreground $fg-color :background $bg-color)))
 
 ;; Changing either variable updates the text
@@ -2605,7 +2605,7 @@ Traditional text property manipulation requires manually updating all affected t
 The `:data` keyword defines additional reactive variables that aren't directly used in `:props` but can trigger computed value updates or be watched:
 
 ```elisp
-(tp-define-layer 'user-info
+(define-tp user-info ()
   :props '(help-echo $full-name)
   :data '(first-name last-name)  ; Not used directly in props
   :compute '((full-name (lambda () (concat first-name " " last-name)))))
@@ -2616,7 +2616,7 @@ The `:data` keyword defines additional reactive variables that aren't directly u
 You can specify initial values using cons cells:
 
 ```elisp
-(tp-define-layer 'user-info
+(define-tp user-info ()
   :props '(help-echo $full-name)
   :data '((first-name . "John") (last-name . "Doe"))
   :compute '((full-name (lambda () (concat first-name " " last-name)))))
@@ -2629,7 +2629,7 @@ You can specify initial values using cons cells:
 The `:compute` keyword creates derived values that are automatically recalculated when their dependencies change:
 
 ```elisp
-(tp-define-layer 'progress-display
+(define-tp progress-display ()
   :props '(display $progress-text face (:foreground $progress-color))
   :data '((current . 0) (total . 100))
   :compute '((progress-text (lambda () (format "%d%%" (/ (* current 100) total))))
@@ -2648,7 +2648,7 @@ The `:compute` keyword creates derived values that are automatically recalculate
 The `:watch` keyword lets you execute callbacks when reactive variables change:
 
 ```elisp
-(tp-define-layer 'monitored-layer
+(define-tp monitored-layer ()
   :props '(face (:foreground $status-color))
   :watch ((status-color 
            (lambda (new-val old-val layer-name)
@@ -2668,7 +2668,7 @@ The `:transform` keyword allows you to register a transformation function that p
 
 ```elisp
 ;; Number formatting
-(tp-define-layer 'price-display
+(define-tp price-display ()
   :props '(tp-text $price)
   :data '((price . "99.9"))
   :transform (lambda (text)
@@ -2676,7 +2676,7 @@ The `:transform` keyword allows you to register a transformation function that p
 ;; 99.9 displays as $99.00
 
 ;; Date formatting
-(tp-define-layer 'date-display
+(define-tp date-display ()
   :props '(tp-text $timestamp)
   :data '((timestamp . "1703865600"))
   :transform (lambda (text)
@@ -2684,7 +2684,7 @@ The `:transform` keyword allows you to register a transformation function that p
                  (seconds-to-time (string-to-number text)))))
 
 ;; Uppercase conversion
-(tp-define-layer 'uppercase-text
+(define-tp uppercase-text ()
   :props '(tp-text $content)
   :data '((content . "hello"))
   :transform #'upcase)
@@ -2699,7 +2699,7 @@ The transform function:
 
 ### Anonymous Reactive Layers
 
-You can use reactive variables even without `tp-define-layer`. When you use `$`-prefixed symbols in an anonymous plist, tp.el automatically generates a unique layer name:
+You can use reactive variables even without `define-tp`. When you use `$`-prefixed symbols in an anonymous plist, tp.el automatically generates a unique layer name:
 
 ```elisp
 (defvar my-face-color "blue")
@@ -2716,7 +2716,7 @@ You can use reactive variables even without `tp-define-layer`. When you use `$`-
 All text property APIs (`tp-set`, `tp-match-set`, `tp-regexp-set`, etc.) now accept layer names directly:
 
 ```elisp
-(tp-define-layer 'warning-style
+(define-tp warning-style ()
   :props '(face (:foreground "orange" :weight bold)))
 
 ;; Use layer name instead of plist
@@ -2732,7 +2732,7 @@ All text property APIs (`tp-set`, `tp-match-set`, `tp-regexp-set`, etc.) now acc
 Layer groups can also use reactive features:
 
 ```elisp
-(tp-define-layer-group 'status-indicators
+(define-tps status-indicators
   '("success" :props (face (:foreground $success-color))
               :data ((success-color . "green")))
   '("warning" :props (face (:foreground $warning-color))
@@ -2746,7 +2746,7 @@ Layer groups can also use reactive features:
 When modifying multiple reactive variables simultaneously, each `setq` triggers a separate buffer update. Use `tp-with-batch-updates` to consolidate all changes and apply them once at the end:
 
 ```elisp
-(tp-define-layer 'themed-text
+(define-tp themed-text ()
   :props '(face (:foreground $fg-color :background $bg-color))
   :data '((fg-color . "white") (bg-color . "black")))
 
@@ -2818,13 +2818,13 @@ To clear all reactive dependencies and watchers:
 (defvar theme-accent "cyan")
 
 ;; Define theme-aware layers
-(tp-define-layer 'code-keyword
+(define-tp code-keyword ()
   :props '(face (:foreground $theme-accent :weight bold)))
 
-(tp-define-layer 'code-comment
+(define-tp code-comment ()
   :props '(face (:foreground "gray" :slant italic)))
 
-(tp-define-layer 'code-string
+(define-tp code-string ()
   :props '(face (:foreground "green")))
 
 ;; Apply layers to code
