@@ -54,11 +54,10 @@
     - [tp-search](#tp-search---search-all-matches)
     - [tp-search-map](#tp-search-map---apply-function-to-matched-text)
 - [The Property Layer System](#the-property-layer-system)
+  - [Custom Text Properties vs Text Property Layers](#custom-text-properties-vs-text-property-layers)
   - [Property Layer Concept](#property-layer-concept)
   - [Property Layer Definition](#property-layer-definition)
-    - [tp-define-layer](#tp-define-layer---define-single-layer)
-    - [tp-define-layer-group](#tp-define-layer-group---define-layer-group)
-    - [define-tp / define-tp-group](#define-tp--define-tp-group---convenience-macros)
+    - [define-tp / define-tps](#define-tp--define-tps---define-custom-text-properties)
     - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
     - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
     - [tp-layer-reset](#tp-layer-reset)
@@ -221,8 +220,8 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 
 ```elisp
 ;; Property layer usage example
-(tp-define-layer 'highlight '(face (:background "yellow")))
-(tp-define-layer 'error '(face (:foreground "red")))
+(define-tp highlight () '(face (:background "yellow")))
+(define-tp error () '(face (:foreground "red")))
 
 ;; Stack multiple property layers
 (tp-push-layer 1 10 'highlight)
@@ -362,10 +361,8 @@ A complete overview of all tp.el functions organized by category:
 #### Property Layer Definition Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-define-layer`](#tp-define-layer---define-single-layer) | Define a single layer with optional reactive features (:props, :data, :watch, :compute) |
-| [`tp-define-layer-group`](#tp-define-layer-group---define-layer-group) | Define a group of layers with optional reactive features |
-| [`define-tp`](#define-tp--define-tp-group---convenience-macros) | Convenience macro for defining layers (supports parameterized layers) |
-| [`define-tp-group`](#define-tp--define-tp-group---convenience-macros) | Convenience macro for defining layer groups |
+| [`define-tp`](#define-tp--define-tps---define-custom-text-properties) | Define custom text property (layer) with optional parameter |
+| [`define-tps`](#define-tp--define-tps---define-custom-text-properties) | Define custom text property group (layer group) with optional parameter |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | Remove layer definition |
@@ -1348,6 +1345,40 @@ Apply FUNCTION to all matches of PROPERTY in OBJECT.
 
 The **property layer system** is tp.el's innovative feature that allows stacking multiple sets of properties on the same text region. Only the **top layer** is visible, but lower layers are preserved and can be revealed through rotation or pinning.
 
+### Custom Text Properties vs Text Property Layers
+
+tp.el unifies the concepts of "custom text properties" and "text property layers":
+
+#### Concept Distinction
+
+1. **Custom Text Properties**: Defined using `define-tp`, when set using `tp-set`/`tp-reset`/`tp-add`, they are treated as regular text properties that can be mixed with built-in Emacs text properties (like `face`, `display`, etc.).
+
+2. **Text Property Layers**: Also defined using `define-tp`, but when set using `tp-put-layer`/`tp-push-layer`, layer-related properties are introduced (`tp-name`, `tp-layers`), enabling layer stacking and operations.
+
+3. **Custom Text Property Groups**: Defined using `define-tps`, they contain multiple related text properties that can be used individually or as a group.
+
+#### Definition and Usage
+
+```elisp
+;; Define custom text property (layer)
+(define-tp tp-highlight ()
+  '(face (:background "yellow")))
+
+;; Use as regular text property (no tp-name or layer attributes)
+(tp-set 1 10 '(tp-highlight t))
+;; Result: Only face property, no tp-name
+
+;; Use as text property layer (introduces layer-related properties)
+(tp-push-layer 1 10 'tp-highlight)
+;; Result: Both face and tp-name properties, supports layer operations
+```
+
+#### When to Use Which
+
+- **`tp-set`/`tp-reset`/`tp-add`**: When you only need to set text properties without layer stacking functionality. Suitable for simple property setting scenarios.
+
+- **`tp-push-layer`/`tp-put-layer`**: When you need to stack multiple sets of properties on the same text region and perform layer operations like rotation, deletion, etc.
+
 ### Property Layer Concept
 
 ```
@@ -1362,152 +1393,116 @@ The **property layer system** is tp.el's innovative feature that allows stacking
 
 ### Property Layer Definition
 
-#### `tp-define-layer` - Define Single Layer
+#### `define-tp` / `define-tps` - Define Custom Text Properties
 
-Define a single text property layer. Supports multiple formats:
+##### `define-tp` - Define Single Custom Text Property (Layer)
 
-**Format 1 - Direct plist (no reactive features):**
+Define a custom text property. The name does not need to be quoted. Supports two formats:
 
-```elisp
-(tp-define-layer 'layer-name
-  '(face (:background "cyan") line-prefix ">>"))
-```
-
-**Format 2 - With :props, :data, :watch, and/or :compute (Vue 3 style reactivity):**
+**Format 1 - Non-parameterized (empty argument list):**
 
 ```elisp
-(tp-define-layer 'layer-name
-  ;; props: $-prefixed symbols are reactive variables; auto-defined if not bound
-  :props '(face (:foreground $my-color) help-echo $full-name)
-  ;; data: additional reactive variables not used in props; can include initial values
-  :data '((first-name . "John") (last-name . "Doe"))
-  ;; compute: list of (VAR-NAME FUNCTION) - compute reactive variable values
-  :compute '((full-name (lambda () (concat first-name " " last-name))))
-  ;; watch: list of (VAR-NAME CALLBACK) - side effects when vars change
-  :watch '((my-color (lambda (new old layer)
-                       (message "Color changed from %s to %s" old new)))))
+(define-tp tp-bold ()
+  '(face bold))
+
+;; Usage:
+(tp-set "emacs" 'tp-bold t)
+(tp-set 0 5 '(tp-bold t) "emacs")
 ```
 
-**Reactive Variables:**
+**Format 2 - Parameterized (with single argument):**
 
-If any symbol in `:props` starts with `$`, it is treated as a reactive variable. Variables in `:data` are also reactive. All reactive variables are automatically defined as global variables if they are not already bound.
+```elisp
+(define-tp tp-space (pixel)
+  `(display (space :width (,pixel))))
 
-- **:data** - A list of variable symbols (or cons cells `(SYMBOL . INITIAL-VALUE)`) for additional reactive state not in `:props`.
-- **:compute** - A list of `(VAR-SYMBOL COMPUTE-FN)` pairs. COMPUTE-FN is evaluated to compute the value of VAR-SYMBOL. Can reference other reactive variables.
-- **:watch** - A list of `(VAR-SYMBOL CALLBACK)` pairs. CALLBACK is called when VAR-SYMBOL changes, receiving `(NEW-VALUE OLD-VALUE LAYER-NAME)`.
+;; Usage:
+(tp-set "emacs" 'tp-space 2)
+(tp-set 0 5 '(tp-space 2) "emacs")
+```
 
-**Note:** When using `:watch`, `:compute`, or `:data`, you MUST use `:props` to specify the text properties explicitly.
+##### `define-tps` - Define Custom Text Property Group (Layer Group)
 
-If a layer with the same name already exists, it will be overwritten with the new definition.
+Define multiple related custom text properties. The name does not need to be quoted. Properties in the group can be used individually or with the group name to set multiple layers.
+
+**Format 1 - Non-parameterized (empty argument list):**
+
+```elisp
+(define-tps tp-moon-phases ()
+  '(display "🌑")
+  '(display "🌕"))
+
+;; Usage:
+(tp-set 1 6 'tp-moon-phases)
+```
+
+**Supported layer definition formats within the group:**
+
+1. **Anonymous layers** (named as NAME-0, NAME-1, etc.):
+   ```elisp
+   '(face (:background "yellow"))
+   ```
+
+2. **Named layers with cons-cell** (named as NAME-suffix):
+   ```elisp
+   '("highlight" . (face (:background "yellow")))
+   ```
+
+3. **Named layers with :props keyword**:
+   ```elisp
+   '("highlight" :props (face (:background "yellow")))
+   ```
+
+4. **Named layers with reactive features** (:props, :data, :watch, :compute):
+   ```elisp
+   '("reactive" :props (face (:foreground $my-color))
+                :data ((my-color . "red"))
+                :watch ((my-color (lambda (new old layer) (message "Changed!")))))
+   ```
 
 **Examples:**
 
 ```elisp
-;; Define individual layers using Format 1 (direct plist)
-(progn
-  (setq tp-layer-alist nil)  ; Reset for clean example
-  (tp-define-layer 'highlight
-  '(face (:background "yellow" :foreground "black")))
-  (tp-layer-props 'highlight))
-;; => (face (:background "yellow" :foreground "black") tp-name highlight)
+;; Define non-parameterized custom text property
+(define-tp tp-highlight ()
+  '(face (:background "yellow")))
 
-;; Define a reactive layer
-(progn
-  (tp-layer-reset)
-  (defvar theme-color "blue")
-  (tp-define-layer 'themed-layer
-    :props '(face (:foreground $theme-color)))
-  ;; Apply the layer
-  (with-temp-buffer
-    (insert "Hello World")
-    (tp-push-layer 1 10 'themed-layer)
-    ;; Later, change the variable - text updates automatically!
-    (setq theme-color "red")
-    (tp-at 1 'face)))
-;; => (:foreground "red")
+;; Define parameterized custom text property
+(define-tp tp-color (color)
+  `(face (:foreground ,color)))
 
-;; Redefine an existing layer (overwrites the old definition)
-(progn
-  (tp-define-layer 'test-layer '(face bold))
-  (tp-define-layer 'test-layer '(face italic))  ; Overwrites
-  (tp-layer-props 'test-layer))
-;; => (face italic tp-name test-layer)
+;; Define property group
+(define-tps tp-status ()
+  '("success" . (face (:foreground "green")))
+  '("warning" . (face (:foreground "orange")))
+  '("error" . (face (:foreground "red"))))
+
+;; Use custom text properties
+(tp-set "Hello" 'tp-highlight t)        ; Non-parameterized
+(tp-set "Hello" 'tp-color "blue")       ; Parameterized
+(tp-set 1 6 'tp-status)                 ; Use layer group
+
+;; Use as layers (supports stacking operations)
+(tp-push-layer 1 10 'tp-highlight)
 ```
 
----
-
-#### `tp-define-layer-group` - Define Layer Group
-
-Define a group of multiple layers. Supports multiple formats for each element:
-
-**Format 1 - Anonymous layers (named as GROUP-NAME-0, GROUP-NAME-1, etc.):**
-
-```elisp
-(tp-define-layer-group 'tp-test-moons
-  '(display "🌑" face (:height 1.0))
-  '(display "🌘" face (:height 1.5))
-  '(display "🌗" face (:height 2.0)))
-;; Creates layers: tp-test-moons-0, tp-test-moons-1, tp-test-moons-2
-```
-
-**Format 2 - Named layers with cons-cell (named as GROUP-NAME-suffix):**
-
-```elisp
-(tp-define-layer-group 'tp-test-moons
-  '("新月" . (display "🌑" face (:height 1.0)))
-  '("残月" . (display "🌘" face (:height 1.5)))
-  '("下弦月" . (display "🌗" face (:height 2.0))))
-;; Creates layers: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
-```
-
-**Format 3 - Named layers with :props keyword (named as GROUP-NAME-suffix):**
-
-```elisp
-(tp-define-layer-group 'tp-test-moons
-  '("新月" :props (display "🌑" face (:height 1.0)))
-  '("残月" :props (display "🌘" face (:height 1.5)))
-  '("下弦月" :props (display "🌗" face (:height 2.0))))
-;; Creates layers: tp-test-moons-新月, tp-test-moons-残月, tp-test-moons-下弦月
-```
-
-**Format 4 - Named layers with :props, :data, :watch, and/or :compute (Vue 3 style reactivity):**
-
-```elisp
-(tp-define-layer-group 'reactive-group
-  '("reactive" :props (face (:foreground $my-color) help-echo $full-name)
-               :data ((first-name . "John") (last-name . "Doe"))
-               :compute ((full-name (lambda () (concat first-name " " last-name))))
-               :watch ((my-color (lambda (new old layer) (message "Changed!"))))))
-;; Creates layer: reactive-group-reactive with full reactive support
-```
-
-You can also reference already-defined layers in a group:
-
-```elisp
-(tp-define-layer 'existing-layer '(face bold))
-(tp-define-layer-group 'my-group
-  'existing-layer                                 ; Reference existing layer
-  '(face (:background "red") line-prefix ">>")   ; Anonymous layer
-  '("named" . (face italic)))                    ; Named layer
-```
-
-If a layer group with the same name already exists, it will be overwritten.
 The first layer in the definition is the top layer (visible by default).
 
-**Examples:**
+**More Examples:**
 
 ```elisp
 ;; Define status layers, then group them
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer 'highlight
-  '(face (:background "yellow" :foreground "black")))
-  (tp-define-layer 'error
-  '(face (:background "red" :foreground "white")))
-  (tp-define-layer 'info
-  '(face (:background "blue" :foreground "white")))
-  (tp-define-layer-group 'status-colors 'highlight 'error 'info)
+  (define-tp highlight ()
+    '(face (:background "yellow" :foreground "black")))
+  (define-tp error ()
+    '(face (:background "red" :foreground "white")))
+  (define-tp info ()
+    '(face (:background "blue" :foreground "white")))
+  (define-tps status-colors ()
+    'highlight 'error 'info)
   (length (tp-group-props 'status-colors)))
 ;; => 3
 
@@ -1515,73 +1510,13 @@ The first layer in the definition is the top layer (visible by default).
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer-group 'moon-phases
+  (define-tps moon-phases ()
     '("new" . (display "🌑"))
     '("waxing-crescent" . (display "🌒"))
     '("first-quarter" . (display "🌓"))
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
 ;; => (display "🌕" tp-name moon-phases-full)
-```
-
----
-
-#### `define-tp` / `define-tp-group` - Convenience Macros
-
-`define-tp` and `define-tp-group` are convenience macros that provide a more concise syntax for `tp-define-layer` and `tp-define-layer-group`.
-
-**`define-tp` - Define Single Layer**
-
-Supports two formats:
-
-**Format 1 - Non-parameterized (empty arglist):**
-
-```elisp
-(define-tp tp-bold ()
-  '(face bold))
-```
-
-**Format 2 - Parameterized (with a single parameter):**
-
-```elisp
-(define-tp tp-space (pixel)
-  `(display (space :width (,pixel))))
-```
-
-**Usage with `tp-set`:**
-
-For non-parameterized layers, use `t` as the value:
-
-```elisp
-;; Entire string
-(tp-set "emacs" 'tp-bold t)
-;; => #("emacs" 0 5 (tp-name tp-bold face bold))
-
-;; Region (with plist-like format)
-(tp-set 0 5 '(tp-bold t) "emacs")
-;; => #("emacs" 0 5 (tp-name tp-bold face bold))
-```
-
-For parameterized layers, pass the argument value:
-
-```elisp
-;; Entire string
-(tp-set "emacs" 'tp-space 2)
-;; => #("emacs" 0 5 (tp-name tp-space display (space :width (2))))
-
-;; Region (with plist-like format)
-(tp-set 0 5 '(tp-space 2) "emacs")
-;; => #("emacs" 0 5 (tp-name tp-space display (space :width (2))))
-```
-
-**`define-tp-group` - Define Layer Group**
-
-Convenience macro wrapping `tp-define-layer-group`:
-
-```elisp
-(define-tp-group tp-moon-phases
-  '(display "🌑")
-  '(display "🌕"))
 ```
 
 ---
@@ -1601,7 +1536,8 @@ Get properties for a layer or all layers in a group.
 ;; Get layer properties
 (progn
   (setq tp-layer-alist nil)
-  (tp-define-layer 'my-layer '(face bold help-echo "tip"))
+  (define-tp my-layer ()
+    '(face bold help-echo "tip"))
   (tp-layer-props 'my-layer))
 ;; => (face bold help-echo "tip" tp-name my-layer)
 
@@ -1609,8 +1545,8 @@ Get properties for a layer or all layers in a group.
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (tp-define-layer-group 'my-group 'layer1 'layer2)
   (length (tp-group-props 'my-group)))
 ;; => 2
@@ -1633,7 +1569,7 @@ Remove layer or group definition.
 ;; Undefine a layer
 (progn
   (setq tp-layer-alist nil)
-  (tp-define-layer 'temp-layer '(face bold))
+  (define-tp temp-layer () '(face bold))
   (tp-undefine-layer 'temp-layer)
   (tp-layer-props 'temp-layer))
 ;; => nil
@@ -1642,7 +1578,7 @@ Remove layer or group definition.
 (progn
   (setq tp-layer-alist nil)
   (setq tp-layer-groups nil)
-  (tp-define-layer 'l1 '(face bold))
+  (define-tp l1 () '(face bold))
   (tp-define-layer-group 'my-group 'l1)
   (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
@@ -1663,7 +1599,7 @@ Clear all layer and group definitions, including all reactive dependencies and w
 
 ```elisp
 (progn
-  (tp-define-layer 'test-layer '(face bold))
+  (define-tp test-layer () '(face bold))
   (tp-layer-reset)
   (list tp-layer-alist tp-layer-groups))
 ;; => (nil nil)
@@ -1722,8 +1658,8 @@ Set layer(s) at a specific index position in the layer stack.
 ;; Put base layer at top
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -1733,8 +1669,8 @@ Set layer(s) at a specific index position in the layer stack.
 ;; Put highlight at index 1 (below top)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -1745,8 +1681,8 @@ Set layer(s) at a specific index position in the layer stack.
 ;; Put layer at bottom
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'info '(face (:foreground "blue")))
+  (define-tp base () '(face default))
+  (define-tp info () '(face (:foreground "blue")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-put-layer 1 10 'base 0)
@@ -1775,8 +1711,8 @@ Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
 ;; Push base layer first
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1786,8 +1722,8 @@ Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
 ;; Push highlight on top (now visible)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1818,8 +1754,8 @@ Delete a layer from anywhere in the stack by name or index.
 ;; Remove by name
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'highlight '(face (:background "yellow")))
-  (tp-define-layer 'base '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (define-tp base () '(face default))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -1831,8 +1767,8 @@ Delete a layer from anywhere in the stack by name or index.
 ;; Remove top layer (idx=0)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1844,8 +1780,8 @@ Delete a layer from anywhere in the stack by name or index.
 ;; Remove bottom layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1874,8 +1810,8 @@ Remove the top layer (equivalent to `tp-delete-layer ... 0`).
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1914,9 +1850,9 @@ This is the generic layer movement function used internally by `tp-raise-layer`,
 ;; Move layer at index 2 to index 0 (top)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
-  (tp-define-layer 'layer3 '(face underline))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1930,8 +1866,8 @@ This is the generic layer movement function used internally by `tp-raise-layer`,
 ;; Move layer by name to bottom
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1944,8 +1880,8 @@ This is the generic layer movement function used internally by `tp-raise-layer`,
 ;; Move on string
 (let ((str (copy-sequence "Hello")))
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (tp-push-layer str 'layer1)
   (tp-push-layer str 'layer2)
   ;; layer2 is on top
@@ -1974,9 +1910,9 @@ Raise a layer by N positions. Positive N moves toward top, negative moves toward
 ;; Move layer1 up by 2 positions (to top)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
-  (tp-define-layer 'layer3 '(face underline))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -1990,8 +1926,8 @@ Raise a layer by N positions. Positive N moves toward top, negative moves toward
 ;; Move layer at idx 0 down by 1 position
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2022,8 +1958,8 @@ Rotate layers - top goes to bottom, next becomes visible.
 ;; Stack: highlight (top) -> base (bottom)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -2055,8 +1991,8 @@ Move a specific layer to the top (make it visible).
 ;; Make 'base the top layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'base '(face default))
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -2087,8 +2023,8 @@ Swap positions of two layers.
 ;; Switch layer1 and layer2
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2122,8 +2058,8 @@ Merge specified layers into a new layer. Earlier layers in the list take precede
 ;; Merge layer1 and layer2 into merged-layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(help-echo "tip"))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2135,8 +2071,8 @@ Merge specified layers into a new layer. Earlier layers in the list take precede
 ;; Merge by index
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(help-echo "tip"))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2166,8 +2102,8 @@ Flatten all layers into a single layer with the given name.
 ;; Flatten all layers into 'flat-layer
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(help-echo "tip"))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(help-echo "tip"))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2179,7 +2115,7 @@ Flatten all layers into a single layer with the given name.
 ;; Flatten with nil name (unnamed layer)
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
+  (define-tp layer1 () '(face bold))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2205,8 +2141,8 @@ Get list of all layer names in region.
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'highlight '(face (:background "yellow")))
-  (tp-define-layer 'base '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (define-tp base () '(face default))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'base)
@@ -2230,8 +2166,8 @@ Count layers in region.
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2255,7 +2191,7 @@ Check if layer exists in region.
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
+  (define-tp layer1 () '(face bold))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2279,8 +2215,8 @@ Get name of the top (visible) layer.
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2313,8 +2249,8 @@ Add or merge properties to specific layers in a region or string.
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'layer1 '(face (:foreground "red")))
-  (tp-define-layer 'layer2 '(face (:foreground "blue")))
+  (define-tp layer1 () '(face (:foreground "red")))
+  (define-tp layer2 () '(face (:foreground "blue")))
   (with-temp-buffer
     (insert "Hello World")
     (tp-push-layer 1 10 'layer1)
@@ -2347,8 +2283,8 @@ Add or merge properties to all layers in a region or string.
 
 ```elisp
 (let ((str (copy-sequence "Hello World")))
-  (tp-define-layer 'layer1 '(face bold))
-  (tp-define-layer 'layer2 '(face italic))
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
   (tp-push-layer 0 5 'layer1 str)
   (tp-push-layer 0 5 'layer2 str)
   ;; Add underline to all layers
@@ -2427,7 +2363,7 @@ Return layer properties for LAYER-NAME in region from START to END.
 ```elisp
 (progn
   (tp-layer-reset)
-  (tp-define-layer 'highlight '(face (:background "yellow")))
+  (define-tp highlight () '(face (:background "yellow")))
   (with-temp-buffer
     (insert "Hello World Test")
     (tp-push-layer 1 6 'highlight)
