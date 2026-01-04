@@ -66,7 +66,7 @@
 
 ```elisp
 ;; 定义带转换的层
-(tp-define-layer 'currency-display
+(define-tp currency-display ()
   :props '(face bold tp-text $amount)
   :data '((amount . "100"))
   :transform (lambda (text)
@@ -119,7 +119,7 @@
 当需要同时修改多个响应式变量时，使用批量更新可以避免多次缓冲区更新：
 
 ```elisp
-(tp-define-layer 'themed-text
+(define-tp themed-text ()
   :props '(face (:foreground $fg-color :background $bg-color))
   :data '((fg-color . "white") (bg-color . "black")))
 
@@ -143,14 +143,14 @@
 
 ```elisp
 ;; 数字格式化
-(tp-define-layer 'price-display
+(define-tp price-display ()
   :props '(tp-text $price)
   :data '((price . "99.9"))
   :transform (lambda (text)
                (format "$%.2f" (string-to-number text))))
 
 ;; 日期格式化
-(tp-define-layer 'date-display
+(define-tp date-display ()
   :props '(tp-text $timestamp)
   :data '((timestamp . "1703865600"))
   :transform (lambda (text)
@@ -158,7 +158,7 @@
                  (seconds-to-time (string-to-number text)))))
 
 ;; 大写转换
-(tp-define-layer 'uppercase-text
+(define-tp uppercase-text ()
   :props '(tp-text $content)
   :data '((content . "hello"))
   :transform #'upcase)
@@ -174,7 +174,7 @@
 (setq tp-debug-echo t)
 
 ;; 定义和使用响应式层
-(tp-define-layer 'test-layer
+(define-tp test-layer ()
   :props '(face (:foreground $my-color))
   :data '((my-color . "red")))
 

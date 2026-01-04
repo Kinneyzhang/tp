@@ -44,7 +44,7 @@ Now let's see how the reactive approach solves these problems:
 (defvar my-color "red")
 
 ;; Define a reactive layer using $my-color to reference the variable
-(tp-define-layer 'my-highlight
+(define-tp my-highlight ()
   '(face (:foreground $my-color)))
 
 ;; Apply to text
@@ -85,7 +85,7 @@ Let's start with a simple example:
 (defvar highlight-bg "yellow")
 
 ;; Define a reactive layer
-(tp-define-layer 'simple-highlight
+(define-tp simple-highlight ()
   '(face (:background $highlight-bg)))
 
 ;; Create a test buffer and apply the layer
@@ -110,7 +110,7 @@ A layer can reference multiple reactive variables:
 (defvar underline-color "red")
 
 ;; Define a layer using multiple variables
-(tp-define-layer 'multi-var-layer
+(define-tp multi-var-layer ()
   '(face ( :foreground $fg-color 
            :background $bg-color
            :underline (:color $underline-color))))
@@ -146,7 +146,7 @@ Main uses of `:data`:
 
 ```lisp
 ;; Complete computed properties example
-(tp-define-layer 'computed-greeting
+(define-tp computed-greeting ()
   :props '(display $full-greeting face (:foreground $status-color))
   :data '((user-name . "John")
           (greeting-prefix . "Hello"))
@@ -186,7 +186,7 @@ Main uses of `:data`:
 
 ```lisp
 ;; Layer with watchers
-(tp-define-layer 'watched-layer
+(define-tp watched-layer ()
   :props '(face (:foreground $status-color))
   :data '((status-color . "green"))
   :watch '((status-color 
@@ -227,7 +227,7 @@ This example shows how to create an indicator that automatically changes color b
 (defvar status-text "Not Started")
 
 ;; Define status indicator layer
-(tp-define-layer 'status-indicator
+(define-tp status-indicator ()
   '(face (:background $status-color) display $status-text))
 
 ;; Define status update function
@@ -271,10 +271,10 @@ This example shows how to create a switchable theme system:
 (defvar string-color nil)
 
 ;; Define theme-related reactive layers
-(tp-define-layer 'themed-keyword
+(define-tp themed-keyword ()
   '(face (:foreground $keyword-color :weight bold)))
 
-(tp-define-layer 'themed-string
+(define-tp themed-string ()
   '(face (:foreground $string-color)))
 
 ;; Define theme switching functions
@@ -314,7 +314,7 @@ This example shows how to create a switchable theme system:
 
 ## Anonymous Reactive Layers
 
-Besides using `tp-define-layer` to define named layers, you can also use reactive variables directly in property lists. tp.el will automatically generate unique names for these anonymous layers:
+Besides using `define-tp` to define named layers, you can also use reactive variables directly in property lists. tp.el will automatically generate unique names for these anonymous layers:
 
 ```lisp
 (tp-layer-reset)
@@ -386,7 +386,7 @@ The real power of `tp-text` comes from combining it with reactive variables:
 (defvar my-dynamic-text "Loading...")
 
 ;; Define a layer containing tp-text
-(tp-define-layer 'dynamic-content
+(define-tp dynamic-content ()
   :props '(face (:foreground "blue") tp-text $my-dynamic-text))
 
 ;; Apply to text
@@ -409,7 +409,7 @@ The real power of `tp-text` comes from combining it with reactive variables:
 `tp-text` can be combined with `:compute` to create dynamic text derived from other variables:
 
 ```lisp
-(tp-define-layer 'greeting-layer
+(define-tp greeting-layer ()
   :props '(face (:foreground "green") tp-text $full-greeting)
   :data '((user-name . "Guest")
           (greeting-prefix . "Welcome"))
@@ -461,7 +461,7 @@ The `:transform` keyword allows you to register a transformation function that p
 
 ```lisp
 ;; Number formatting
-(tp-define-layer 'price-display
+(define-tp price-display ()
   :props '(tp-text $price)
   :data '((price . "99.9"))
   :transform (lambda (text)
@@ -469,7 +469,7 @@ The `:transform` keyword allows you to register a transformation function that p
 ;; 99.9 displays as $99.00
 
 ;; Date formatting
-(tp-define-layer 'date-display
+(define-tp date-display ()
   :props '(tp-text $timestamp)
   :data '((timestamp . "1703865600"))
   :transform (lambda (text)
@@ -477,7 +477,7 @@ The `:transform` keyword allows you to register a transformation function that p
                  (seconds-to-time (string-to-number text)))))
 
 ;; Uppercase conversion
-(tp-define-layer 'uppercase-text
+(define-tp uppercase-text ()
   :props '(tp-text $content)
   :data '((content . "hello"))
   :transform #'upcase)

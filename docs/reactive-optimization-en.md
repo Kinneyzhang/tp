@@ -66,7 +66,7 @@ When using `setq-local`, updates only affect the specific buffer.
 
 ```elisp
 ;; Define a layer with transformation
-(tp-define-layer 'currency-display
+(define-tp currency-display ()
   :props '(face bold tp-text $amount)
   :data '((amount . "100"))
   :transform (lambda (text)
@@ -119,7 +119,7 @@ Debug log includes:
 When modifying multiple reactive variables simultaneously, use batch updates to avoid multiple buffer updates:
 
 ```elisp
-(tp-define-layer 'themed-text
+(define-tp themed-text ()
   :props '(face (:foreground $fg-color :background $bg-color))
   :data '((fg-color . "white") (bg-color . "black")))
 
@@ -143,14 +143,14 @@ Transform functions allow processing tp-text values before display:
 
 ```elisp
 ;; Number formatting
-(tp-define-layer 'price-display
+(define-tp price-display ()
   :props '(tp-text $price)
   :data '((price . "99.9"))
   :transform (lambda (text)
                (format "$%.2f" (string-to-number text))))
 
 ;; Date formatting
-(tp-define-layer 'date-display
+(define-tp date-display ()
   :props '(tp-text $timestamp)
   :data '((timestamp . "1703865600"))
   :transform (lambda (text)
@@ -158,7 +158,7 @@ Transform functions allow processing tp-text values before display:
                  (seconds-to-time (string-to-number text)))))
 
 ;; Uppercase conversion
-(tp-define-layer 'uppercase-text
+(define-tp uppercase-text ()
   :props '(tp-text $content)
   :data '((content . "hello"))
   :transform #'upcase)
@@ -174,7 +174,7 @@ Debug mode helps developers understand the reactive update flow:
 (setq tp-debug-echo t)
 
 ;; Define and use a reactive layer
-(tp-define-layer 'test-layer
+(define-tp test-layer ()
   :props '(face (:foreground $my-color))
   :data '((my-color . "red")))
 

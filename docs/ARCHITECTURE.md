@@ -27,7 +27,7 @@ tp.el 采用分层架构设计，每一层建立在下层功能之上：
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                  第四层：响应式系统                               │
-│  tp-define-layer, tp--reactive-variable-watcher,                │
+│  define-tp, define-tps, tp--reactive-variable-watcher,          │
 │  tp--update-layer-regions, tp--register-reactive-deps           │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -62,7 +62,7 @@ tp.el 采用分层架构设计，每一层建立在下层功能之上：
 |------|------|--------|
 | `tp--parse-args` | 解析灵活的函数参数格式 | tp-set, tp-reset, tp-add |
 | `tp--parse-layer-args` | 解析属性层操作的参数 | tp-put-layer 及其他层操作函数 |
-| `tp--parse-define-layer-args` | 解析 tp-define-layer 的参数 | tp-define-layer |
+| `tp--parse-define-layer-args` | 解析 define-tp 的参数 | define-tp |
 
 #### 数据结构操作
 | 函数 | 描述 | 调用者 |
@@ -192,11 +192,11 @@ tp.el 采用分层架构设计，每一层建立在下层功能之上：
 | `tp--replace-reactive-text-in-buffer` | 在缓冲区中替换响应式文本 | - |
 
 #### 层定义
-| 函数 | 描述 | 依赖 |
-|------|------|------|
-| `tp-define-layer` | 定义单个属性层 | tp--parse-define-layer-args, tp--collect-reactive-symbols, tp--ensure-reactive-variables, tp--register-* |
-| `tp-define-layer-group` | 定义属性层组 | tp--parse-layer-group-element, tp--define-layer-from-parsed |
-| `tp--define-layer-from-parsed` | 从解析结果定义层 | (与 tp-define-layer 类似的依赖) |
+| 函数/宏 | 描述 | 依赖 |
+|---------|------|------|
+| `define-tp` | 定义单个自定义文本属性（层）| tp--parse-define-layer-args, tp--collect-reactive-symbols, tp--ensure-reactive-variables, tp--register-* |
+| `define-tps` | 定义自定义文本属性组（层组）| tp--parse-layer-group-element, tp--define-layer-from-parsed |
+| `tp--define-layer-from-parsed` | 从解析结果定义层 | (与 define-tp 类似的依赖) |
 | `tp--set-layer-props` | 设置层属性 | - |
 | `tp--set-group-layers` | 设置组的层列表 | - |
 | `tp-layer-props` | 获取层属性 | - |
@@ -218,7 +218,7 @@ tp.el 采用分层架构设计，每一层建立在下层功能之上：
 | 变量/函数 | 描述 | 依赖 |
 |-----------|------|------|
 | `tp-layer-transforms` | 存储层转换函数的 alist | - |
-| `:transform` 选项 | 在 tp-define-layer 中指定转换函数 | tp-layer-transforms |
+| `:transform` 选项 | 在 define-tp 中指定转换函数 | tp-layer-transforms |
 
 #### 调试工具
 | 变量/函数 | 描述 | 依赖 |
@@ -290,9 +290,9 @@ tp-add
   └── put-text-property (Emacs 原生)
 ```
 
-### tp-define-layer 调用链
+### define-tp 调用链
 ```
-tp-define-layer
+define-tp
   ├── tp--parse-define-layer-args
   ├── tp--collect-reactive-symbols
   ├── tp--unregister-reactive-deps

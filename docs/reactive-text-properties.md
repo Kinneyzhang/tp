@@ -44,7 +44,7 @@
 (defvar my-color "red")
 
 ;; 定义一个响应式层，使用 $my-color 引用变量
-(tp-define-layer 'my-highlight
+(define-tp my-highlight ()
   '(face (:foreground $my-color)))
 
 ;; 应用到文本
@@ -85,7 +85,7 @@
 (defvar highlight-bg "yellow")
 
 ;; 定义响应式层
-(tp-define-layer 'simple-highlight
+(define-tp simple-highlight ()
   '(face (:background $highlight-bg)))
 
 ;; 创建测试缓冲区并应用层
@@ -110,7 +110,7 @@
 (defvar underline-color "red")
 
 ;; 定义使用多个变量的层
-(tp-define-layer 'multi-var-layer
+(define-tp multi-var-layer ()
   '(face ( :foreground $fg-color 
            :background $bg-color
            :underline (:color $underline-color))))
@@ -146,7 +146,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 
 ```lisp
 ;; 完整的计算属性示例
-(tp-define-layer 'computed-greeting
+(define-tp computed-greeting ()
   :props '(display $full-greeting face (:foreground $status-color))
   :data '((user-name . "张三")
           (greeting-prefix . "你好"))
@@ -186,7 +186,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 
 ```lisp
 ;; 带监听器的层
-(tp-define-layer 'watched-layer
+(define-tp watched-layer ()
   :props '(face (:foreground $status-color))
   :data '((status-color . "green"))
   :watch '((status-color 
@@ -227,7 +227,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 (defvar status-text "未开始")
 
 ;; 定义状态指示器层
-(tp-define-layer 'status-indicator
+(define-tp status-indicator ()
   '(face (:background $status-color) display $status-text))
 
 ;; 定义状态更新函数
@@ -271,10 +271,10 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 (defvar string-color nil)
 
 ;; 定义主题相关的响应式层
-(tp-define-layer 'themed-keyword
+(define-tp themed-keyword ()
   '(face (:foreground $keyword-color :weight bold)))
 
-(tp-define-layer 'themed-string
+(define-tp themed-string ()
   '(face (:foreground $string-color)))
 
 ;; 定义主题切换函数
@@ -314,7 +314,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 
 ## 匿名响应式层
 
-除了使用 `tp-define-layer` 定义命名层，你还可以直接在属性列表中使用响应式变量。tp.el 会自动为这些匿名层生成唯一的名称：
+除了使用 `define-tp` 定义命名层，你还可以直接在属性列表中使用响应式变量。tp.el 会自动为这些匿名层生成唯一的名称：
 
 ```lisp
 (tp-layer-reset)
@@ -386,7 +386,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 (defvar my-dynamic-text "Loading...")
 
 ;; 定义包含 tp-text 的响应式层
-(tp-define-layer 'dynamic-content
+(define-tp dynamic-content ()
   :props '(face (:foreground "blue") tp-text $my-dynamic-text))
 
 ;; 应用到文本
@@ -409,7 +409,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 `tp-text` 可以与 `:compute` 结合，创建由其他变量派生的动态文本：
 
 ```lisp
-(tp-define-layer 'greeting-layer
+(define-tp greeting-layer ()
   :props '(face (:foreground "green") tp-text $full-greeting)
   :data '((user-name . "访客")
           (greeting-prefix . "欢迎"))
@@ -461,7 +461,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 
 ```lisp
 ;; 数字格式化
-(tp-define-layer 'price-display
+(define-tp price-display ()
   :props '(tp-text $price)
   :data '((price . "99.9"))
   :transform (lambda (text)
@@ -469,7 +469,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 ;; 99.9 显示为 $99.00
 
 ;; 日期格式化
-(tp-define-layer 'date-display
+(define-tp date-display ()
   :props '(tp-text $timestamp)
   :data '((timestamp . "1703865600"))
   :transform (lambda (text)
@@ -477,7 +477,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
                  (seconds-to-time (string-to-number text)))))
 
 ;; 大写转换
-(tp-define-layer 'uppercase-text
+(define-tp uppercase-text ()
   :props '(tp-text $content)
   :data '((content . "hello"))
   :transform #'upcase)
