@@ -2444,7 +2444,7 @@ The layer is stored in `tp-layer-alist'."
 (defmacro define-tp (name arglist &rest body)
   "Define a text property layer named NAME.
 
-This macro supports four formats:
+This macro supports three formats:
 
 Format 1 - Non-parameterized simple (empty arglist, simple body):
   (define-tp tp-bold ()
@@ -2454,19 +2454,13 @@ Format 2 - Parameterized simple (single argument, simple body):
   (define-tp tp-space (pixel)
     \\=`(display (space :width (,pixel))))
 
-Format 3 - Non-parameterized with reactive features:
+Format 3 - Non-parameterized with reactive features (requires $-prefixed variables):
   (define-tp my-layer ()
     :props \\='(face (:foreground $my-color))
     :data \\='((my-color . \"red\"))
     :compute \\='((full-name (lambda () (concat first-name \" \" last-name))))
     :watch \\='((my-color (lambda (new old layer) (message \"Color changed!\"))))
     :transform (lambda (text) (upcase text)))
-
-Format 4 - Parameterized with reactive features:
-  (define-tp my-color-layer (color)
-    :props \\=`(face (:foreground ,color))
-    :data \\='((my-var . \"value\"))
-    :compute ...)
 
 Usage:
   (tp-set \"emacs\" \\='tp-bold t)
@@ -2480,7 +2474,7 @@ ARGLIST must be either:
 BODY is either:
 - A single property list expression (simple format)
 - Keyword arguments starting with :props, :data, :compute, :watch, or :transform
-  (reactive format)
+  (reactive format - only for non-parameterized layers with $-prefixed variables)
 
 Note: NAME cannot be a built-in Emacs text property name like `face',
 `display', `invisible', etc. See `tp--builtin-text-properties' for the
@@ -2495,13 +2489,9 @@ complete list of reserved names."
   (let ((first-elem (car body)))
     (if (and (keywordp first-elem)
              (memq first-elem '(:props :data :compute :watch :transform)))
-        ;; Reactive format
+        ;; Reactive format - only allowed for non-parameterized layers
         (if arglist
-            ;; Parameterized reactive: store as function that calls tp--define-layer-internal
-            (let ((arg (car arglist)))
-              `(tp--define-layer-parameterized-reactive
-                ',name ',arglist
-                (lambda (,arg) (list ,@body))))
+            (error "define-tp: reactive keywords (:props, :data, :compute, :watch, :transform) are only supported for non-parameterized layers (empty arglist)")
           ;; Non-parameterized reactive: use tp--define-layer-internal directly
           `(tp--define-layer-internal ',name ,@body))
       ;; Simple format (original behavior)
@@ -2516,19 +2506,6 @@ complete list of reserved names."
           `(tp--define-layer-unified ',name ',arglist ',simple-body))
          (t
           (error "define-tp ARGLIST must be empty or contain exactly one symbol")))))))
-
-(defun tp--define-layer-parameterized-reactive (name arglist body-fn)
-  "Define a parameterized layer NAME with ARGLIST and reactive BODY-FN.
-BODY-FN is a function that takes the parameter and returns a keyword plist
-like (:props ... :data ... :compute ... :watch ... :transform ...).
-The layer is stored and evaluated when tp-layer-props-with-arg is called."
-  ;; Store the parameterized reactive definition
-  ;; Format: (ARGLIST BODY-FN) where BODY-FN returns keyword plist
-  (let ((entry (list arglist body-fn)))
-    (if (assoc name tp-layer-alist)
-        (setf (cdr (assoc name tp-layer-alist)) entry)
-      (push (cons name entry) tp-layer-alist)))
-  (assoc name tp-layer-alist))
 
 (defun tp--define-layer-unified (name arglist body)
   "Define a layer NAME with ARGLIST and BODY using unified structure.
@@ -2900,31 +2877,15 @@ where ARGLIST is a non-nil list of argument symbols."
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
 If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer.
-Recursively expands any nested layer names in the returned plist.
-
-Handles two storage formats:
-1. Simple parameterized: (ARGLIST BODY-FORM) - evaluate BODY-FORM with arg bound
-2. Reactive parameterized: (ARGLIST FUNCTION) - call FUNCTION with arg to get keyword plist"
+Recursively expands any nested layer names in the returned plist."
   (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
-    ;; entry is (ARGLIST BODY-FORM) or (ARGLIST FUNCTION)
+    ;; entry is (ARGLIST BODY-FORM)
     (let ((arglist (car entry))
           (body (cadr entry)))
       (when arglist  ; Only for parameterized layers
         (let* ((arg-sym (car arglist))
-               ;; Check if body is a function (reactive parameterized layer)
-               (result (if (functionp body)
-                           ;; Reactive parameterized: call the function with arg
-                           (funcall body arg)
-                         ;; Simple parameterized: evaluate with arg bound
-                         (eval `(let ((,arg-sym ',arg)) ,body))))
-               ;; For reactive parameterized, result is (:props ... :data ...), extract :props
-               (plist (if (and (listp result)
-                               (keywordp (car result))
-                               (eq (car result) :props))
-                          ;; It's a reactive keyword plist - get the :props value
-                          (plist-get result :props)
-                        ;; It's already a direct plist
-                        result)))
+               ;; Evaluate the body with the argument bound
+               (plist (eval `(let ((,arg-sym ',arg)) ,body))))
           (when plist
             ;; Recursively expand nested layer names
             (when (tp--plist-has-layer-key-p plist)
