@@ -2441,35 +2441,40 @@ The layer is stored in `tp-layer-alist'."
         (tp--update-layer-regions name)
         (assoc name tp-layer-alist)))))
 
-(defmacro define-tp (name arglist body)
+(defmacro define-tp (name arglist &rest body)
   "Define a text property layer named NAME.
 
-This macro supports two formats:
+This macro supports three formats:
 
-Format 1 - Non-parameterized (empty arglist):
+Format 1 - Non-parameterized simple (empty arglist, simple body):
   (define-tp tp-bold ()
     \\='(face bold))
+
+Format 2 - Parameterized (single argument):
+  (define-tp tp-space (pixel)
+    \\=`(display (space :width (,pixel))))
+
+Format 3 - With reactive features (supports :props, :data, :compute, :watch, :transform):
+  (define-tp my-layer ()
+    :props \\='(face (:foreground $my-color))
+    :data \\='((my-color . \"red\"))
+    :compute \\='((full-name (lambda () (concat first-name \" \" last-name))))
+    :watch \\='((my-color (lambda (new old layer) (message \"Color changed!\"))))
+    :transform (lambda (text) (upcase text)))
 
 Usage:
   (tp-set \"emacs\" \\='tp-bold t)
   (tp-set 0 5 \\='(tp-bold t) \"emacs\")
   ;; => #(\"emacs\" 0 5 (tp-name tp-bold face bold))
 
-Format 2 - Parameterized (single argument):
-  (define-tp tp-space (pixel)
-    \\=`(display (space :width (,pixel))))
-
-Usage:
-  (tp-set \"emacs\" \\='tp-space 2)
-  (tp-set 0 5 \\='(tp-space 2) \"emacs\")
-  ;; => #(\"emacs\" 0 5 (tp-name tp-space display (space :width (2))))
-
 ARGLIST must be either:
 - An empty list () for non-parameterized layers
 - A list containing exactly one symbol for parameterized layers
 
-BODY is the property list expression. For parameterized layers,
-it will be evaluated with the argument bound.
+BODY is either:
+- A single property list expression (simple format)
+- Keyword arguments starting with :props, :data, :compute, :watch, or :transform
+  (reactive format - only supported for non-parameterized layers)
 
 Note: NAME cannot be a built-in Emacs text property name like `face',
 `display', `invisible', etc. See `tp--builtin-text-properties' for the
@@ -2480,16 +2485,26 @@ complete list of reserved names."
   ;; Check for built-in text property name conflict
   (when (tp--builtin-text-property-p name)
     (error "define-tp: '%s' is a built-in Emacs text property name and cannot be used as a layer name" name))
-  (cond
-   ;; Non-parameterized: empty arglist - store as (LAYER-NAME nil BODY-FORM)
-   ((null arglist)
-    `(tp--define-layer-unified ',name nil ,body))
-   ;; Parameterized: single argument - store as (LAYER-NAME ARGLIST BODY-FORM)
-   ((and (= (length arglist) 1)
-         (symbolp (car arglist)))
-    `(tp--define-layer-unified ',name ',arglist ',body))
-   (t
-    (error "define-tp ARGLIST must be empty or contain exactly one symbol"))))
+  ;; Check if body starts with keyword (reactive format)
+  (let ((first-elem (car body)))
+    (if (and (keywordp first-elem)
+             (memq first-elem '(:props :data :compute :watch :transform)))
+        ;; Reactive format - use tp-define-layer
+        (if arglist
+            (error "define-tp: reactive features (:props, :data, etc.) are only supported for non-parameterized layers")
+          `(tp-define-layer ',name ,@body))
+      ;; Simple format (original behavior)
+      (let ((simple-body (car body)))
+        (cond
+         ;; Non-parameterized: empty arglist - store as (LAYER-NAME nil BODY-FORM)
+         ((null arglist)
+          `(tp--define-layer-unified ',name nil ,simple-body))
+         ;; Parameterized: single argument - store as (LAYER-NAME ARGLIST BODY-FORM)
+         ((and (= (length arglist) 1)
+               (symbolp (car arglist)))
+          `(tp--define-layer-unified ',name ',arglist ',simple-body))
+         (t
+          (error "define-tp ARGLIST must be empty or contain exactly one symbol")))))))
 
 (defun tp--define-layer-unified (name arglist body)
   "Define a layer NAME with ARGLIST and BODY using unified structure.

@@ -1389,9 +1389,9 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 
 ##### `define-tp` - 定义单个自定义文本属性（层）
 
-定义自定义文本属性，名称无需单引号引用。支持两种格式：
+定义自定义文本属性，名称无需单引号引用。支持三种格式：
 
-**格式一 - 无参数（空参数列表）：**
+**格式一 - 无参数（空参数列表，简单属性）：**
 
 ```elisp
 (define-tp tp-bold ()
@@ -1412,6 +1412,30 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 (tp-set "emacs" 'tp-space 2)
 (tp-set 0 5 '(tp-space 2) "emacs")
 ```
+
+**格式三 - 响应式特性（支持 :props、:data、:compute、:watch、:transform）：**
+
+```elisp
+(define-tp my-reactive-layer ()
+  :props '(face (:foreground $my-color))
+  :data '((my-color . "red"))
+  :compute '((full-name (lambda () (concat first-name " " last-name))))
+  :watch '((my-color (lambda (new old layer) (message "Color changed!"))))
+  :transform (lambda (text) (upcase text)))
+
+;; 用法:
+(tp-push-layer 1 10 'my-reactive-layer)
+;; 改变变量会自动更新文本
+(setq my-color "blue")
+```
+
+**响应式关键字说明：**
+
+- **:props** - 属性列表，`$` 前缀的符号是响应式变量
+- **:data** - 额外的响应式变量列表（可以包含初始值）
+- **:compute** - 计算属性列表，从其他变量派生值
+- **:watch** - 监听器列表，变量改变时执行回调
+- **:transform** - 转换函数，在显示 `tp-text` 值之前对其进行处理
 
 ##### `define-tps` - 定义自定义文本属性组（层组）
 

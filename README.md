@@ -1397,9 +1397,9 @@ tp.el unifies the concepts of "custom text properties" and "text property layers
 
 ##### `define-tp` - Define Single Custom Text Property (Layer)
 
-Define a custom text property. The name does not need to be quoted. Supports two formats:
+Define a custom text property. The name does not need to be quoted. Supports three formats:
 
-**Format 1 - Non-parameterized (empty argument list):**
+**Format 1 - Non-parameterized (empty argument list, simple properties):**
 
 ```elisp
 (define-tp tp-bold ()
@@ -1420,6 +1420,30 @@ Define a custom text property. The name does not need to be quoted. Supports two
 (tp-set "emacs" 'tp-space 2)
 (tp-set 0 5 '(tp-space 2) "emacs")
 ```
+
+**Format 3 - With reactive features (:props, :data, :compute, :watch, :transform):**
+
+```elisp
+(define-tp my-reactive-layer ()
+  :props '(face (:foreground $my-color))
+  :data '((my-color . "red"))
+  :compute '((full-name (lambda () (concat first-name " " last-name))))
+  :watch '((my-color (lambda (new old layer) (message "Color changed!"))))
+  :transform (lambda (text) (upcase text)))
+
+;; Usage:
+(tp-push-layer 1 10 'my-reactive-layer)
+;; Changing the variable automatically updates the text
+(setq my-color "blue")
+```
+
+**Reactive Keywords:**
+
+- **:props** - Property list where `$`-prefixed symbols are reactive variables
+- **:data** - Additional reactive variables (can include initial values)
+- **:compute** - Computed properties that derive values from other variables
+- **:watch** - Watchers that execute callbacks when variables change
+- **:transform** - Transform function to process `tp-text` values before display
 
 ##### `define-tps` - Define Custom Text Property Group (Layer Group)
 
