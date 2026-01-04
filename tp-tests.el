@@ -2104,7 +2104,7 @@ When using tp-regexp-add (direct property setting), tp-name is NOT added."
 
 (ert-deftest tp-test-set-with-group-name ()
   "Test tp-set accepts a group name defined by define-tps.
-When using tp-set (direct property setting), tp-name is NOT added."
+When using tp-set with a group, layers are set with tp-name and tp-layers."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (define-tps my-group ()
@@ -2113,30 +2113,29 @@ When using tp-set (direct property setting), tp-name is NOT added."
     (tp-set 1 6 'my-group)
     (should (eq (tp-at 1 'face) 'bold))
     (should (equal (tp-at 1 'help-echo) "grouped"))
-    ;; tp-name should NOT be set for direct property setting
-    (should-not (tp-at 1 'tp-name))))
+    ;; tp-name should be set for layer groups
+    (should (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-set-with-group-name-multiple-layers ()
   "Test tp-set with group containing multiple layers.
-When using tp-set (direct property setting), tp-name and tp-layers are NOT added.
-Only the first layer's properties are applied."
+When using tp-set with a group, all layers are set with tp-name and tp-layers."
   (tp-test-with-temp-buffer
     (insert "Hello World")
     (define-tps my-group ()
       '("first" . (face bold))
       '("second" . (face italic)))
-    ;; Use group name - only first layer is applied (no layer stacking for direct setting)
+    ;; Use group name - all layers are applied with tp-layers structure
     (tp-set 1 6 'my-group)
-    ;; First layer's properties are applied
+    ;; First layer's properties are applied at top
     (should (eq (tp-at 1 'face) 'bold))
-    ;; tp-name should NOT be set for direct property setting
-    (should-not (tp-at 1 'tp-name))
-    ;; tp-layers should NOT be set for direct property setting
-    (should-not (tp-at 1 'tp-layers))))
+    ;; tp-name should be set for the top layer
+    (should (tp-at 1 'tp-name))
+    ;; tp-layers should contain the rest of the layers
+    (should (tp-at 1 'tp-layers))))
 
 (ert-deftest tp-test-match-set-with-group-name ()
   "Test tp-match-set accepts a group name.
-When using tp-match-set (direct property setting), tp-name is NOT added."
+When using tp-match-set with a group, layers are set with tp-name."
   (tp-test-with-temp-buffer
     (insert "Hello World Hello")
     (define-tps my-group ()
@@ -2144,8 +2143,8 @@ When using tp-match-set (direct property setting), tp-name is NOT added."
     (tp-match-set "Hello" 'my-group)
     (should (eq (tp-at 1 'face) 'italic))
     (should (eq (tp-at 13 'face) 'italic))
-    ;; tp-name should NOT be set for direct property setting
-    (should-not (tp-at 1 'tp-name))))
+    ;; tp-name should be set for layer groups
+    (should (tp-at 1 'tp-name))))
 
 (ert-deftest tp-test-resolve-props-returns-nil-for-unknown ()
   "Test tp--resolve-props returns nil for unknown layer name."

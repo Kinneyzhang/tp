@@ -2994,16 +2994,14 @@ Returns the expanded plist."
                    (tp-layer-props key nil))  ; no tp-name
                   ;; Parameterized layer group - evaluate with the argument (val)
                   ((tp-group-parameterized-p key)
-                   (when-let ((layer-props-list (tp-group-props-with-arg key val nil)))
-                     ;; Merge all layers' properties (reverse so first layer wins)
-                     (apply #'append (reverse layer-props-list))))
-                  ;; Non-parameterized layer group - merge all layers' properties
+                   (when-let ((layer-props-list (tp-group-props-with-arg key val t)))
+                     ;; Build layered structure: first layer at top, rest in tp-layers
+                     (tp--build-layer-props layer-props-list)))
+                  ;; Non-parameterized layer group - build layered structure
                   ((assoc key tp-layer-groups)
-                   (when-let ((layer-props-list (tp-group-props key)))
-                     ;; For direct property setting, merge all layers' properties
-                     ;; without the tp-layers structure.
-                     ;; Reverse so first layer's properties are applied last (take precedence)
-                     (apply #'append (reverse layer-props-list)))))))
+                   (when-let ((layer-props-list (tp-group-props key t)))
+                     ;; Build layered structure: first layer at top, rest in tp-layers
+                     (tp--build-layer-props layer-props-list))))))
             (when layer-props
               ;; Recursively expand if the layer props contain more layer names
               (when (tp--plist-has-layer-key-p layer-props)
@@ -3076,16 +3074,14 @@ For group names, includes `tp-layers' property with the full layer stack."
                  (tp-layer-props first-elem nil))  ; no tp-name
                 ;; Parameterized layer group - evaluate with the argument
                 ((tp-group-parameterized-p first-elem)
-                 (when-let ((layer-props-list (tp-group-props-with-arg first-elem second-elem nil)))
-                   ;; Merge all layers' properties (reverse so first layer wins)
-                   (apply #'append (reverse layer-props-list))))
-                ;; Non-parameterized layer group - merge all layers' properties
+                 (when-let ((layer-props-list (tp-group-props-with-arg first-elem second-elem t)))
+                   ;; Build layered structure: first layer at top, rest in tp-layers
+                   (tp--build-layer-props layer-props-list)))
+                ;; Non-parameterized layer group - build layered structure
                 ((assoc first-elem tp-layer-groups)
-                 (when-let ((layer-props-list (tp-group-props first-elem)))
-                   ;; For direct property setting, merge all layers' properties
-                   ;; without the tp-layers structure.
-                   ;; Reverse so first layer's properties are applied last (take precedence)
-                   (apply #'append (reverse layer-props-list)))))))
+                 (when-let ((layer-props-list (tp-group-props first-elem t)))
+                   ;; Build layered structure: first layer at top, rest in tp-layers
+                   (tp--build-layer-props layer-props-list))))))
           ;; Recursively resolve extra properties (they may also contain layer names)
           (let ((expanded-props
                  (if (and layer-props extra-props)
@@ -3174,13 +3170,14 @@ For group names, includes `tp-layers' property with the full layer stack."
      ;; Check layer - get props without tp-name for direct property setting
      ((assoc props tp-layer-alist)
       (tp-layer-props props nil))  ; no tp-name
-     ;; Check group - merge all layers' properties for direct setting
+     ;; Check group - build layered structure with tp-layers
      ((assoc props tp-layer-groups)
-      (when-let ((layer-props-list (tp-group-props props)))
-        ;; For direct property setting, merge all layers' properties
-        ;; without the tp-layers structure.
-        ;; Reverse so first layer's properties are applied last (take precedence)
-        (apply #'append (reverse layer-props-list))))
+      (when-let ((layer-props-list (tp-group-props props t)))  ; include tp-name
+        ;; Build layered structure: first layer at top, rest in tp-layers
+        (tp--build-layer-props layer-props-list)))
+     ;; Parameterized group without argument - cannot resolve, return nil
+     ((tp-group-parameterized-p props)
+      nil)
      ;; Not found - return nil (let caller decide how to handle)
      (t nil)))
    (t nil)))
