@@ -185,16 +185,24 @@ FORMAT-STRING and ARGS are passed to `format'."
 
 (defun tp-intervals (start end &optional object)
   "Return list of property intervals from START to END in OBJECT.
-Each element is (START END PROPERTIES). OBJECT defaults to current buffer."
-  (let ((intervals (object-intervals (or object (current-buffer)))))
+Each element is (START END PROPERTIES). OBJECT defaults to current buffer.
+For buffers, returns positions relative to START (0-based offsets).
+For strings, returns absolute positions."
+  (let* ((intervals (object-intervals (or object (current-buffer))))
+         ;; For buffers, object-intervals returns 0-based positions
+         ;; but buffer positions are 1-based, so we need to adjust
+         (offset (if (stringp object) 0 (1- start)))
+         ;; Filter bounds in 0-based terms for buffers
+         (filter-start (if (stringp object) start offset))
+         (filter-end (if (stringp object) end (1- end))))
     (mapcar (lambda (tp)
-              (let* ((tp-start (- (nth 0 tp) (if (stringp object) 0 start)))
-                     (tp-end (- (nth 1 tp) (if (stringp object) 0 start)))
+              (let* ((tp-start (- (nth 0 tp) offset))
+                     (tp-end (- (nth 1 tp) offset))
                      (tp-props (nth 2 tp)))
                 (list tp-start tp-end tp-props)))
             (seq-filter (lambda (tp)
-                          (and (< (nth 0 tp) (if (stringp object) end (+ start end)))
-                               (> (nth 1 tp) (if (stringp object) start 0))))
+                          (and (< (nth 0 tp) filter-end)
+                               (> (nth 1 tp) filter-start)))
                         intervals))))
 
 (defun tp-empty-p (&optional object)
