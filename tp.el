@@ -2900,15 +2900,31 @@ where ARGLIST is a non-nil list of argument symbols."
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
 If INCLUDE-TP-NAME is non-nil, appends 'tp-name property to identify the layer.
-Recursively expands any nested layer names in the returned plist."
+Recursively expands any nested layer names in the returned plist.
+
+Handles two storage formats:
+1. Simple parameterized: (ARGLIST BODY-FORM) - evaluate BODY-FORM with arg bound
+2. Reactive parameterized: (ARGLIST FUNCTION) - call FUNCTION with arg to get keyword plist"
   (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
-    ;; entry is (ARGLIST BODY-FORM)
+    ;; entry is (ARGLIST BODY-FORM) or (ARGLIST FUNCTION)
     (let ((arglist (car entry))
           (body (cadr entry)))
       (when arglist  ; Only for parameterized layers
         (let* ((arg-sym (car arglist))
-               ;; Evaluate the body with the argument bound
-               (plist (eval `(let ((,arg-sym ',arg)) ,body))))
+               ;; Check if body is a function (reactive parameterized layer)
+               (result (if (functionp body)
+                           ;; Reactive parameterized: call the function with arg
+                           (funcall body arg)
+                         ;; Simple parameterized: evaluate with arg bound
+                         (eval `(let ((,arg-sym ',arg)) ,body))))
+               ;; For reactive parameterized, result is (:props ... :data ...), extract :props
+               (plist (if (and (listp result)
+                               (keywordp (car result))
+                               (eq (car result) :props))
+                          ;; It's a reactive keyword plist - get the :props value
+                          (plist-get result :props)
+                        ;; It's already a direct plist
+                        result)))
           (when plist
             ;; Recursively expand nested layer names
             (when (tp--plist-has-layer-key-p plist)
