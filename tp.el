@@ -2917,6 +2917,47 @@ from `define-tps` (parameterized groups store ARGLIST and BODY-FORM)."
                 (tp-layer-props layer include-tp-name))
               entry)))))
 
+(defun tp-group-parameterized-p (group-name)
+  "Return non-nil if GROUP-NAME is a parameterized group.
+Parameterized groups are stored in format (GROUP-NAME ARGLIST BODY-FORM)
+where ARGLIST is a non-nil list of argument symbols."
+  (when-let ((entry (cdr (assoc group-name tp-layer-groups))))
+    ;; Check for unified format: (ARGLIST BODY-FORM) with non-nil ARGLIST
+    (and (= (length entry) 2)
+         (listp (car entry))
+         (not (null (car entry)))
+         (cl-every #'symbolp (car entry)))))
+
+(defun tp-group-props-with-arg (group-name arg &optional include-tp-name)
+  "Return list of properties for parameterized group GROUP-NAME with ARG.
+Evaluates the body form with the argument bound to the parameter.
+Each evaluated element is a layer reference like (layer-name arg) or just layer-name.
+Returns a list of property lists for each layer in the group."
+  (when-let ((entry (cdr (assoc group-name tp-layer-groups))))
+    ;; entry is (ARGLIST BODY-FORM)
+    (let ((arglist (car entry))
+          (body-form (cadr entry)))
+      (when arglist  ; Only for parameterized groups
+        (let* ((arg-sym (car arglist))
+               ;; Evaluate the body with the argument bound - returns list of layer specs
+               (layer-specs (eval `(let ((,arg-sym ',arg)) ,body-form))))
+          ;; Convert layer specs to property lists
+          (mapcar (lambda (spec)
+                    (cond
+                     ;; spec is a symbol - just a layer name
+                     ((symbolp spec)
+                      (tp-layer-props spec include-tp-name))
+                     ;; spec is (layer-name arg) - parameterized layer
+                     ((and (listp spec) (symbolp (car spec)))
+                      (let ((layer-name (car spec))
+                            (layer-arg (cadr spec)))
+                        (if (tp-layer-parameterized-p layer-name)
+                            (tp-layer-props-with-arg layer-name layer-arg include-tp-name)
+                          ;; Non-parameterized layer - arg should be t or ignored
+                          (tp-layer-props layer-name include-tp-name))))
+                     (t nil)))
+                  layer-specs))))))
+
 (defun tp--is-layer-name-p (sym)
   "Return non-nil if SYM is a defined layer, parameterized layer, or group name."
   (and (symbolp sym)
@@ -2951,7 +2992,12 @@ Returns the expanded plist."
                   ;; Non-parameterized layer - val should be t
                   ((assoc key tp-layer-alist)
                    (tp-layer-props key nil))  ; no tp-name
-                  ;; Layer group - merge all layers' properties for direct setting
+                  ;; Parameterized layer group - evaluate with the argument (val)
+                  ((tp-group-parameterized-p key)
+                   (when-let ((layer-props-list (tp-group-props-with-arg key val nil)))
+                     ;; Merge all layers' properties (reverse so first layer wins)
+                     (apply #'append (reverse layer-props-list))))
+                  ;; Non-parameterized layer group - merge all layers' properties
                   ((assoc key tp-layer-groups)
                    (when-let ((layer-props-list (tp-group-props key)))
                      ;; For direct property setting, merge all layers' properties
@@ -3028,7 +3074,12 @@ For group names, includes `tp-layers' property with the full layer stack."
                 ;; (silently ignore non-t values for flexibility)
                 ((assoc first-elem tp-layer-alist)
                  (tp-layer-props first-elem nil))  ; no tp-name
-                ;; Layer group - merge all layers' properties for direct setting
+                ;; Parameterized layer group - evaluate with the argument
+                ((tp-group-parameterized-p first-elem)
+                 (when-let ((layer-props-list (tp-group-props-with-arg first-elem second-elem nil)))
+                   ;; Merge all layers' properties (reverse so first layer wins)
+                   (apply #'append (reverse layer-props-list))))
+                ;; Non-parameterized layer group - merge all layers' properties
                 ((assoc first-elem tp-layer-groups)
                  (when-let ((layer-props-list (tp-group-props first-elem)))
                    ;; For direct property setting, merge all layers' properties
