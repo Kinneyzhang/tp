@@ -53,7 +53,8 @@
     - [tp-search](#tp-search---搜索所有匹配)
     - [tp-search-map](#tp-search-map---对匹配文本应用函数)
 - [属性层系统](#属性层系统)
-  - [自定义文本属性与文本属性层](#自定义文本属性与文本属性层)
+  - [自定义文本属性](#自定义文本属性)
+  - [文本属性层](#文本属性层)
   - [属性层概念](#属性层概念)
   - [属性层定义](#属性层定义)
     - [define-tp / define-tps](#define-tp--define-tps---定义自定义文本属性)
@@ -1339,26 +1340,70 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 属性层系统是 tp.el 的创新功能，允许在同一文本区域堆叠多组属性。只有顶层属性可见，但下层属性会被保留，并可通过轮转或固定操作使其显现。
 
-### 自定义文本属性与文本属性层
+### 自定义文本属性
 
-tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
+自定义文本属性是 tp.el 提供的一个**通用功能**。使用 `define-tp` 定义后，可以通过 `tp-set`/`tp-reset`/`tp-add` 等核心函数设置。
 
-#### 概念辨析
+#### 核心特性
 
-1. **自定义文本属性**：使用 `define-tp` 定义的文本属性，当使用 `tp-set`/`tp-reset`/`tp-add` 设置时，被认为是普通文本属性，可以和 Emacs 内置的文本属性（如 `face`、`display` 等）混合使用。
+1. **与内置属性混合使用**：自定义文本属性可以和 Emacs 内置的文本属性（如 `face`、`display`、`help-echo` 等）无缝混合使用。
 
-2. **文本属性层**：同样使用 `define-tp` 定义，但当使用 `tp-put-layer`/`tp-push-layer` 设置时，会引入层相关的属性（如 `tp-name`、`tp-layers`），支持层的堆叠和操作。
-
-3. **自定义文本属性组**：使用 `define-tps` 定义多个相关的文本属性，它们可以单独使用，也可以作为一组使用。
-
-#### 定义与使用
+2. **重复属性自动合并**：在一次设置操作中，如果同一个属性（如 `face`）被指定多次，它们会自动合并，而非简单覆盖。
 
 ```elisp
-;; 定义自定义文本属性（层）
+;; 定义自定义文本属性
 (define-tp tp-highlight ()
   '(face (:background "yellow")))
 
-;; 作为普通文本属性使用（不引入 tp-name 等层属性）
+;; 与内置属性混合使用
+(tp-set 1 10 '(tp-highlight t face bold help-echo "提示"))
+;; 结果: 同时具有 tp-highlight 的背景色、bold 样式和 help-echo 属性
+
+;; 重复属性自动合并示例
+(tp-set "emacs"
+        'face 'bold
+        'face '(:background "green")
+        'face '(:foreground "red"))
+;; 结果: face 是 ((:background "green" :foreground "red") bold)
+;; 三个 face 属性被智能合并
+
+;; 同一子属性后面的覆盖前面的
+(tp-set "emacs"
+        'face '(:foreground "red")
+        'face '(:foreground "yellow"))
+;; 结果: foreground 是 "yellow"
+
+;; 与 tp-palette 层配合使用
+(tp-set "emacs"
+        'tp-palette 'info
+        'face '(:foreground "red"))
+;; 结果: tp-palette 的 face 与 (:foreground "red") 合并
+```
+
+#### 自定义文本属性组
+
+使用 `define-tps` 可以定义多个相关的文本属性组，它们可以单独使用，也可以作为一组使用。
+
+---
+
+### 文本属性层
+
+文本属性层是 tp.el 的**独特功能**，需要使用特定的函数（`tp-put-layer`/`tp-push-layer`）才能设置和使用。
+
+#### 核心特性
+
+1. **引入层相关属性**：当使用 `tp-push-layer`/`tp-put-layer` 设置时，会自动引入 `tp-name`、`tp-layers` 等层相关属性，用于支持层的堆叠和操作。
+
+2. **层堆叠机制**：可以在同一文本区域堆叠多组属性，只有顶层可见，下层被保留。
+
+3. **丰富的层操作**：支持轮换、删除、合并等多种层操作。
+
+```elisp
+;; 定义文本属性（可同时用作自定义属性或层）
+(define-tp tp-highlight ()
+  '(face (:background "yellow")))
+
+;; 作为普通自定义文本属性使用（不引入层属性）
 (tp-set 1 10 '(tp-highlight t))
 ;; 结果: 只有 face 属性，没有 tp-name
 
@@ -1369,9 +1414,12 @@ tp.el 统一了"自定义文本属性"和"文本属性层"两个概念：
 
 #### 何时使用哪种方式
 
-- **`tp-set`/`tp-reset`/`tp-add`**：当你只需要设置文本属性，不需要层堆叠功能时使用。适合简单的属性设置场景。
-
-- **`tp-push-layer`/`tp-put-layer`**：当你需要在同一文本区域堆叠多组属性，并进行轮换、删除等层操作时使用。
+| 场景 | 推荐方式 | 说明 |
+|------|----------|------|
+| 简单属性设置 | `tp-set`/`tp-reset`/`tp-add` | 当你只需要设置文本属性，不需要层堆叠功能时 |
+| 与内置属性混合 | `tp-set`/`tp-reset`/`tp-add` | 自定义属性可以和内置属性无缝混合 |
+| 需要层堆叠 | `tp-push-layer`/`tp-put-layer` | 当你需要在同一文本区域堆叠多组属性时 |
+| 需要层操作 | `tp-push-layer`/`tp-put-layer` | 当你需要进行轮换、删除等层操作时 |
 
 ### 属性层概念
 

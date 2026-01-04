@@ -54,7 +54,8 @@
     - [tp-search](#tp-search---search-all-matches)
     - [tp-search-map](#tp-search-map---apply-function-to-matched-text)
 - [The Property Layer System](#the-property-layer-system)
-  - [Custom Text Properties vs Text Property Layers](#custom-text-properties-vs-text-property-layers)
+  - [Custom Text Properties](#custom-text-properties)
+  - [Text Property Layers](#text-property-layers)
   - [Property Layer Concept](#property-layer-concept)
   - [Property Layer Definition](#property-layer-definition)
     - [define-tp / define-tps](#define-tp--define-tps---define-custom-text-properties)
@@ -1345,26 +1346,70 @@ Apply FUNCTION to all matches of PROPERTY in OBJECT.
 
 The **property layer system** is tp.el's innovative feature that allows stacking multiple sets of properties on the same text region. Only the **top layer** is visible, but lower layers are preserved and can be revealed through rotation or pinning.
 
-### Custom Text Properties vs Text Property Layers
+### Custom Text Properties
 
-tp.el unifies the concepts of "custom text properties" and "text property layers":
+Custom text properties is a **general-purpose feature** provided by tp.el. After defining with `define-tp`, they can be set using core functions like `tp-set`/`tp-reset`/`tp-add`.
 
-#### Concept Distinction
+#### Core Features
 
-1. **Custom Text Properties**: Defined using `define-tp`, when set using `tp-set`/`tp-reset`/`tp-add`, they are treated as regular text properties that can be mixed with built-in Emacs text properties (like `face`, `display`, etc.).
+1. **Mixed Use with Built-in Properties**: Custom text properties can be seamlessly mixed with built-in Emacs text properties (such as `face`, `display`, `help-echo`, etc.).
 
-2. **Text Property Layers**: Also defined using `define-tp`, but when set using `tp-put-layer`/`tp-push-layer`, layer-related properties are introduced (`tp-name`, `tp-layers`), enabling layer stacking and operations.
-
-3. **Custom Text Property Groups**: Defined using `define-tps`, they contain multiple related text properties that can be used individually or as a group.
-
-#### Definition and Usage
+2. **Automatic Merging of Duplicate Properties**: In a single setting operation, if the same property (e.g., `face`) is specified multiple times, they are automatically merged rather than simply overwritten.
 
 ```elisp
-;; Define custom text property (layer)
+;; Define a custom text property
 (define-tp tp-highlight ()
   '(face (:background "yellow")))
 
-;; Use as regular text property (no tp-name or layer attributes)
+;; Mixed use with built-in properties
+(tp-set 1 10 '(tp-highlight t face bold help-echo "tip"))
+;; Result: Has tp-highlight's background color, bold style, and help-echo property
+
+;; Automatic merging of duplicate properties example
+(tp-set "emacs"
+        'face 'bold
+        'face '(:background "green")
+        'face '(:foreground "red"))
+;; Result: face is ((:background "green" :foreground "red") bold)
+;; Three face properties are intelligently merged
+
+;; Later values override earlier ones for the same sub-property
+(tp-set "emacs"
+        'face '(:foreground "red")
+        'face '(:foreground "yellow"))
+;; Result: foreground is "yellow"
+
+;; Use with tp-palette layer
+(tp-set "emacs"
+        'tp-palette 'info
+        'face '(:foreground "red"))
+;; Result: tp-palette's face is merged with (:foreground "red")
+```
+
+#### Custom Text Property Groups
+
+Using `define-tps`, you can define multiple related text property groups that can be used individually or as a group.
+
+---
+
+### Text Property Layers
+
+Text property layers is a **unique feature** of tp.el that requires specific functions (`tp-put-layer`/`tp-push-layer`) to set and use.
+
+#### Core Features
+
+1. **Layer-Related Properties**: When set using `tp-push-layer`/`tp-put-layer`, layer-related properties (`tp-name`, `tp-layers`) are automatically introduced to support layer stacking and operations.
+
+2. **Layer Stacking Mechanism**: Multiple sets of properties can be stacked on the same text region, with only the top layer visible while lower layers are preserved.
+
+3. **Rich Layer Operations**: Supports various layer operations such as rotation, deletion, merging, etc.
+
+```elisp
+;; Define a text property (can be used as custom property or layer)
+(define-tp tp-highlight ()
+  '(face (:background "yellow")))
+
+;; Use as regular custom text property (no layer properties)
 (tp-set 1 10 '(tp-highlight t))
 ;; Result: Only face property, no tp-name
 
@@ -1375,9 +1420,12 @@ tp.el unifies the concepts of "custom text properties" and "text property layers
 
 #### When to Use Which
 
-- **`tp-set`/`tp-reset`/`tp-add`**: When you only need to set text properties without layer stacking functionality. Suitable for simple property setting scenarios.
-
-- **`tp-push-layer`/`tp-put-layer`**: When you need to stack multiple sets of properties on the same text region and perform layer operations like rotation, deletion, etc.
+| Scenario | Recommended Method | Description |
+|----------|-------------------|-------------|
+| Simple property setting | `tp-set`/`tp-reset`/`tp-add` | When you only need to set text properties without layer stacking |
+| Mixed with built-in properties | `tp-set`/`tp-reset`/`tp-add` | Custom properties can be seamlessly mixed with built-in properties |
+| Need layer stacking | `tp-push-layer`/`tp-put-layer` | When you need to stack multiple sets of properties on the same text region |
+| Need layer operations | `tp-push-layer`/`tp-put-layer` | When you need to perform rotation, deletion, and other layer operations |
 
 ### Property Layer Concept
 
