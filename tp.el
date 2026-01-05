@@ -957,12 +957,16 @@ Text properties embedded in NEW-TEXT are merged with PROPS."
       ;; Search for next match
       (setq match (text-property-search-forward 'tp-name layer-name t)))))
 
-(defun tp--handle-tp-text-property (start end props object &optional preserve-props)
+(defun tp--handle-tp-text-property (start end props object &optional preserve-props merge-mode)
   "Handle tp-text property in PROPS for region from START to END in OBJECT.
 If tp-text is nil, initialize it to the current text in the region.
 If tp-text is a string different from current text, replace the text.
 When PRESERVE-PROPS is non-nil, existing text properties are preserved
 on the replaced text (used by tp-set and tp-add).
+MERGE-MODE controls how embedded text properties in tp-text are handled:
+  :merge - embedded properties are merged with props (tp-add behavior)
+  :override or nil - props override embedded properties (tp-set behavior)
+  :reset - embedded properties are ignored, only props used (tp-reset behavior)
 Returns (PROPS NEW-END NEW-OBJECT) where PROPS is the updated props,
 NEW-END is the new end position after any text replacement, and
 NEW-OBJECT is the new string object (only different for strings with tp-text)."
@@ -1009,14 +1013,21 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                        (message "tp: transform error for %s: %s" layer-name err)
                        tp-text-val))
                   tp-text-val))
-               ;; Merge embedded text properties from final-text into props
-               ;; This way the caller applies all properties together
-               (merged-props (tp--merge-string-props-into-plist final-text props)))
+               ;; Handle embedded text properties based on merge-mode:
+               ;; :merge - merge embedded props with props (tp-add)
+               ;; :override/nil - props take precedence, don't merge (tp-set)
+               ;; :reset - ignore embedded props entirely (tp-reset)
+               (result-props
+                (if (eq merge-mode :merge)
+                    ;; tp-add: merge embedded properties with props
+                    (tp--merge-string-props-into-plist final-text props)
+                  ;; tp-set/:override or tp-reset: just use props as-is
+                  props)))
           (if (stringp object)
               ;; For strings: create a new string with tp-text content
-              ;; Return merged props so all properties are applied together
-              (let ((new-string (copy-sequence final-text)))
-                (list merged-props (length new-string) new-string))
+              ;; Strip properties - result-props will be applied by the caller
+              (let ((new-string (substring-no-properties final-text)))
+                (list result-props (length new-string) new-string))
             ;; For buffers: replace text and adjust end position
             (let ((old-text (if object
                                 (with-current-buffer object
@@ -1024,7 +1035,7 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                               (buffer-substring-no-properties start end))))
               (if (equal old-text (substring-no-properties final-text))
                   ;; Same text content, no replacement needed
-                  (list merged-props end object)
+                  (list result-props end object)
                 ;; Need to replace text
                 (let ((existing-props (when preserve-props
                                         (if object
@@ -1037,7 +1048,7 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                           (let ((inhibit-read-only t))
                             (delete-region start end)
                             (goto-char start)
-                            ;; Insert without properties - we'll apply merged props later
+                            ;; Insert without properties - we'll apply result-props later
                             (insert (substring-no-properties final-text))))
                       (let ((inhibit-read-only t))
                         (delete-region start end)
@@ -1047,10 +1058,10 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                     ;; Re-apply existing properties to new text region if preserving
                     (when existing-props
                       (cl-loop for (key val) on existing-props by #'cddr
-                               do (unless (plist-member merged-props key)
+                               do (unless (plist-member result-props key)
                                     (put-text-property
                                      start new-end key val object))))
-                    (list merged-props new-end object))))))))
+                    (list result-props new-end object))))))))
        ;; Other types - return unchanged
        (t (list props end object))))))
 
@@ -1133,12 +1144,13 @@ Supports four calling conventions:
 
 PROPS can be a plist or a layer/group name symbol.
 Preserves existing properties not specified in PROPS.
+For tp-text, props override embedded text properties.
 Returns modified string or (START . END) cons for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property specially - this also merges embedded text properties
+    ;; Handle tp-text property specially - :override means props override embedded props
     (pcase-let ((`(,new-props ,new-finish ,new-object)
-                 (tp--handle-tp-text-property start finish props object t)))
+                 (tp--handle-tp-text-property start finish props object t :override)))
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
@@ -1159,12 +1171,13 @@ Returns modified string or (START . END) cons for buffer."
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
 Like `tp-set' but replaces ALL existing properties.
+For tp-text, embedded text properties are ignored - only props are used.
 Returns modified string or (START . END) cons for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property - this also merges embedded text properties
+    ;; Handle tp-text property - :reset means only use props, ignore embedded props
     (pcase-let ((`(,new-props ,new-finish ,new-object)
-                 (tp--handle-tp-text-property start finish props object nil)))
+                 (tp--handle-tp-text-property start finish props object nil :reset)))
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
@@ -1228,13 +1241,14 @@ Duplicate faces are not added."
   "Add or update text properties with deep merging.
 Unlike `tp-set', deeply merges nested properties.
 For `face' property, symbol faces are prepended to existing face list.
+For tp-text, embedded text properties are merged with props.
 Returns modified string or (START . END) cons for buffer."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property - this also merges embedded text properties
+    ;; Handle tp-text property - :merge means embedded props are merged with props
     (let ((has-tp-text (plist-member props 'tp-text)))
       (pcase-let ((`(,new-props ,new-finish ,new-object)
-                   (tp--handle-tp-text-property start finish props object t)))
+                   (tp--handle-tp-text-property start finish props object t :merge)))
         (setq props new-props finish new-finish object new-object)
         (when (and (stringp object) has-tp-text)
           (setq start 0))))
