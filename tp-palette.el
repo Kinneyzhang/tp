@@ -73,6 +73,48 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-tp-palette gray-50
+  :fg ("#24292f" . "#fafafa") :bg ("#fafafa" . "#171717")
+  :border ("#e5e5e5" . "#262626"))
+
+(define-tp-palette gray-100
+  :fg ("#24292f" . "#f5f5f5") :bg ("#f5f5f5" . "#1c1c1c")
+  :border ("#e5e5e5" . "#262626"))
+
+(define-tp-palette gray-200
+  :fg ("#24292f" . "#e5e5e5") :bg ("#e5e5e5" . "#262626")
+  :border ("#d4d4d4" . "#404040"))
+
+(define-tp-palette gray-300
+  :fg ("#24292f" . "#d4d4d4") :bg ("#d4d4d4" . "#404040")
+  :border ("#a3a3a3" . "#525252"))
+
+(define-tp-palette gray-400
+  :fg ("#24292f" . "#a3a3a3") :bg ("#a3a3a3" . "#525252")
+  :border ("#737373" . "#737373"))
+
+(define-tp-palette gray-500
+  :fg ("#ffffff" . "#737373") :bg ("#737373" . "#737373")
+  :border ("#525252" . "#a3a3a3"))
+
+(define-tp-palette gray-600
+  :fg ("#ffffff" . "#525252") :bg ("#525252" . "#a3a3a3")
+  :border ("#404040" . "#d4d4d4"))
+
+(define-tp-palette gray-700
+  :fg ("#ffffff" . "#404040") :bg ("#404040" . "#d4d4d4")
+  :border ("#262626" . "#e5e5e5"))
+
+(define-tp-palette gray-800
+  :fg ("#ffffff" . "#262626") :bg ("#262626" . "#e5e5e5")
+  :border ("#171717" . "#f5f5f5"))
+
+(define-tp-palette gray-900
+  :fg ("#ffffff" . "#171717") :bg ("#171717" . "#f5f5f5")
+  :border ("#0a0a0a" . "#fafafa"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define-tp-palette todo
   :fg ("#ffffff" . "#ffffff") :bg ("#cf222e" . "#da3633")
   :border ("#a40e26" . "#f85149"))
@@ -141,6 +183,16 @@
 (define-tp-palette rainbow-8
   :fg ("#bf3989" . "#db61a2") :border ("#bf3989" . "#db61a2"))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-tp-palette mark
+  :fg ("#9a6700" . "#f0c239") :bg ("#fff8c5" . "#533d00")
+  :border ("#d4a72c" . "#9e6a03"))
+
+(define-tp-palette tag
+  :fg ("#57606a" . "#8b949e") :bg ("#f6f8fa" .  "#21262d")
+  :border ("#d0d7de" .  "#888"))
+
 ;;; Utilities
 
 (defun tp-palette--get-color (symbol key)
@@ -172,6 +224,69 @@ Returns nil if SYMBOL is unbound or doesn't contain :bg."
 SYMBOL should be a symbol bound to a palette plist with a :border key.
 Returns nil if SYMBOL is unbound or doesn't contain :border."
   (tp-palette--get-color symbol :border))
+
+(defun tp-palette-p (symbol)
+  (assoc symbol tp-palette-alist))
+
+(defun tp-palette-fg-p (symbol)
+  (save-match-data
+    (let ((str (symbol-name symbol)))
+      (and (string-match "\\(.+\\)-fg$" str)
+           (tp-palette-p (intern (match-string 1 str)))))))
+
+(defun tp-palette-bg-p (symbol)
+  (save-match-data
+    (let ((str (symbol-name symbol)))
+      (and (string-match "\\(.+\\)-bg$" str)
+           (tp-palette-p (intern (match-string 1 str)))))))
+
+(defun tp-palette-fbg-p (symbol)
+  (save-match-data
+    (let ((str (symbol-name symbol)))
+      (and (string-match "\\(.+\\)-fbg$" str)
+           (tp-palette-p (intern (match-string 1 str)))))))
+
+(defun tp-palette-border-p (symbol)
+  (save-match-data
+    (let ((str (symbol-name symbol)))
+      (and (string-match "\\(.+\\)-border$" str)
+           (tp-palette-p (intern (match-string 1 str)))))))
+
+(defun tp-palette-pure (symbol)
+  (pcase symbol
+    ((pred tp-palette-p) symbol)
+    ((pred tp-palette-fg-p)
+     (intern (string-trim-right (symbol-name symbol) "-fg")))
+    ((pred tp-palette-bg-p) symbol
+     (intern (string-trim-right (symbol-name symbol) "-bg")))
+    ((pred tp-palette-fbg-p) symbol
+     (intern (string-trim-right (symbol-name symbol) "-fbg")))
+    ((pred tp-palette-border-p)
+     (intern (string-trim-right (symbol-name symbol) "-border")))
+    (_ (error "Invalid format of tp-palette: %S" symbol))))
+
+(define-tp tp-palette (palette)
+  (let* ((pure-palette (tp-palette-pure palette))
+         (fg-color (or (tp-palette-fg-color pure-palette)
+                       (face-attribute 'default :foreground)))
+         (bg-color (or (tp-palette-bg-color pure-palette)
+                       (face-attribute 'default :background)))
+         (border-color (or (tp-palette-border-color pure-palette)
+                           (face-attribute 'default :foreground))))
+    (pcase palette
+      ((pred tp-palette-p)
+       `(face ( :foreground ,fg-color
+                :background ,bg-color
+                :box (:color ,border-color))))
+      ((pred tp-palette-fg-p)
+       `(face (:foreground ,fg-color)))
+      ((pred tp-palette-bg-p)
+       `(face (:background ,bg-color)))
+      ((pred tp-palette-fbg-p)
+       `(face (:foreground ,fg-color :background ,bg-color)))
+      ((pred tp-palette-border-p)
+       `(face (:box (:color ,border-color))))
+      (_ (error "Invalid palette: %S" palette)))))
 
 (provide 'tp-palette)
 ;;; tp-palette.el ends here

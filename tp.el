@@ -4074,28 +4074,8 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
 
 ;;; Built-in text properties
 
-(define-tp tp-palette (palette)
-  `(face (,@(when-let ((color (tp-palette-fg-color palette)))
-              `(:foreground ,color))
-          ,@(when-let ((color (tp-palette-bg-color palette)))
-              `(:background ,color))
-          ,@(when-let ((color (tp-palette-border-color palette)))
-              `(:box (:color ,color))))))
-
-(define-tp tp-fg (palette)
-  (when-let ((color (tp-palette-fg-color palette)))
-    `(face (:foreground ,color))))
-
-(define-tp tp-bg (palette)
-  (when-let ((color (tp-palette-bg-color palette)))
-    `(face (:background ,color))))
-
-(define-tp tp-border (palette)
-  (when-let ((color (tp-palette-border-color palette)))
-    `(face (:box (:color ,color)))))
-
-(define-tp tp-fbg (palette)
-  `(tp-fg ,palette tp-bg ,palette))
+(defun tp-suffix-symbol (symbol string)
+  (intern (concat (symbol-name symbol) string)))
 
 ;;;###autoload
 (defun tp-palette-show ()
@@ -4105,19 +4085,55 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
       (insert
        "Please set " (tp-set "'tp-palette" 'tp-palette 'code)
        " text property with following symbols:\n\n"
-       (mapconcat (lambda (item)
-                    (tp-set (symbol-name (car item))
-                            'tp-palette (car item)))
-                  alist "\n")))))
+       (mapconcat
+        (lambda (item)
+          (let* ((symbol (car item))
+                 (name (symbol-name symbol)))
+            (concat (tp-set name 'tp-palette symbol)
+                    " "
+                    (tp-set (concat name "-fg")
+                            'tp-palette
+                            (tp-suffix-symbol symbol "-fg"))
+                    " "
+                    (tp-set (concat name "-bg")
+                            'tp-palette
+                            (tp-suffix-symbol symbol "-bg"))
+                    " "
+                    (tp-set (concat name "-fbg")
+                            'tp-palette
+                            (tp-suffix-symbol symbol "-fbg"))
+                    " "
+                    (tp-set (concat name "-border")
+                            'tp-palette
+                            (tp-suffix-symbol symbol "-border")))))
+        alist "\n")))))
+
+(define-tp tp-fg (color)
+  `(face (:foreground ,color)))
+
+(define-tp tp-bg (color)
+  `(face (:background ,color)))
 
 (define-tp tp-button (type)
-  (let ((palette (intern (concat "button-" (symbol-name type)))))
+  (let ((palette (intern
+                  (format "%s%s%s" "button-" (symbol-name type) "-fbg"))))
     `( tp-palette ,palette
+       mouse-face highlight cursor hand
        face (:box ( :line-width -1
                     :style released-button)))))
 
-(define-tp tp-space (pixel)
-  `(display (space :width ,pixel)))
+(define-tp tp-underline (color)
+  `(face (:underline (:color ,color))))
+
+(define-tp tp-link ()
+  (let ((color (tp-palette-fg-color 'info)))
+    `( tp-underline ,color
+       tp-palette info-fg
+       mouse-face highlight
+       cursor hand)))
+
+(define-tp tp-space (width)
+  `(display (space :width ,width)))
 
 (define-tp tp-headline (props)
   (let (height boldp)
@@ -4128,6 +4144,22 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
                  boldp (plist-get props :bold))))
     `(face (:height ,height
                     ,@(when boldp '(:weight bold))))))
+
+(define-tp tp-action (sexp)
+  ;; SEXP is a function or plist
+  (let (action keys)
+    (if (functionp sexp)
+        (progn
+          (setq action sexp)
+          (setq keys `(,(kbd "RET") [mouse-1])))
+      (setq action (plist-get sexp :action))
+      (setq keys (or (plist-get sexp :keys)
+                     `(,(kbd "RET") [mouse-1]))))
+    `( keymap ,(let ((keymap (make-sparse-keymap)))
+                 (dolist (key keys)
+                   (define-key keymap key action))
+                 keymap)
+       rear-nonsticky (keymap))))
 
 (provide 'tp)
 ;;; tp.el ends here
