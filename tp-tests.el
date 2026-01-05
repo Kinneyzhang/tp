@@ -3038,6 +3038,34 @@ the inserted text should be that string, not the source text."
       (ignore-errors (makunbound 'tp-test-name-part2))
       (ignore-errors (makunbound 'tp-test-full-text)))))
 
+(ert-deftest tp-test-tp-text-same-text-different-properties ()
+  "Test tp-text updates when text is same but properties differ.
+When the reactive variable changes to a propertized string with the same
+text content but different properties, the properties should be updated."
+  (tp-test-with-temp-buffer
+    (defvar tp-test-same-text nil "Test variable for same text different props.")
+    (setq tp-test-same-text "emacs")
+    (unwind-protect
+        (progn
+          (define-tp test-same-text-layer ()
+            :props '(face (:foreground "green") tp-text $tp-test-same-text))
+          ;; Apply layer to text
+          (insert "placeholder text here")
+          (tp-set 1 17 'test-same-text-layer)
+          ;; Initial text should be "emacs" with foreground green
+          (should (equal (buffer-substring-no-properties 1 6) "emacs"))
+          (should (equal (plist-get (tp-at 1 'face) :foreground) "green"))
+          ;; Change the reactive variable to same text but different properties
+          (setq tp-test-same-text (propertize "emacs" 'face 'bold))
+          ;; Text should still be "emacs"
+          (should (equal (buffer-substring-no-properties 1 6) "emacs"))
+          ;; Face should now include bold from the propertized string
+          (let ((face-val (tp-at 1 'face)))
+            (should (or (eq face-val 'bold)
+                        (and (listp face-val) (memq 'bold face-val))))))
+      ;; Cleanup
+      (makunbound 'tp-test-same-text))))
+
 ;;; ============================================================
 ;;; tp-text with Embedded Text Properties Tests
 ;;; ============================================================

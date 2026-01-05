@@ -258,6 +258,15 @@ Scans the entire string, not just position 0."
   (and (stringp str)
        (not (null (object-intervals str)))))
 
+(defun tp--equal-including-string-properties (a b)
+  "Compare A and B for equality, considering string text properties.
+If either A or B is a string, uses `equal-including-properties' to ensure
+text properties are considered in the comparison.
+Otherwise, uses standard `equal'."
+  (if (or (stringp a) (stringp b))
+      (equal-including-properties a b)
+    (equal a b)))
+
 (defun tp--parse-face-list (face-list)
   "Parse a mixed face list into symbols and a plist.
 FACE-LIST can be a mix of:
@@ -621,8 +630,11 @@ Only 'set' operations trigger updates because:
 - 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'
 
 When `tp--batch-update-active' is non-nil, buffer updates are deferred until
-the batch completes. Layer definitions are still updated immediately."
-  (when (and (not (equal (symbol-value symbol) newval))
+the batch completes. Layer definitions are still updated immediately.
+
+Uses `tp--equal-including-string-properties' for comparison to properly detect
+changes in text properties when the text content is the same."
+  (when (and (not (tp--equal-including-string-properties (symbol-value symbol) newval))
              (eq operation 'set))
     (tp-debug-log "Variable %s changed: %S -> %S (where: %s)"
                   symbol (symbol-value symbol) newval
@@ -998,9 +1010,11 @@ Text properties embedded in NEW-TEXT are merged with PROPS."
       (let* ((m-start (prop-match-beginning match))
              (m-end (prop-match-end match))
              (old-text (buffer-substring-no-properties m-start m-end)))
-        ;; Only replace if text content is different
-        (unless (equal old-text (substring-no-properties new-text))
-          ;; Delete old text and insert new (without properties)
+        (if (equal old-text (substring-no-properties new-text))
+            ;; Text content is the same, but properties may differ
+            ;; Use tp-add to update properties (merges embedded props from new-text)
+            (tp-add m-start m-end merged-props)
+          ;; Text content is different - delete old text and insert new
           (delete-region m-start m-end)
           (goto-char m-start)
           (insert (substring-no-properties new-text))
