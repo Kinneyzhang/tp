@@ -252,6 +252,23 @@ NEW values override BASE values."
                   (t val))))))
     result))
 
+(defun tp--apply-string-props-to-region (str start &optional object)
+  "Apply text properties from string STR to buffer region starting at START.
+For each character position in STR, its text properties are applied to
+the corresponding position in the buffer/object starting at START.
+This preserves the per-character text property variations in STR."
+  (let ((len (length str))
+        (pos 0))
+    (while (< pos len)
+      (let* ((props (text-properties-at pos str))
+             (next-change (or (next-property-change pos str len) len)))
+        (when props
+          (cl-loop for (key val) on props by #'cddr
+                   do (put-text-property
+                       (+ start pos) (+ start next-change)
+                       key val object)))
+        (setq pos next-change)))))
+
 (defun tp--merge-face-values (face1 face2)
   "Merge two face values into one.
 FACE1 is the earlier value, FACE2 is the later value.
@@ -907,22 +924,32 @@ it will be applied to the text before updating."
 (defun tp--replace-reactive-text-in-buffer (layer-name new-text props)
   "Replace text in current buffer for reactive text with LAYER-NAME.
 NEW-TEXT is the new text to replace with.
-PROPS are the properties to apply to the new text."
+PROPS are the properties to apply to the new text.
+Text properties embedded in NEW-TEXT are preserved."
   (goto-char (point-min))
-  (let ((match (text-property-search-forward 'tp-name layer-name t)))
+  (let ((match (text-property-search-forward 'tp-name layer-name t))
+        ;; Check if new-text has embedded text properties
+        (new-text-has-props (and (stringp new-text)
+                                 (text-properties-at 0 new-text))))
     (while match
       (let* ((m-start (prop-match-beginning match))
              (m-end (prop-match-end match))
              (old-text (buffer-substring-no-properties m-start m-end)))
-        ;; Only replace if text is different
-        (unless (equal old-text new-text)
+        ;; Only replace if text content is different
+        (unless (equal old-text (substring-no-properties new-text))
           ;; Delete old text and insert new
           (delete-region m-start m-end)
           (goto-char m-start)
           (insert new-text)
           ;; Apply the layer properties (including tp-text and tp-name) to new text
+          ;; Use put-text-property to preserve embedded text properties in new-text
           (let ((new-end (+ m-start (length new-text))))
-            (set-text-properties m-start new-end props))))
+            (if new-text-has-props
+                ;; Preserve embedded properties - use put-text-property
+                (cl-loop for (key val) on props by #'cddr
+                         do (put-text-property m-start new-end key val))
+              ;; No embedded properties - can use set-text-properties
+              (set-text-properties m-start new-end props)))))
       ;; Search for next match
       (setq match (text-property-search-forward 'tp-name layer-name t)))))
 
@@ -977,20 +1004,36 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                       (error
                        (message "tp: transform error for %s: %s" layer-name err)
                        tp-text-val))
-                  tp-text-val)))
+                  tp-text-val))
+               ;; Check if final-text has text properties that should be preserved
+               (tp-text-has-props (and (stringp final-text)
+                                       (text-properties-at 0 final-text))))
           (if (stringp object)
               ;; For strings: create a new string with tp-text content
-              ;; The new string replaces the original, with props applied
+              ;; Preserve any text properties from the tp-text value itself
               (let ((new-string (copy-sequence final-text)))
-                (list props (length new-string) new-string))
+                ;; If tp-text has embedded text properties, merge them with props
+                ;; The props from the layer are applied as base, tp-text props on top
+                (if tp-text-has-props
+                    ;; Return props and mark that tp-text has embedded properties
+                    ;; The caller should handle merging
+                    (list (plist-put (copy-sequence props)
+                                     'tp--text-has-props t)
+                          (length new-string) new-string)
+                  (list props (length new-string) new-string)))
             ;; For buffers: replace text and adjust end position
             (let ((old-text (if object
                                 (with-current-buffer object
                                   (buffer-substring-no-properties start end))
                               (buffer-substring-no-properties start end))))
-              (if (equal old-text final-text)
-                  ;; Same text, no replacement needed
-                  (list props end object)
+              (if (equal old-text (substring-no-properties final-text))
+                  ;; Same text content, no replacement needed
+                  ;; But we may need to apply text properties from final-text
+                  (progn
+                    (when tp-text-has-props
+                      ;; Apply tp-text embedded properties to the buffer region
+                      (tp--apply-string-props-to-region final-text start object))
+                    (list props end object))
                 ;; Need to replace text
                 (let ((existing-props (when preserve-props
                                         (if object
@@ -1010,10 +1053,12 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                         (insert final-text))))
                   (let ((new-end (+ start (length final-text))))
                     ;; Re-apply existing properties to new text region if preserving
+                    ;; Use add-text-properties to not override tp-text embedded props
                     (when existing-props
                       (cl-loop for (key val) on existing-props by #'cddr
-                               do (put-text-property
-                                   start new-end key val object)))
+                               do (unless (get-text-property start key object)
+                                    (put-text-property
+                                     start new-end key val object))))
                     (list props new-end object))))))))
        ;; Other types - return unchanged
        (t (list props end object))))))
@@ -1106,18 +1151,26 @@ Returns modified string or (START . END) cons for buffer."
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
-    ;; Check if we have any existing properties in the range
-    (let ((has-existing-props (text-properties-at start object)))
-      (if (and (not has-existing-props)
-               ;; Also check if this is a uniform range (no intervals)
-               (or (stringp object)
-                   (= start (or (next-single-property-change start nil object finish) finish))))
-          ;; No existing properties - can use set-text-properties to preserve duplicate keys
-          (set-text-properties start finish props object)
-        ;; Has existing properties - use put-text-property for proper interval handling
-        ;; This may lose duplicate keys but correctly handles overlapping regions
-        (cl-loop for (key val) on props by #'cddr
-                 do (put-text-property start finish key val object))))
+    ;; Check if tp-text has embedded properties that should be preserved
+    (let ((tp-text-has-props (plist-get props 'tp--text-has-props)))
+      ;; Remove the internal marker from props before applying
+      (when tp-text-has-props
+        (setq props (cl-loop for (key val) on props by #'cddr
+                             unless (eq key 'tp--text-has-props)
+                             append (list key val))))
+      ;; Check if we have any existing properties in the range
+      (let ((has-existing-props (or tp-text-has-props
+                                    (text-properties-at start object))))
+        (if (and (not has-existing-props)
+                 ;; Also check if this is a uniform range (no intervals)
+                 (or (stringp object)
+                     (= start (or (next-single-property-change start nil object finish) finish))))
+            ;; No existing properties - can use set-text-properties to preserve duplicate keys
+            (set-text-properties start finish props object)
+          ;; Has existing properties - use put-text-property for proper interval handling
+          ;; This may lose duplicate keys but correctly handles overlapping regions
+          (cl-loop for (key val) on props by #'cddr
+                   do (put-text-property start finish key val object)))))
     (if (stringp object) object (cons start finish))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
@@ -1132,8 +1185,19 @@ Returns modified string or (START . END) cons for buffer."
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
-    ;; Completely replace all properties
-    (set-text-properties start finish props object)
+    ;; Check if tp-text has embedded properties that should be preserved
+    (let ((tp-text-has-props (plist-get props 'tp--text-has-props)))
+      ;; Remove the internal marker from props before applying
+      (when tp-text-has-props
+        (setq props (cl-loop for (key val) on props by #'cddr
+                             unless (eq key 'tp--text-has-props)
+                             append (list key val))))
+      ;; If tp-text has embedded props, apply props with put-text-property
+      ;; to preserve the embedded properties. Otherwise replace all.
+      (if tp-text-has-props
+          (cl-loop for (key val) on props by #'cddr
+                   do (put-text-property start finish key val object))
+        (set-text-properties start finish props object)))
     (if (stringp object) object (cons start finish))))
 
 (defun tp--prepend-face (new-face existing-face)
@@ -1201,6 +1265,11 @@ Returns modified string or (START . END) cons for buffer."
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
+    ;; Remove the internal tp--text-has-props marker from props before applying
+    (when (plist-get props 'tp--text-has-props)
+      (setq props (cl-loop for (key val) on props by #'cddr
+                           unless (eq key 'tp--text-has-props)
+                           append (list key val))))
     ;; Process each property with deep merging
     (let ((pos start))
       (while (< pos finish)
