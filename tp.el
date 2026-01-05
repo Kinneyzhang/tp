@@ -1012,8 +1012,8 @@ Text properties embedded in NEW-TEXT are merged with PROPS."
              (old-text (buffer-substring-no-properties m-start m-end)))
         (if (equal old-text (substring-no-properties new-text))
             ;; Text content is the same, but properties may differ
-            ;; Use tp-add to update properties (merges embedded props from new-text)
-            (tp-add m-start m-end merged-props)
+            ;; Use set-text-properties to replace with merged properties
+            (set-text-properties m-start m-end merged-props)
           ;; Text content is different - delete old text and insert new
           (delete-region m-start m-end)
           (goto-char m-start)
