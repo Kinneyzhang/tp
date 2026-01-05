@@ -252,6 +252,13 @@ NEW values override BASE values."
                   (t val))))))
     result))
 
+(defun tp--string-has-properties-p (str)
+  "Return non-nil if string STR has any text properties.
+Scans the entire string, not just position 0."
+  (and (stringp str)
+       (> (length str) 0)
+       (not (null (object-intervals str)))))
+
 (defun tp--apply-string-props-to-region (str start &optional object)
   "Apply text properties from string STR to buffer region starting at START.
 For each character position in STR, its text properties are applied to
@@ -929,8 +936,8 @@ Text properties embedded in NEW-TEXT are preserved."
   (goto-char (point-min))
   (let ((match (text-property-search-forward 'tp-name layer-name t))
         ;; Check if new-text has embedded text properties
-        (new-text-has-props (and (stringp new-text)
-                                 (text-properties-at 0 new-text))))
+        ;; Use tp--string-has-properties-p to scan the entire string
+        (new-text-has-props (tp--string-has-properties-p new-text)))
     (while match
       (let* ((m-start (prop-match-beginning match))
              (m-end (prop-match-end match))
@@ -1006,8 +1013,8 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                        tp-text-val))
                   tp-text-val))
                ;; Check if final-text has text properties that should be preserved
-               (tp-text-has-props (and (stringp final-text)
-                                       (text-properties-at 0 final-text))))
+               ;; Use tp--string-has-properties-p to scan the entire string
+               (tp-text-has-props (tp--string-has-properties-p final-text)))
           (if (stringp object)
               ;; For strings: create a new string with tp-text content
               ;; Preserve any text properties from the tp-text value itself

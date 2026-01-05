@@ -3124,6 +3124,26 @@ the inserted text should be that string, not the source text."
     ;; The embedded custom-prop from tp-text should be preserved
     (should (equal (tp-at 0 'custom-prop result) 'value))))
 
+(ert-deftest tp-test-tp-text-with-properties-starting-at-nonzero ()
+  "Test that tp-text with properties starting at non-zero position are preserved."
+  ;; This tests the fix for the issue where only position 0 was checked
+  (let* ((propertized-text (copy-sequence "Hello"))
+         ;; Set properties starting at position 2, not 0
+         (_ (put-text-property 2 5 'custom-prop 'value propertized-text))
+         (result (tp-set "X" 'tp-text propertized-text 'face 'bold)))
+    ;; The text content should be from tp-text
+    (should (equal result "Hello"))
+    ;; The face from props should be applied uniformly
+    (should (equal (tp-at 0 'face result) 'bold))
+    (should (equal (tp-at 2 'face result) 'bold))
+    ;; Position 0-1 should NOT have custom-prop
+    (should (null (tp-at 0 'custom-prop result)))
+    (should (null (tp-at 1 'custom-prop result)))
+    ;; Position 2-4 should have custom-prop
+    (should (equal (tp-at 2 'custom-prop result) 'value))
+    (should (equal (tp-at 3 'custom-prop result) 'value))
+    (should (equal (tp-at 4 'custom-prop result) 'value))))
+
 ;;; ============================================================
 ;;; New define-tp Format Tests (Parameterized and Non-Parameterized)
 ;;; ============================================================
