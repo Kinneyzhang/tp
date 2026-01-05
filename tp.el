@@ -260,24 +260,30 @@ Scans the entire string, not just position 0."
 
 (defun tp--merge-string-props-into-plist (str props)
   "Merge text properties from string STR into PROPS plist.
-Properties from STR are merged with proper face handling using
-`tp--merge-face-values'. Returns the merged plist.
+Properties from PROPS take precedence over those in STR.
+Returns the merged plist where new props override embedded props.
 For simplicity, only considers properties at position 0 of STR."
   (if (not (tp--string-has-properties-p str))
       props
     (let ((str-props (text-properties-at 0 str))
           (result (copy-sequence props)))
       ;; Merge each property from the string into result
+      ;; Props values take precedence over embedded string values
       (cl-loop for (key val) on str-props by #'cddr
                do (let ((existing (plist-get result key)))
-                    (setq result
-                          (plist-put result key
-                                     (cond
-                                      ;; Face properties need special merging
-                                      ((memq key '(face font-lock-face mouse-face))
-                                       (tp--merge-face-values existing val))
-                                      ;; Other properties - string value takes precedence
-                                      (t val))))))
+                    (if existing
+                        ;; Props already has this key - merge with props taking precedence
+                        (setq result
+                              (plist-put result key
+                                         (cond
+                                          ;; Face properties need special merging
+                                          ;; Pass embedded val as face1 (base), existing as face2 (override)
+                                          ((memq key '(face font-lock-face mouse-face))
+                                           (tp--merge-face-values val existing))
+                                          ;; Other properties - props value takes precedence
+                                          (t existing))))
+                      ;; Props doesn't have this key - add from string
+                      (setq result (plist-put result key val)))))
       result)))
 
 (defun tp--merge-face-values (face1 face2)
@@ -326,6 +332,20 @@ Returns the merged face value."
       (if (member face1 face2)
           face2
         (append face2 (list face1))))
+     ;; face1 is a plist - need to merge any plist in face2 with face1
+     ((and (listp face1) (keywordp (car-safe face1)))
+      ;; Extract plist and symbols from face2
+      (let ((symbols nil)
+            (plist nil))
+        (dolist (f face2)
+          (if (and (listp f) (keywordp (car-safe f)))
+              (setq plist (if plist (tp--deep-merge-plist plist f) f))
+            (push f symbols)))
+        ;; Merge face2's plist with face1, then prepend symbols
+        (let ((merged-plist (if plist (tp--deep-merge-plist face1 plist) face1)))
+          (if symbols
+              (append (nreverse symbols) (list merged-plist))
+            merged-plist))))
      ((listp face1)
       (append face2
               (cl-remove-if (lambda (f) (member f face2)) face1)))

@@ -3165,6 +3165,32 @@ the inserted text should be that string, not the source text."
                                        (equal (plist-get f :foreground) "red")))
                                 face-val)))))))
 
+(ert-deftest tp-test-tp-add-face-override-subprops ()
+  "Test that tp-add with tp-text overrides same face sub-properties."
+  ;; When new props have same sub-property as embedded, new value should override
+  ;; Example: new (:foreground "green") should override embedded (:foreground "red")
+  (let ((result (tp-add "emacs" 'face '(:foreground "green")
+                        'tp-text (propertize "vim" 'face '(:foreground "red")))))
+    (should (equal result "vim"))
+    ;; Face should be (:foreground "green") - new overrides old
+    (let ((face-val (tp-at 0 'face result)))
+      (should (equal face-val '(:foreground "green")))))
+  ;; More complex case: new (bold (:foreground "green")) with embedded (:foreground "red")
+  (let ((result (tp-add "emacs" 'face '(bold (:foreground "green"))
+                        'tp-text (propertize "vim" 'face '(:foreground "red")))))
+    (should (equal result "vim"))
+    ;; Face should be (bold (:foreground "green")) - new overrides old
+    (let ((face-val (tp-at 0 'face result)))
+      (should (member 'bold (if (listp face-val) face-val (list face-val))))
+      ;; Should have green, not red
+      (should (cl-some (lambda (f)
+                         (and (listp f)
+                              (keywordp (car-safe f))
+                              (equal (plist-get f :foreground) "green")))
+                       (if (and (listp face-val) (not (keywordp (car-safe face-val))))
+                           face-val
+                         (list face-val)))))))
+
 ;;; ============================================================
 ;;; New define-tp Format Tests (Parameterized and Non-Parameterized)
 ;;; ============================================================
