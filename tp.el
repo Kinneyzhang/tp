@@ -260,10 +260,10 @@ Scans the entire string, not just position 0."
 
 (defun tp--equal-including-string-properties (a b)
   "Compare A and B for equality, considering string text properties.
-If either A or B is a string, uses `equal-including-properties' to ensure
+If both A and B are strings, uses `equal-including-properties' to ensure
 text properties are considered in the comparison.
 Otherwise, uses standard `equal'."
-  (if (or (stringp a) (stringp b))
+  (if (and (stringp a) (stringp b))
       (equal-including-properties a b)
     (equal a b)))
 

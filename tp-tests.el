@@ -3049,18 +3049,18 @@ text content but different properties, the properties should be updated."
         (progn
           (define-tp test-same-text-layer ()
             :props '(face (:foreground "green") tp-text $tp-test-same-text))
-          ;; Apply layer to text
-          (insert "placeholder text here")
-          (tp-set 1 17 'test-same-text-layer)
+          ;; Apply layer to text - insert placeholder and apply layer to entire buffer
+          (insert "placeholder")
+          (tp-set (point-min) (point-max) 'test-same-text-layer)
           ;; Initial text should be "emacs" with foreground green
-          (should (equal (buffer-substring-no-properties 1 6) "emacs"))
-          (should (equal (plist-get (tp-at 1 'face) :foreground) "green"))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max)) "emacs"))
+          (should (equal (plist-get (tp-at (point-min) 'face) :foreground) "green"))
           ;; Change the reactive variable to same text but different properties
           (setq tp-test-same-text (propertize "emacs" 'face 'bold))
           ;; Text should still be "emacs"
-          (should (equal (buffer-substring-no-properties 1 6) "emacs"))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max)) "emacs"))
           ;; Face should now include bold from the propertized string
-          (let ((face-val (tp-at 1 'face)))
+          (let ((face-val (tp-at (point-min) 'face)))
             (should (or (eq face-val 'bold)
                         (and (listp face-val) (memq 'bold face-val))))))
       ;; Cleanup
