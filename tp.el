@@ -258,6 +258,42 @@ Scans the entire string, not just position 0."
   (and (stringp str)
        (not (null (object-intervals str)))))
 
+(defun tp--parse-face-list (face-list)
+  "Parse a mixed face list into symbols and a plist.
+FACE-LIST can be a mix of:
+- Face symbols (like bold, italic)
+- Face plists (like (:foreground \"red\"))
+- Inline plist keys and values (like bold :foreground \"green\")
+
+Returns (SYMBOLS . PLIST) where SYMBOLS is a list of face symbols
+and PLIST is the merged plist of all face attributes."
+  (let ((symbols nil)
+        (plist nil)
+        (i 0)
+        (len (length face-list)))
+    (while (< i len)
+      (let ((elem (nth i face-list)))
+        (cond
+         ;; Nested plist like (:foreground "red")
+         ((and (listp elem) (keywordp (car-safe elem)))
+          (setq plist (if plist (tp--deep-merge-plist plist elem) elem))
+          (setq i (1+ i)))
+         ;; Inline keyword - consume key and value
+         ((keywordp elem)
+          (let ((key elem)
+                (val (nth (1+ i) face-list)))
+            (setq plist (if plist
+                            (plist-put plist key val)
+                          (list key val)))
+            (setq i (+ i 2))))
+         ;; Face symbol
+         ((symbolp elem)
+          (push elem symbols)
+          (setq i (1+ i)))
+         ;; Something else - skip
+         (t (setq i (1+ i))))))
+    (cons (nreverse symbols) plist)))
+
 (defun tp--merge-string-props-into-plist (str props)
   "Merge text properties from string STR into PROPS plist.
 Properties from PROPS take precedence over those in STR.
@@ -334,17 +370,14 @@ Returns the merged face value."
         (append face2 (list face1))))
      ;; face1 is a plist - need to merge any plist in face2 with face1
      ((and (listp face1) (keywordp (car-safe face1)))
-      ;; Extract plist and symbols from face2
-      (let ((symbols nil)
-            (plist nil))
-        (dolist (f face2)
-          (if (and (listp f) (keywordp (car-safe f)))
-              (setq plist (if plist (tp--deep-merge-plist plist f) f))
-            (push f symbols)))
+      ;; Use tp--parse-face-list to handle mixed formats like (bold :foreground "green")
+      (let* ((parsed (tp--parse-face-list face2))
+             (symbols (car parsed))
+             (plist (cdr parsed)))
         ;; Merge face2's plist with face1, then prepend symbols
         (let ((merged-plist (if plist (tp--deep-merge-plist face1 plist) face1)))
           (if symbols
-              (append (nreverse symbols) (list merged-plist))
+              (append symbols (list merged-plist))
             merged-plist))))
      ((listp face1)
       (append face2
