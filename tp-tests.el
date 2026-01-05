@@ -3766,5 +3766,59 @@ internally, and the final result should have face properties, not tp-palette."
         (should (listp mouse-face-prop))
         (should (memq 'highlight mouse-face-prop))))))
 
+;;; ============================================================
+;;; Nil Value Property Tests (Issue: "Odd length text property list")
+;;; ============================================================
+
+(ert-deftest tp-test-set-with-nil-value ()
+  "Test tp-set with nil value produces valid property list.
+Regression test for: (tp-set \"emacs\" 'face nil) erroring with
+\"Odd length text property list\"."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs" 'face nil)))
+      ;; Result should be #("emacs" 0 5 (face nil))
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) nil))
+      ;; Verify the property list is valid (has even length)
+      (let ((props (text-properties-at 0 result)))
+        (should (= (% (length props) 2) 0))))))
+
+(ert-deftest tp-test-set-with-nil-value-in-middle ()
+  "Test tp-set with nil value in middle of property list."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs" 'face 'bold 'help-echo nil 'display "test")))
+      ;; Result should have face=bold, help-echo=nil, display="test"
+      (should (eq (get-text-property 0 'face result) 'bold))
+      (should (eq (get-text-property 0 'help-echo result) nil))
+      (should (equal (get-text-property 0 'display result) "test")))))
+
+(ert-deftest tp-test-set-with-multiple-nil-values ()
+  "Test tp-set with multiple nil values."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-set "emacs" 'face nil 'help-echo nil)))
+      (should (eq (get-text-property 0 'face result) nil))
+      (should (eq (get-text-property 0 'help-echo result) nil)))))
+
+(ert-deftest tp-test-reset-with-nil-value ()
+  "Test tp-reset with nil value works correctly."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-reset "emacs" 'face nil)))
+      ;; Result should have face=nil
+      (should (eq (get-text-property 0 'face result) nil)))))
+
+(ert-deftest tp-test-add-with-nil-value ()
+  "Test tp-add with nil value works correctly."
+  (tp-test-with-temp-buffer
+    (let ((result (tp-add "emacs" 'face nil)))
+      ;; Result should have face=nil
+      (should (eq (get-text-property 0 'face result) nil)))))
+
+(ert-deftest tp-test-set-nil-value-in-buffer ()
+  "Test tp-set with nil value in buffer region."
+  (tp-test-with-temp-buffer
+    (insert "emacs")
+    (tp-set 1 6 '(face nil))
+    (should (eq (tp-at 1 'face) nil))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

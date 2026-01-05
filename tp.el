@@ -1055,11 +1055,10 @@ Supports multiple calling conventions:
              (null rest))
         (setq props (list end-or-prop)))
        ;; Standard flat plist: (tp-set "str" 'prop1 val1 'prop2 val2 ...)
+       ;; Always include props-or-val even if it's nil, to handle (tp-set "str" 'prop nil)
        (t
         (setq props (if end-or-prop
-                        (if props-or-val
-                            (cons end-or-prop (cons props-or-val rest))
-                          (list end-or-prop))
+                        (cons end-or-prop (cons props-or-val rest))
                       nil)))))
      ;; First arg is a number - region convention
      ((numberp start-or-string)
@@ -3924,11 +3923,9 @@ Returns the modified object (string) or nil for buffer operations."
             start 0
             end (length start-or-string))
       ;; Construct plist from end-or-plist, plist-or-object, and rest
+      ;; Always include plist-or-object even if nil, to handle (... 'prop nil)
       (when end-or-plist
-        (setq plist (cons end-or-plist
-                          (if plist-or-object
-                              (cons plist-or-object rest)
-                            rest)))))
+        (setq plist (cons end-or-plist (cons plist-or-object rest)))))
      ;; Region form: (tp-add-to-layers ids start end plist object)
      ((numberp start-or-string)
       (setq start start-or-string
@@ -3996,11 +3993,9 @@ Returns the modified object (string) or nil for buffer operations."
             start 0
             end (length start-or-string))
       ;; Construct plist from end-or-plist, plist-or-object, and rest
+      ;; Always include plist-or-object even if nil, to handle (... 'prop nil)
       (when end-or-plist
-        (setq plist (cons end-or-plist
-                          (if plist-or-object
-                              (cons plist-or-object rest)
-                            rest)))))
+        (setq plist (cons end-or-plist (cons plist-or-object rest)))))
      ;; Region form: (tp-add-to-all-layers start end plist object)
      ((numberp start-or-string)
       (setq start start-or-string
