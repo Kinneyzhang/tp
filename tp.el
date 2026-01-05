@@ -968,14 +968,16 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
        ((stringp tp-text-val)
         ;; Apply transform if layer has one registered
         (let* ((layer-name (plist-get props 'tp-name))
-               (transform-fn (when layer-name (cdr (assoc layer-name tp-layer-transforms))))
-               (final-text (if transform-fn
-                               (condition-case err
-                                   (funcall transform-fn tp-text-val)
-                                 (error
-                                  (message "tp: transform error for %s: %s" layer-name err)
-                                  tp-text-val))
-                             tp-text-val)))
+               (transform-fn (when layer-name
+                               (cdr (assoc layer-name tp-layer-transforms))))
+               (final-text
+                (if transform-fn
+                    (condition-case err
+                        (funcall transform-fn tp-text-val)
+                      (error
+                       (message "tp: transform error for %s: %s" layer-name err)
+                       tp-text-val))
+                  tp-text-val)))
           (if (stringp object)
               ;; For strings: create a new string with tp-text content
               ;; The new string replaces the original, with props applied
