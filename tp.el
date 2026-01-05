@@ -388,9 +388,27 @@ Returns the merged face value."
           (if symbols
               (append symbols (list merged-plist))
             merged-plist))))
+     ;; Both are lists - parse both, merge plists, combine symbols
      ((listp face1)
-      (append face2
-              (cl-remove-if (lambda (f) (member f face2)) face1)))
+      (let* ((parsed1 (tp--parse-face-list face1))
+             (symbols1 (car parsed1))
+             (plist1 (cdr parsed1))
+             (parsed2 (tp--parse-face-list face2))
+             (symbols2 (car parsed2))
+             (plist2 (cdr parsed2))
+             ;; Merge plists with face2's plist taking precedence
+             (merged-plist (cond
+                            ((and plist1 plist2) (tp--deep-merge-plist plist1 plist2))
+                            (plist2 plist2)
+                            (plist1 plist1)
+                            (t nil)))
+             ;; Combine symbols: face2 symbols first, then face1 symbols not in face2
+             (merged-symbols (append symbols2
+                                     (cl-remove-if (lambda (s) (member s symbols2)) symbols1))))
+        ;; Build result: symbols first, then merged plist if any
+        (if merged-plist
+            (append merged-symbols (list merged-plist))
+          merged-symbols)))
      (t face2)))
    (t face2)))
 
@@ -1264,6 +1282,7 @@ Examples:
 
 If NEW-FACE is a plist (like (:foreground \"red\")), deeply merge it.
 If NEW-FACE is a symbol or list of faces, prepend it to create a face list.
+For mixed lists containing both symbols and plists, plists are merged correctly.
 Duplicate faces are not added."
   (cond
    ;; No existing face - just use new face
@@ -1277,7 +1296,17 @@ Duplicate faces are not added."
      ((symbolp existing-face)
       (list new-face existing-face))
      ((listp existing-face)
-      (cons new-face existing-face))
+      ;; Parse existing to extract any plists and merge them
+      (let* ((parsed (tp--parse-face-list existing-face))
+             (existing-symbols (car parsed))
+             (existing-plist (cdr parsed)))
+        (if existing-plist
+            ;; Merge new-face plist with existing plist, prepend symbols
+            (let ((merged-plist (tp--deep-merge-plist existing-plist new-face)))
+              (if existing-symbols
+                  (append existing-symbols (list merged-plist))
+                merged-plist))
+          (cons new-face existing-face))))
      (t new-face)))
    ;; New face is a symbol - prepend to existing
    ((symbolp new-face)
@@ -1291,7 +1320,7 @@ Duplicate faces are not added."
           existing-face
         (cons new-face existing-face)))
      (t new-face)))
-   ;; New face is a list of faces - prepend to existing
+   ;; New face is a list of faces - parse and merge with existing
    ((listp new-face)
     (cond
      ((symbolp existing-face)
@@ -1299,8 +1328,28 @@ Duplicate faces are not added."
           new-face
         (append new-face (list existing-face))))
      ((listp existing-face)
-      (append new-face
-              (cl-remove-if (lambda (f) (member f new-face)) existing-face)))
+      ;; Parse both to extract symbols and plists, then merge appropriately
+      (let* ((parsed-new (tp--parse-face-list new-face))
+             (new-symbols (car parsed-new))
+             (new-plist (cdr parsed-new))
+             (parsed-existing (tp--parse-face-list existing-face))
+             (existing-symbols (car parsed-existing))
+             (existing-plist (cdr parsed-existing))
+             ;; Merge plists with new taking precedence
+             (merged-plist (cond
+                            ((and existing-plist new-plist)
+                             (tp--deep-merge-plist existing-plist new-plist))
+                            (new-plist new-plist)
+                            (existing-plist existing-plist)
+                            (t nil)))
+             ;; Combine symbols: new symbols first, then existing symbols not in new
+             (merged-symbols (append new-symbols
+                                     (cl-remove-if (lambda (s) (member s new-symbols))
+                                                   existing-symbols))))
+        ;; Build result: symbols first, then merged plist if any
+        (if merged-plist
+            (append merged-symbols (list merged-plist))
+          merged-symbols)))
      (t new-face)))
    (t new-face)))
 

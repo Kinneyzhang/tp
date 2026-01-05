@@ -1160,6 +1160,31 @@ Returns list of (START END VALUE) intervals."
       (should (eq (plist-get face :weight) 'bold))
       (should (equal (plist-get face :background) "blue")))))
 
+(ert-deftest tp-test-add-face-subprop-override ()
+  "Test tp-add correctly merges face sub-properties.
+Later values should override earlier values for the same sub-property."
+  ;; The original issue: (tp-add (tp-add (tp-set \"emacs\" 'face 'bold) 
+  ;;   'face '(:foreground \"red\")) 'face '(bold (:foreground \"green\")))
+  ;; should result in :foreground \"green\", not both \"red\" and \"green\"
+  (let* ((base (tp-set "emacs" 'face 'bold))
+         (with-red (tp-add base 'face '(:foreground "red")))
+         (with-green (tp-add with-red 'face '(bold (:foreground "green")))))
+    ;; Final result should have only one :foreground which is "green"
+    (let ((face3 (get-text-property 0 'face with-green)))
+      (should (listp face3))
+      (should (member 'bold face3))
+      ;; Extract the plist part
+      (let ((plist-part (cl-find-if (lambda (f)
+                                      (and (listp f) (keywordp (car-safe f))))
+                                    face3)))
+        (should plist-part)
+        (should (equal (plist-get plist-part :foreground) "green"))
+        ;; Ensure there's no duplicate :foreground
+        (let ((plist-count (cl-count-if (lambda (f)
+                                          (and (listp f) (keywordp (car-safe f))))
+                                        face3)))
+          (should (= plist-count 1)))))))
+
 (ert-deftest tp-test-add-on-string ()
   "Test tp-add on string."
   (let ((str (copy-sequence "Hello")))
