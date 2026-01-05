@@ -4016,16 +4016,33 @@ Returns the modified object (string) or nil for buffer operations."
           (tp-add-to-layers all-indices start end plist obj))))
     (if (stringp obj) obj nil)))
 
+;;; Utilities
+
 (defmacro tp-pop-to-buffer (buffer-or-name &rest body)
   (declare (indent defun))
   `(let ((buffer (get-buffer-create ,buffer-or-name)))
      (tp-with-current-buffer buffer
        (erase-buffer)
-       ,@body         
+       ,@body
+       (local-set-key "q" (lambda ()
+                            (interactive)
+                            (local-unset-key "q")
+                            (quit-window)))
        (read-only-mode 1))
      (pop-to-buffer buffer)))
 
-;;; Utilities
+(defmacro tp-switch-to-buffer (buffer-or-name &rest body)
+  (declare (indent defun))
+  `(let ((buffer (get-buffer-create ,buffer-or-name)))
+     (tp-with-current-buffer buffer
+       (erase-buffer)
+       ,@body
+       (local-set-key "q" (lambda ()
+                            (interactive)
+                            (local-unset-key "q")
+                            (quit-window)))
+       (read-only-mode 1))
+     (switch-to-buffer buffer)))
 
 (defun tp-theme-dark-p ()
   (eq (frame-parameter nil 'background-mode) 'dark))
@@ -4065,23 +4082,42 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
           ,@(when-let ((color (tp-palette-border-color palette)))
               `(:box (:color ,color))))))
 
-(define-tp tp-fg (color)
-  `(face (:foreground ,color)))
+(define-tp tp-fg (palette)
+  (when-let ((color (tp-palette-fg-color palette)))
+    `(face (:foreground ,color))))
 
-(define-tp tp-bg (color)
-  `(face (:background ,color)))
+(define-tp tp-bg (palette)
+  (when-let ((color (tp-palette-bg-color palette)))
+    `(face (:background ,color))))
 
-(define-tp tp-button (plist)
-  (let ((palette (plist-get plist :palette))
-        (action (plist-get plist :action)))
-    `( tp-palette ,palette 
-       keymap ,(let ((keymap (make-sparse-keymap)))
-                 (define-key keymap (kbd "<RET>") action)
-                 (define-key keymap [mouse-1] action)
-                 keymap))))
+(define-tp tp-border (palette)
+  (when-let ((color (tp-palette-border-color palette)))
+    `(face (:box (:color ,color)))))
+
+(define-tp tp-fbg (palette)
+  `(tp-fg ,palette tp-bg ,palette))
+
+;;;###autoload
+(defun tp-palette-show ()
+  (interactive)
+  (let ((alist (seq-reverse tp-palette-alist)))
+    (tp-switch-to-buffer "*tp-palette-gallery*"
+      (insert
+       "Please set " (tp-set "'tp-palette" 'tp-palette 'code)
+       " text property with following symbols:\n\n"
+       (mapconcat (lambda (item)
+                    (tp-set (symbol-name (car item))
+                            'tp-palette (car item)))
+                  alist "\n")))))
+
+(define-tp tp-button (type)
+  (let ((palette (intern (concat "button-" (symbol-name type)))))
+    `( tp-palette ,palette
+       face (:box ( :line-width -1
+                    :style released-button)))))
 
 (define-tp tp-space (pixel)
-  `(display (space :width (,pixel))))
+  `(display (space :width ,pixel)))
 
 (define-tp tp-headline (props)
   (let (height boldp)

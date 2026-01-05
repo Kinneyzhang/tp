@@ -17,10 +17,6 @@
 
 ;;; Code:
 
-;; ============================================
-;; 基础文本样式 (Basic Text Styles)
-;; ============================================
-
 (defvar tp-palette-alist nil)
 
 (defmacro define-tp-palette (name &rest plist)
