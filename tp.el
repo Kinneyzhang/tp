@@ -256,7 +256,6 @@ NEW values override BASE values."
   "Return non-nil if string STR has any text properties.
 Scans the entire string, not just position 0."
   (and (stringp str)
-       (> (length str) 0)
        (not (null (object-intervals str)))))
 
 (defun tp--apply-string-props-to-region (str start &optional object)
@@ -275,6 +274,13 @@ This preserves the per-character text property variations in STR."
                        (+ start pos) (+ start next-change)
                        key val object)))
         (setq pos next-change)))))
+
+(defun tp--remove-internal-markers (props)
+  "Remove internal marker properties from PROPS plist.
+Returns a new plist with tp--text-has-props removed."
+  (cl-loop for (key val) on props by #'cddr
+           unless (eq key 'tp--text-has-props)
+           append (list key val)))
 
 (defun tp--merge-face-values (face1 face2)
   "Merge two face values into one.
@@ -1162,9 +1168,7 @@ Returns modified string or (START . END) cons for buffer."
     (let ((tp-text-has-props (plist-get props 'tp--text-has-props)))
       ;; Remove the internal marker from props before applying
       (when tp-text-has-props
-        (setq props (cl-loop for (key val) on props by #'cddr
-                             unless (eq key 'tp--text-has-props)
-                             append (list key val))))
+        (setq props (tp--remove-internal-markers props)))
       ;; Check if we have any existing properties in the range
       (let ((has-existing-props (or tp-text-has-props
                                     (text-properties-at start object))))
@@ -1196,9 +1200,7 @@ Returns modified string or (START . END) cons for buffer."
     (let ((tp-text-has-props (plist-get props 'tp--text-has-props)))
       ;; Remove the internal marker from props before applying
       (when tp-text-has-props
-        (setq props (cl-loop for (key val) on props by #'cddr
-                             unless (eq key 'tp--text-has-props)
-                             append (list key val))))
+        (setq props (tp--remove-internal-markers props)))
       ;; If tp-text has embedded props, apply props with put-text-property
       ;; to preserve the embedded properties. Otherwise replace all.
       (if tp-text-has-props
@@ -1274,9 +1276,7 @@ Returns modified string or (START . END) cons for buffer."
         (setq start 0)))
     ;; Remove the internal tp--text-has-props marker from props before applying
     (when (plist-get props 'tp--text-has-props)
-      (setq props (cl-loop for (key val) on props by #'cddr
-                           unless (eq key 'tp--text-has-props)
-                           append (list key val))))
+      (setq props (tp--remove-internal-markers props)))
     ;; Process each property with deep merging
     (let ((pos start))
       (while (< pos finish)
