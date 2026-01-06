@@ -1875,7 +1875,7 @@ Returns: For buffers, nil. For entire string forms, a new string."
        ;; (tp-remove str 'face 'help-echo ...) - multiple properties
        ((symbolp end-or-prop)
         (let ((props-to-remove (cl-remove-if-not #'symbolp
-                                                  (list* end-or-prop prop-or-sub rest))))
+                                                 (list end-or-prop prop-or-sub rest))))
           (tp--remove-props-from-string str start end props-to-remove)))
        ;; (tp-remove str '(face :underline)) - nested property spec
        ((listp end-or-prop)
@@ -2111,7 +2111,9 @@ For buffers, modifies in-place and returns list of regions."
       (let ((result object))
         (dolist (match (nreverse matches))
           (when properties
-            (setq result (funcall apply-fn (car match) (cdr match) properties result))))
+            (setq result (funcall apply-fn
+                                  (car match) (cdr match)
+                                  properties result))))
         result)))
    ;; Buffer or nil (current buffer)
    (t
@@ -2126,7 +2128,7 @@ For buffers, modifies in-place and returns list of regions."
                 (when properties
                   (funcall apply-fn beg end properties buf))
                 (push (cons beg end) regions)))
-            (nreverse regions)))))))))
+            (nreverse regions))))))))
 
 (defun tp--regexp-apply (pattern properties apply-fn &optional object)
   "Internal function to apply APPLY-FN to regexp matches of PATTERN.
@@ -4624,6 +4626,9 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
 
 (define-tp tp-underline (color)
   `(face (:underline (:color ,color))))
+
+(define-tp tp-delete (color)
+  `(face (:strike-through ,color)))
 
 (define-tp tp-link ()
   (let ((color (tp-palette-fg-color 'info)))
