@@ -4131,7 +4131,9 @@ The region form (tp-set START END PROPS STRING) modifies the string in-place."
       (should (not (eq original result))))))
 
 (ert-deftest tp-test-remove-custom-layer ()
-  "Test that tp-remove correctly removes custom text property layers."
+  "Test that tp-remove correctly removes custom text property layers.
+When a layer is removed, only its face contribution should be removed,
+not the entire face property."
   ;; First define the custom layer
   (tp-layer-reset)
   (eval '(define-tp tp-delete (color)
@@ -4142,25 +4144,31 @@ The region form (tp-set START END PROPS STRING) modifies the string in-place."
          (result (tp-remove str-with-props 'tp-delete)))
     ;; Original should still have the properties
     (should (get-text-property 0 'face str-with-props))
-    ;; Result should not have face property (since it was added by tp-delete)
-    (should (null (get-text-property 0 'face result)))
+    ;; Result should have face 'bold (only the tp-delete contribution removed)
+    (should (equal (get-text-property 0 'face result) 'bold))
+    ;; Result should not have tp-delete property
+    (should (null (get-text-property 0 'tp-delete result)))
     ;; Result should not have tp-name property
     (should (null (get-text-property 0 'tp-name result)))))
 
 (ert-deftest tp-test-remove-custom-layer-preserves-other-props ()
-  "Test that tp-remove with layer name preserves other properties."
+  "Test that tp-remove with layer name preserves other properties.
+When the layer property is set (via mixed syntax), its face contribution
+can be tracked and removed."
   (tp-layer-reset)
   (eval '(define-tp tp-delete (color)
            `(face (:strike-through ,color))))
-  ;; Test with entire string form - set layer and separate property
+  ;; Test with mixed syntax - set layer alongside other properties
+  ;; This allows tracking of the layer property
   (let* ((str "emacs")
-         (str-with-layer (tp-set str 'tp-delete "red"))
-         (str-with-both (tp-set 0 (length str-with-layer) '(help-echo "test") str-with-layer))
-         (result (tp-remove str-with-both 'tp-delete)))
+         (str-with-props (tp-set str 'help-echo "test" 'tp-delete "red"))
+         (result (tp-remove str-with-props 'tp-delete)))
     ;; help-echo should still be present
     (should (equal (get-text-property 0 'help-echo result) "test"))
     ;; face (from tp-delete) should be removed
-    (should (null (get-text-property 0 'face result)))))
+    (should (null (get-text-property 0 'face result)))
+    ;; tp-delete property should be removed
+    (should (null (get-text-property 0 'tp-delete result)))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
