@@ -1435,34 +1435,34 @@ Later values should override earlier values for the same sub-property."
 
 (ert-deftest tp-test-remove-entire-string-single-prop ()
   "Test tp-remove removes single property from entire string."
-  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
-    (tp-remove str 'face)
-    (should (null (get-text-property 0 'face str)))
-    (should (equal (get-text-property 0 'help-echo str) "test"))))
+  (let* ((str (tp-set "Hello" 'face 'bold 'help-echo "test"))
+         (result (tp-remove str 'face)))
+    (should (null (get-text-property 0 'face result)))
+    (should (equal (get-text-property 0 'help-echo result) "test"))))
 
 (ert-deftest tp-test-remove-entire-string-multiple-props ()
   "Test tp-remove removes multiple properties from entire string."
-  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test" 'mouse-face 'highlight)))
-    (tp-remove str 'face 'help-echo)
-    (should (null (get-text-property 0 'face str)))
-    (should (null (get-text-property 0 'help-echo str)))
-    (should (eq (get-text-property 0 'mouse-face str) 'highlight))))
+  (let* ((str (tp-set "Hello" 'face 'bold 'help-echo "test" 'mouse-face 'highlight))
+         (result (tp-remove str 'face 'help-echo)))
+    (should (null (get-text-property 0 'face result)))
+    (should (null (get-text-property 0 'help-echo result)))
+    (should (eq (get-text-property 0 'mouse-face result) 'highlight))))
 
 (ert-deftest tp-test-remove-entire-string-sub-prop ()
   "Test tp-remove removes sub-property from entire string."
-  (let ((str (copy-sequence "Hello")))
-    (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
-    (tp-remove str 'face :underline)
-    (let ((face (get-text-property 0 'face str)))
+  (let* ((str (copy-sequence "Hello"))
+         (_ (put-text-property 0 5 'face '(:foreground "red" :underline t) str))
+         (result (tp-remove str 'face :underline)))
+    (let ((face (get-text-property 0 'face result)))
       (should (equal (plist-get face :foreground) "red"))
       (should (null (plist-get face :underline))))))
 
 (ert-deftest tp-test-remove-entire-string-nested-sub-prop ()
   "Test tp-remove removes nested sub-properties from entire string."
-  (let ((str (copy-sequence "Hello")))
-    (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave :color "blue")) str)
-    (tp-remove str 'face :underline '(:style))
-    (let* ((face (get-text-property 0 'face str))
+  (let* ((str (copy-sequence "Hello"))
+         (_ (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave :color "blue")) str))
+         (result (tp-remove str 'face :underline '(:style))))
+    (let* ((face (get-text-property 0 'face result))
            (underline (plist-get face :underline)))
       (should (equal (plist-get face :foreground) "red"))
       (should (equal (plist-get underline :color) "blue"))
@@ -1472,11 +1472,11 @@ Later values should override earlier values for the same sub-property."
   "Test tp-remove removes a single nested key from a sub-property.
 This tests the fix for the bug where (tp-remove str 'face :underline :position)
 was removing the entire :underline instead of just :position."
-  (let ((str (copy-sequence "happy hacking emacs")))
-    (tp-set str 'face '(:foreground "red" :underline (:position t :color "green"))
-            'line-prefix ">> " 'other "other")
-    (tp-remove str 'face :underline :position)
-    (let* ((face (get-text-property 0 'face str))
+  (let* ((str (tp-set "happy hacking emacs"
+                      'face '(:foreground "red" :underline (:position t :color "green"))
+                      'line-prefix ">> " 'other "other"))
+         (result (tp-remove str 'face :underline :position)))
+    (let* ((face (get-text-property 0 'face result))
            (underline (plist-get face :underline)))
       ;; :foreground should be preserved
       (should (equal (plist-get face :foreground) "red"))
@@ -1485,8 +1485,8 @@ was removing the entire :underline instead of just :position."
       (should (equal (plist-get underline :color) "green"))
       (should (null (plist-get underline :position)))
       ;; Other properties should be preserved
-      (should (equal (get-text-property 0 'line-prefix str) ">> "))
-      (should (equal (get-text-property 0 'other str) "other")))))
+      (should (equal (get-text-property 0 'line-prefix result) ">> "))
+      (should (equal (get-text-property 0 'other result) "other")))))
 
 ;;; ============================================================
 ;;; New API Tests - Issue 3 & 4: tp-get for strings and new API
@@ -4131,7 +4131,9 @@ The region form (tp-set START END PROPS STRING) modifies the string in-place."
       (should (not (eq original result))))))
 
 (ert-deftest tp-test-remove-custom-layer ()
-  "Test that tp-remove correctly removes custom text property layers."
+  "Test that tp-remove correctly removes custom text property layers.
+When a layer is removed, only its face contribution should be removed,
+not the entire face property."
   ;; First define the custom layer
   (tp-layer-reset)
   (eval '(define-tp tp-delete (color)
@@ -4142,25 +4144,31 @@ The region form (tp-set START END PROPS STRING) modifies the string in-place."
          (result (tp-remove str-with-props 'tp-delete)))
     ;; Original should still have the properties
     (should (get-text-property 0 'face str-with-props))
-    ;; Result should not have face property (since it was added by tp-delete)
-    (should (null (get-text-property 0 'face result)))
+    ;; Result should have face 'bold (only the tp-delete contribution removed)
+    (should (equal (get-text-property 0 'face result) 'bold))
+    ;; Result should not have tp-delete property
+    (should (null (get-text-property 0 'tp-delete result)))
     ;; Result should not have tp-name property
     (should (null (get-text-property 0 'tp-name result)))))
 
 (ert-deftest tp-test-remove-custom-layer-preserves-other-props ()
-  "Test that tp-remove with layer name preserves other properties."
+  "Test that tp-remove with layer name preserves other properties.
+When the layer property is set (via mixed syntax), its face contribution
+can be tracked and removed."
   (tp-layer-reset)
   (eval '(define-tp tp-delete (color)
            `(face (:strike-through ,color))))
-  ;; Test with entire string form - set layer and separate property
+  ;; Test with mixed syntax - set layer alongside other properties
+  ;; This allows tracking of the layer property
   (let* ((str "emacs")
-         (str-with-layer (tp-set str 'tp-delete "red"))
-         (str-with-both (tp-set 0 (length str-with-layer) '(help-echo "test") str-with-layer))
-         (result (tp-remove str-with-both 'tp-delete)))
+         (str-with-props (tp-set str 'help-echo "test" 'tp-delete "red"))
+         (result (tp-remove str-with-props 'tp-delete)))
     ;; help-echo should still be present
     (should (equal (get-text-property 0 'help-echo result) "test"))
     ;; face (from tp-delete) should be removed
-    (should (null (get-text-property 0 'face result)))))
+    (should (null (get-text-property 0 'face result)))
+    ;; tp-delete property should be removed
+    (should (null (get-text-property 0 'tp-delete result)))))
 
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here

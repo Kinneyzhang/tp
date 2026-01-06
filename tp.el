@@ -303,6 +303,84 @@ and PLIST is the merged plist of all face attributes."
          (t (setq i (1+ i))))))
     (cons (nreverse symbols) plist)))
 
+(defun tp--remove-sub-from-face-value (face-value sub-key)
+  "Remove SUB-KEY from FACE-VALUE, handling complex face structures.
+FACE-VALUE can be:
+- A simple plist like (:foreground \"red\" :background \"blue\")
+- A symbol like bold
+- A mixed list like ((:foreground \"red\") (:strike-through t) bold)
+
+Returns the modified face value with SUB-KEY removed from any plist components.
+Returns nil if the result would be empty."
+  (cond
+   ;; Nil face - nothing to remove
+   ((null face-value) nil)
+   ;; Symbol face - no sub-key to remove
+   ((symbolp face-value) face-value)
+   ;; Simple plist - remove the sub-key directly
+   ((and (listp face-value) (keywordp (car-safe face-value)))
+    (let ((result nil))
+      (cl-loop for (k v) on face-value by #'cddr
+               unless (eq k sub-key)
+               do (setq result (plist-put result k v)))
+      result))
+   ;; Mixed list - parse and remove from plist component
+   ((listp face-value)
+    (let* ((parsed (tp--parse-face-list face-value))
+           (symbols (car parsed))
+           (plist (cdr parsed)))
+      (when plist
+        ;; Remove sub-key from the merged plist
+        (let ((new-plist nil))
+          (cl-loop for (k v) on plist by #'cddr
+                   unless (eq k sub-key)
+                   do (setq new-plist (plist-put new-plist k v)))
+          (setq plist new-plist)))
+      ;; Reconstruct the face value
+      (cond
+       ((and symbols plist) (append symbols (list plist)))
+       (symbols (if (= (length symbols) 1) (car symbols) symbols))
+       (plist plist)
+       (t nil))))
+   ;; Unknown format - return as-is
+   (t face-value)))
+
+(defun tp--subtract-face-from-face-value (face-value face-to-remove)
+  "Remove FACE-TO-REMOVE from FACE-VALUE.
+FACE-TO-REMOVE is the face contribution to subtract (from a layer).
+FACE-VALUE is the current combined face value.
+Returns the modified face value with the layer's face contribution removed."
+  (cond
+   ;; Nothing to remove from
+   ((null face-value) nil)
+   ;; If face-to-remove is nil, return as-is
+   ((null face-to-remove) face-value)
+   ;; If they're equal, remove entirely
+   ((equal face-value face-to-remove) nil)
+   ;; face-to-remove is a plist - remove those keys from face-value
+   ((and (listp face-to-remove) (keywordp (car-safe face-to-remove)))
+    (let ((keys-to-remove (cl-loop for (k _v) on face-to-remove by #'cddr
+                                   collect k)))
+      ;; Remove each key
+      (dolist (key keys-to-remove)
+        (setq face-value (tp--remove-sub-from-face-value face-value key)))
+      face-value))
+   ;; face-to-remove is a symbol - remove it from face-value
+   ((symbolp face-to-remove)
+    (cond
+     ((eq face-value face-to-remove) nil)
+     ((and (listp face-value) (not (keywordp (car-safe face-value))))
+      (let ((result (remove face-to-remove face-value)))
+        (if (= (length result) 1) (car result) result)))
+     (t face-value)))
+   ;; face-to-remove is a list - remove each element
+   ((listp face-to-remove)
+    (dolist (elem face-to-remove)
+      (setq face-value (tp--subtract-face-from-face-value face-value elem)))
+    face-value)
+   ;; Unknown - return as-is
+   (t face-value)))
+
 (defun tp--merge-string-props-into-plist (str props)
   "Merge text properties from string STR into PROPS plist.
 Properties from PROPS take precedence over those in STR.
@@ -1931,9 +2009,13 @@ For non-layer symbols, returns a list containing just that symbol."
   (if (tp--is-layer-name-p layer-name)
       (let* ((existing-props (text-properties-at start str))
              (existing-tp-name (plist-get existing-props 'tp-name))
-             ;; Only proceed if this layer is actually applied here
+             (layer-prop-value (plist-get existing-props layer-name))
+             ;; Proceed if tp-name matches OR if the layer property exists
+             ;; (for cases where layer was used in mixed syntax without tp-name)
              (layer-props
-              (when (eq existing-tp-name layer-name)
+              (cond
+               ;; tp-name matches - traditional layer application
+               ((eq existing-tp-name layer-name)
                 (cond
                  ;; Parameterized layer - get property keys it would produce
                  ;; We pass a dummy arg (t) since we only need the key names, not values
@@ -1945,15 +2027,29 @@ For non-layer symbols, returns a list containing just that symbol."
                  ;; Layer group
                  ((assoc layer-name tp-layer-groups)
                   (when-let ((layer-props-list (tp-group-props layer-name t)))
-                    (tp--build-layer-props layer-props-list)))))))
+                    (tp--build-layer-props layer-props-list)))))
+               ;; Layer property exists (mixed syntax like `tp-set str 'face 'bold 'layer arg`)
+               ;; In this case, the layer's face properties are merged into face
+               (layer-prop-value
+                (cond
+                 ((tp-layer-parameterized-p layer-name)
+                  (tp-layer-props-with-arg layer-name layer-prop-value nil))
+                 ((assoc layer-name tp-layer-alist)
+                  (tp-layer-props layer-name nil))
+                 ((assoc layer-name tp-layer-groups)
+                  (when-let ((layer-props-list (tp-group-props layer-name t)))
+                    (tp--build-layer-props layer-props-list))))))))
         (if layer-props
-            ;; Return all property keys from the layer plus tp-name
+            ;; Return all property keys from the layer plus tp-name and the layer itself
             (let ((keys (cl-loop for (key _val) on layer-props by #'cddr
                                  collect key)))
-              (if (memq 'tp-name keys)
-                  keys
-                (cons 'tp-name keys)))
-          ;; Layer name doesn't match tp-name, just remove the literal symbol
+              (unless (memq 'tp-name keys)
+                (push 'tp-name keys))
+              (unless (memq layer-name keys)
+                (push layer-name keys))
+              keys)
+          ;; Layer name doesn't match tp-name and layer property doesn't exist
+          ;; Just remove the literal symbol
           (list layer-name)))
     ;; Not a layer name, just return the symbol itself
     (list layer-name)))
@@ -1968,10 +2064,29 @@ STR and START are used to determine context for parameterized layers."
           (push expanded result))))
     (nreverse result)))
 
+(defun tp--get-layer-face-contribution (layer-name layer-prop-value)
+  "Get the face contribution from LAYER-NAME.
+LAYER-PROP-VALUE is the value of the layer property (the argument passed to it).
+Returns the face value that the layer adds, or nil if no face contribution."
+  (when (tp--is-layer-name-p layer-name)
+    (let ((layer-props
+           (cond
+            ((tp-layer-parameterized-p layer-name)
+             (tp-layer-props-with-arg layer-name layer-prop-value nil))
+            ((assoc layer-name tp-layer-alist)
+             (tp-layer-props layer-name nil))
+            ((assoc layer-name tp-layer-groups)
+             (when-let ((layer-props-list (tp-group-props layer-name t)))
+               (tp--build-layer-props layer-props-list))))))
+      (when layer-props
+        (plist-get layer-props 'face)))))
+
 (defun tp--remove-props-from-string (str start end props-to-remove)
   "Create a new string from STR with PROPS-TO-REMOVE removed from START to END.
 PROPS-TO-REMOVE can include layer names, which will be expanded to include
 all properties that the layer adds.
+For face properties from layers, subtracts the layer's face contribution
+instead of removing the entire face property.
 Returns a new string (original is not modified)."
   (let* ((len (length str))
          (start (max 0 start))
@@ -1981,23 +2096,57 @@ Returns a new string (original is not modified)."
          (middle-text (substring-no-properties str start end))
          (after (when (< end len)
                   (substring str end len)))
-         ;; Expand layer names to their actual properties
-         (expanded-props (tp--expand-props-to-remove props-to-remove str start))
-         ;; Get existing properties and remove the specified ones
          (existing-props (text-properties-at start str))
-         (final-props (let ((result nil))
-                        (cl-loop for (key val) on existing-props by #'cddr
-                                 unless (memq key expanded-props)
-                                 do (setq result (plist-put result key val)))
-                        result))
-         (middle-propertized (if final-props
-                                 (apply #'propertize middle-text final-props)
-                               middle-text)))
-    (concat before middle-propertized after)))
+         ;; Remaining face after layer subtractions
+         (remaining-face nil)
+         ;; Track if face was modified by layer subtraction
+         (face-was-modified nil)
+         ;; Collect all properties to remove entirely (non-face or non-layer)
+         (props-to-remove-entirely nil))
+    ;; Process each property to remove
+    (dolist (prop props-to-remove)
+      (if (tp--is-layer-name-p prop)
+          ;; Layer name - get its face contribution and subtract from face
+          (let* ((layer-prop-value (plist-get existing-props prop))
+                 (layer-face (tp--get-layer-face-contribution prop layer-prop-value)))
+            ;; Subtract layer's face from the current face
+            (when layer-face
+              (let ((current-face (or remaining-face (plist-get existing-props 'face))))
+                (setq remaining-face
+                      (tp--subtract-face-from-face-value current-face layer-face))
+                ;; Mark that we processed the face (even if result is nil)
+                (setq face-was-modified t)))
+            ;; Add the layer property itself to remove list
+            (push prop props-to-remove-entirely)
+            ;; Also add tp-name if it matches
+            (when (eq (plist-get existing-props 'tp-name) prop)
+              (push 'tp-name props-to-remove-entirely)))
+        ;; Non-layer property - remove entirely
+        (push prop props-to-remove-entirely)))
+    ;; Build final properties
+    (let* ((final-props
+            (let ((result nil))
+              (cl-loop for (key val) on existing-props by #'cddr
+                       do (cond
+                           ;; Face property with layer subtraction
+                           ((and (eq key 'face) face-was-modified)
+                            (when remaining-face
+                              (setq result (plist-put result key remaining-face))))
+                           ;; Property to remove entirely
+                           ((memq key props-to-remove-entirely)
+                            nil) ; skip
+                           ;; Keep other properties
+                           (t (setq result (plist-put result key val)))))
+              result))
+           (middle-propertized (if final-props
+                                   (apply #'propertize middle-text final-props)
+                                 middle-text)))
+      (concat before middle-propertized after))))
 
 (defun tp--remove-sub-from-string (str start end property sub-key)
   "Create a new string from STR with SUB-KEY removed from PROPERTY.
-Returns a new string (original is not modified)."
+Returns a new string (original is not modified).
+Handles complex face values that contain a mix of symbols and plists."
   (let* ((len (length str))
          (start (max 0 start))
          (end (min end len))
@@ -2006,15 +2155,12 @@ Returns a new string (original is not modified)."
          (middle-text (substring-no-properties str start end))
          (after (when (< end len)
                   (substring str end len)))
-         ;; Get existing properties and modify the face
+         ;; Get existing properties and modify the property
          (existing-props (text-properties-at start str))
          (prop-value (plist-get existing-props property))
-         (new-value (when (and prop-value (listp prop-value) (keywordp (car-safe prop-value)))
-                      (let ((result nil))
-                        (cl-loop for (k v) on prop-value by #'cddr
-                                 unless (eq k sub-key)
-                                 do (setq result (plist-put result k v)))
-                        result)))
+         ;; Use the new helper to handle complex face values
+         (new-value (when prop-value
+                      (tp--remove-sub-from-face-value prop-value sub-key)))
          (final-props (let ((result nil))
                         (cl-loop for (key val) on existing-props by #'cddr
                                  do (setq result (plist-put result key
@@ -2053,7 +2199,7 @@ Returns a new string (original is not modified)."
                (existing-props (text-properties-at start str))
                (prop-value (plist-get existing-props property))
                (new-value (when (and prop-value (listp prop-value))
-                            (tp--remove-nested-keys prop-value sub-key nested-keys)))
+                            (tp--remove-nested-sub-keys prop-value sub-key nested-keys)))
                (final-props (let ((result nil))
                               (cl-loop for (key val) on existing-props by #'cddr
                                        do (setq result (plist-put result key
@@ -2073,7 +2219,7 @@ Returns a new string (original is not modified)."
         (tp--remove-props-from-string str start end (list property))))))
    (t str)))
 
-(defun tp--remove-nested-keys (plist sub-key nested-keys)
+(defun tp--remove-nested-sub-keys (plist sub-key nested-keys)
   "Remove NESTED-KEYS from the SUB-KEY value within PLIST.
 Returns a new plist (does not modify the original)."
   (let* ((sub-value (plist-get plist sub-key))
