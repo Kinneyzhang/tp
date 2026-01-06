@@ -105,32 +105,18 @@ This enables efficient updates when the layer's reactive variables change."
 
 (defun tp--get-buffers-with-layer (layer-name)
   "Return a list of live buffers that have LAYER-NAME applied.
-Returns nil if no buffers are registered for this layer."
+Returns nil if no buffers are registered for this layer.
+Note: Dead buffers are filtered out but not removed from the registry.
+The kill-buffer-hook handles cleanup of dead buffer entries."
   (when (hash-table-p tp-layer-buffer-registry)
     (let ((buffer-set (gethash layer-name tp-layer-buffer-registry))
           (result nil))
       (when buffer-set
         (maphash (lambda (buf _)
-                   (if (buffer-live-p buf)
-                       (push buf result)
-                     ;; Clean up dead buffers
-                     (remhash buf buffer-set)))
+                   (when (buffer-live-p buf)
+                     (push buf result)))
                  buffer-set))
       result)))
-
-(defun tp--cleanup-dead-buffers-from-registry ()
-  "Remove all dead buffers from the layer-buffer registry."
-  (when (hash-table-p tp-layer-buffer-registry)
-    (maphash
-     (lambda (layer-name buffer-set)
-       (maphash (lambda (buf _)
-                  (unless (buffer-live-p buf)
-                    (remhash buf buffer-set)))
-                buffer-set)
-       ;; Clean up empty entries
-       (when (= (hash-table-count buffer-set) 0)
-         (remhash layer-name tp-layer-buffer-registry)))
-     tp-layer-buffer-registry)))
 
 (defun tp--reset-layer-buffer-registry ()
   "Reset the layer-buffer registry."
@@ -153,11 +139,19 @@ Only registers if OBJECT is a buffer (not a string) and PROPS has tp-name."
 (defun tp--buffer-kill-hook ()
   "Clean up the layer-buffer registry when a buffer is killed."
   (when (hash-table-p tp-layer-buffer-registry)
-    (let ((buf (current-buffer)))
+    (let ((buf (current-buffer))
+          (empty-layers nil))
+      ;; Remove the buffer from all layer buffer-sets
       (maphash
-       (lambda (_layer-name buffer-set)
-         (remhash buf buffer-set))
-       tp-layer-buffer-registry))))
+       (lambda (layer-name buffer-set)
+         (remhash buf buffer-set)
+         ;; Track empty buffer-sets for cleanup
+         (when (= (hash-table-count buffer-set) 0)
+           (push layer-name empty-layers)))
+       tp-layer-buffer-registry)
+      ;; Clean up empty entries (can't do this inside maphash)
+      (dolist (layer-name empty-layers)
+        (remhash layer-name tp-layer-buffer-registry)))))
 
 ;; Add the buffer kill hook
 (add-hook 'kill-buffer-hook #'tp--buffer-kill-hook)
