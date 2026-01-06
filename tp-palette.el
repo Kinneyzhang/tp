@@ -265,28 +265,5 @@ Returns nil if SYMBOL is unbound or doesn't contain :border."
      (intern (string-trim-right (symbol-name symbol) "-border")))
     (_ (error "Invalid format of tp-palette: %S" symbol))))
 
-(define-tp tp-palette (palette)
-  (let* ((pure-palette (tp-palette-pure palette))
-         (fg-color (or (tp-palette-fg-color pure-palette)
-                       (face-attribute 'default :foreground)))
-         (bg-color (or (tp-palette-bg-color pure-palette)
-                       (face-attribute 'default :background)))
-         (border-color (or (tp-palette-border-color pure-palette)
-                           (face-attribute 'default :foreground))))
-    (pcase palette
-      ((pred tp-palette-p)
-       `(face ( :foreground ,fg-color
-                :background ,bg-color
-                :box (:color ,border-color))))
-      ((pred tp-palette-fg-p)
-       `(face (:foreground ,fg-color)))
-      ((pred tp-palette-bg-p)
-       `(face (:background ,bg-color)))
-      ((pred tp-palette-fbg-p)
-       `(face (:foreground ,fg-color :background ,bg-color)))
-      ((pred tp-palette-border-p)
-       `(face (:box (:color ,border-color))))
-      (_ (error "Invalid palette: %S" palette)))))
-
 (provide 'tp-palette)
 ;;; tp-palette.el ends here
