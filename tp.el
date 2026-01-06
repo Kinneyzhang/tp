@@ -1305,49 +1305,82 @@ PROPS can be a plist or a layer/group name symbol.
 Preserves existing properties not specified in PROPS.
 For tp-text, props override embedded text properties.
 
-For strings, returns a NEW propertized string (original is not modified).
-For buffers, returns (START . END) cons."
-  (pcase-let ((`(,object ,start ,finish ,props)
-               (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property specially - :override means props override embedded props
-    (pcase-let ((`(,new-props ,new-finish ,new-object)
-                 (tp--handle-tp-text-property start finish props object t :override)))
-      (setq props new-props finish new-finish object new-object)
-      (when (and (stringp object) (plist-member props 'tp-text))
-        (setq start 0)))
-    (if (stringp object)
-        ;; For strings: create a new propertized string (non-destructive)
-        (tp--apply-props-to-string object start finish props nil)
-      ;; For buffers: modify in place (standard behavior)
-      (let ((has-existing-props (text-properties-at start object)))
-        (if (and (not has-existing-props)
-                 (= start (or (next-single-property-change start nil object finish) finish)))
-            (set-text-properties start finish props object)
-          (cl-loop for (key val) on props by #'cddr
-                   do (put-text-property start finish key val object))))
-      (cons start finish))))
+**String Modification Behavior:**
+- Entire string form (tp-set STRING ...): Returns a NEW propertized string
+  (original is not modified). Uses `propertize' internally.
+- Region form with string (tp-set START END PROPS STRING): Modifies the
+  original string in-place using `put-text-property'.
+- Buffer forms: Always modify in-place.
+
+Returns: For buffers, (START . END) cons. For strings, the result string."
+  ;; Determine if this is the "entire string" form (first arg is a string)
+  (let ((entire-string-form (stringp start-or-string)))
+    (pcase-let ((`(,object ,start ,finish ,props)
+                 (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+      ;; Handle tp-text property specially - :override means props override embedded props
+      (pcase-let ((`(,new-props ,new-finish ,new-object)
+                   (tp--handle-tp-text-property start finish props object t :override)))
+        (setq props new-props finish new-finish object new-object)
+        (when (and (stringp object) (plist-member props 'tp-text))
+          (setq start 0)))
+      (cond
+       ;; Entire string form: create a new propertized string (non-destructive)
+       ((and (stringp object) entire-string-form)
+        (tp--apply-props-to-string object start finish props nil))
+       ;; Region form with string object: modify in-place
+       ((stringp object)
+        (let ((has-existing-props (text-properties-at start object)))
+          (if (and (not has-existing-props)
+                   (= start (or (next-single-property-change start nil object finish) finish)))
+              (set-text-properties start finish props object)
+            (cl-loop for (key val) on props by #'cddr
+                     do (put-text-property start finish key val object))))
+        object)
+       ;; Buffer: modify in place
+       (t
+        (let ((has-existing-props (text-properties-at start object)))
+          (if (and (not has-existing-props)
+                   (= start (or (next-single-property-change start nil object finish) finish)))
+              (set-text-properties start finish props object)
+            (cl-loop for (key val) on props by #'cddr
+                     do (put-text-property start finish key val object))))
+        (cons start finish))))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
 Like `tp-set' but replaces ALL existing properties.
 For tp-text, embedded text properties are ignored - only props are used.
 
-For strings, returns a NEW propertized string (original is not modified).
-For buffers, returns (START . END) cons."
-  (pcase-let ((`(,object ,start ,finish ,props)
-               (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property - :reset means only use props, ignore embedded props
-    (pcase-let ((`(,new-props ,new-finish ,new-object)
-                 (tp--handle-tp-text-property start finish props object nil :reset)))
-      (setq props new-props finish new-finish object new-object)
-      (when (and (stringp object) (plist-member props 'tp-text))
-        (setq start 0)))
-    (if (stringp object)
-        ;; For strings: create a new propertized string (non-destructive)
-        (tp--apply-props-to-string object start finish props :reset)
-      ;; For buffers: modify in place (standard behavior)
-      (set-text-properties start finish props object)
-      (cons start finish))))
+**String Modification Behavior:**
+- Entire string form (tp-reset STRING ...): Returns a NEW propertized string
+  (original is not modified). Uses `propertize' internally.
+- Region form with string (tp-reset START END PROPS STRING): Modifies the
+  original string in-place using `set-text-properties'.
+- Buffer forms: Always modify in-place.
+
+Returns: For buffers, (START . END) cons. For strings, the result string."
+  ;; Determine if this is the "entire string" form (first arg is a string)
+  (let ((entire-string-form (stringp start-or-string)))
+    (pcase-let ((`(,object ,start ,finish ,props)
+                 (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+      ;; Handle tp-text property - :reset means only use props, ignore embedded props
+      (pcase-let ((`(,new-props ,new-finish ,new-object)
+                   (tp--handle-tp-text-property start finish props object nil :reset)))
+        (setq props new-props finish new-finish object new-object)
+        (when (and (stringp object) (plist-member props 'tp-text))
+          (setq start 0)))
+      (cond
+       ;; Entire string form: create a new propertized string (non-destructive)
+       ((and (stringp object) entire-string-form)
+        (tp--apply-props-to-string object start finish props :reset))
+       ;; Region form with string object: modify in-place
+       ((stringp object)
+        (set-text-properties start finish props object)
+        object)
+       ;; Buffer: modify in place
+       (t
+        (set-text-properties start finish props object)
+        (cons start finish))))))
 
 (defun tp--prepend-face (new-face existing-face)
   "Prepend NEW-FACE to EXISTING-FACE for the face property.
@@ -1438,41 +1471,69 @@ Unlike `tp-set', deeply merges nested properties.
 For `face' property, symbol faces are prepended to existing face list.
 For tp-text, embedded text properties are merged with props.
 
-For strings, returns a NEW propertized string (original is not modified).
-For buffers, returns (START . END) cons."
-  (pcase-let ((`(,object ,start ,finish ,props)
-               (tp--parse-args start-or-string end-or-prop props-or-val rest)))
-    ;; Handle tp-text property - :merge means embedded props are merged with props
-    (let ((has-tp-text (plist-member props 'tp-text)))
-      (pcase-let ((`(,new-props ,new-finish ,new-object)
-                   (tp--handle-tp-text-property start finish props object t :merge)))
-        (setq props new-props finish new-finish object new-object)
-        (when (and (stringp object) has-tp-text)
-          (setq start 0))))
-    (if (stringp object)
-        ;; For strings: create a new propertized string (non-destructive)
+**String Modification Behavior:**
+- Entire string form (tp-add STRING ...): Returns a NEW propertized string
+  (original is not modified). Uses `propertize' internally.
+- Region form with string (tp-add START END PROPS STRING): Modifies the
+  original string in-place using `put-text-property'.
+- Buffer forms: Always modify in-place.
+
+Returns: For buffers, (START . END) cons. For strings, the result string."
+  ;; Determine if this is the "entire string" form (first arg is a string)
+  (let ((entire-string-form (stringp start-or-string)))
+    (pcase-let ((`(,object ,start ,finish ,props)
+                 (tp--parse-args start-or-string end-or-prop props-or-val rest)))
+      ;; Handle tp-text property - :merge means embedded props are merged with props
+      (let ((has-tp-text (plist-member props 'tp-text)))
+        (pcase-let ((`(,new-props ,new-finish ,new-object)
+                     (tp--handle-tp-text-property start finish props object t :merge)))
+          (setq props new-props finish new-finish object new-object)
+          (when (and (stringp object) has-tp-text)
+            (setq start 0))))
+      (cond
+       ;; Entire string form: create a new propertized string (non-destructive)
+       ((and (stringp object) entire-string-form)
         (if (plist-member props 'tp-text)
             ;; For tp-text, properties are already merged
             (tp--apply-props-to-string object start finish props :reset)
           ;; Otherwise use :add mode for deep merging
-          (tp--apply-props-to-string object start finish props :add))
-      ;; For buffers: modify in place with deep merging
-      (let ((pos start))
-        (while (< pos finish)
-          (let* ((current-props (text-properties-at pos object))
-                 (next-pos (or (next-property-change pos object finish) finish)))
-            (cl-loop
-             for (key val) on props by #'cddr
-             do (let* ((current-val (plist-get current-props key))
-                       (new-val (cond
-                                 ((eq key 'face) (tp--prepend-face val current-val))
-                                 ((and (listp val) (keywordp (car-safe val))
-                                       (listp current-val) (keywordp (car-safe current-val)))
-                                  (tp--deep-merge-plist current-val val))
-                                 (t val))))
-                  (put-text-property pos next-pos key new-val object)))
-            (setq pos next-pos))))
-      (cons start finish))))
+          (tp--apply-props-to-string object start finish props :add)))
+       ;; Region form with string object: modify in-place with deep merging
+       ((stringp object)
+        (let ((pos start))
+          (while (< pos finish)
+            (let* ((current-props (text-properties-at pos object))
+                   (next-pos (or (next-property-change pos object finish) finish)))
+              (cl-loop
+               for (key val) on props by #'cddr
+               do (let* ((current-val (plist-get current-props key))
+                         (new-val (cond
+                                   ((eq key 'face) (tp--prepend-face val current-val))
+                                   ((and (listp val) (keywordp (car-safe val))
+                                         (listp current-val) (keywordp (car-safe current-val)))
+                                    (tp--deep-merge-plist current-val val))
+                                   (t val))))
+                    (put-text-property pos next-pos key new-val object)))
+              (setq pos next-pos))))
+        object)
+       ;; Buffer: modify in place with deep merging
+       (t
+        (let ((pos start))
+          (while (< pos finish)
+            (let* ((current-props (text-properties-at pos object))
+                   (next-pos (or (next-property-change pos object finish) finish)))
+              (cl-loop
+               for (key val) on props by #'cddr
+               do (let* ((current-val (plist-get current-props key))
+                         (new-val (cond
+                                   ((eq key 'face) (tp--prepend-face val current-val))
+                                   ((and (listp val) (keywordp (car-safe val))
+                                         (listp current-val) (keywordp (car-safe current-val)))
+                                    (tp--deep-merge-plist current-val val))
+                                   (t val))))
+                    (put-text-property pos next-pos key new-val object)))
+              (setq pos next-pos))))
+        (cons start finish))))))
 
 ;;;============================================================================
 ;;; Layer 2: Core Property Functions - Get/At
@@ -1770,8 +1831,14 @@ This function supports multiple calling conventions:
    (tp-remove STRING PROPERTY SUB-KEY \\='(NESTED-KEYS...))
    (tp-remove \"Hello\" \\='face :underline \\='(:style :position))
 
-For strings, returns a NEW string with properties removed (original is not modified).
-For buffers, returns nil."
+**String Modification Behavior:**
+- Entire string form (tp-remove STRING ...): Returns a NEW string with
+  properties removed (original is not modified). Uses `propertize' internally.
+- Region form with string (tp-remove START END PROP STRING): Modifies the
+  original string in-place using `remove-text-properties'.
+- Buffer forms: Always modify in-place.
+
+Returns: For buffers, nil. For entire string forms, a new string."
   (cond
    ;; First arg is a string - apply to entire string, non-destructively
    ((stringp start-or-string)
@@ -1916,7 +1983,7 @@ Returns a new string (original is not modified)."
 
 (defun tp--remove-nested-keys (plist sub-key nested-keys)
   "Remove NESTED-KEYS from the SUB-KEY value within PLIST.
-Returns the modified plist."
+Returns a new plist (does not modify the original)."
   (let* ((sub-value (plist-get plist sub-key))
          (keys-to-remove (if (listp nested-keys) nested-keys (list nested-keys)))
          (new-sub-value (when (and sub-value (listp sub-value))
@@ -1926,7 +1993,14 @@ Returns the modified plist."
                                      do (setq result (plist-put result k v)))
                             result))))
     (if new-sub-value
-        (plist-put plist sub-key new-sub-value)
+        ;; Build a new plist with the updated sub-value
+        (let ((result nil))
+          (cl-loop for (k v) on plist by #'cddr
+                   do (setq result (plist-put result k
+                                              (if (eq k sub-key)
+                                                  new-sub-value
+                                                v))))
+          result)
       ;; Remove the sub-key entirely if no value left
       (let ((result nil))
         (cl-loop for (k v) on plist by #'cddr
@@ -1955,8 +2029,7 @@ For buffers, modifies in-place and returns list of regions."
    ;; String object
    ((stringp object)
     (let ((result object)
-          (pos 0)
-          (offset 0))  ; Track offset for position changes (though properties shouldn't change length)
+          (pos 0))
       (while (string-match (regexp-quote pattern) result pos)
         (let ((beg (match-beginning 0))
               (end (match-end 0)))

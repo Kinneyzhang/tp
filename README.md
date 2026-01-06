@@ -425,25 +425,48 @@ A complete overview of all tp.el functions organized by category:
 
 ### Core Property Functions
 
+> **Important: String Modification Behavior**
+>
+> The core property functions (`tp-set`, `tp-reset`, `tp-add`, `tp-remove`) have different behaviors depending on the calling convention:
+>
+> | Calling Convention | Underlying Implementation | Modifies Original? |
+> |-------------------|---------------------------|-------------------|
+> | `(tp-set STRING PROP VAL ...)` | Uses `propertize` internally | **No** - Returns a NEW string |
+> | `(tp-set START END PROPS)` | Uses `put-text-property` on buffer | Yes - Modifies current buffer |
+> | `(tp-set START END PROPS STRING)` | Uses `put-text-property` on string | **Yes** - Modifies original string |
+> | `(tp-set START END PROPS BUFFER)` | Uses `put-text-property` on buffer | Yes - Modifies the buffer |
+>
+> **Summary:**
+> - **Entire string form** `(tp-set "string" ...)`: Creates a **new** propertized string. The original string is not modified. This uses `propertize` internally.
+> - **Region form with string object** `(tp-set 0 5 '(...) string)`: **Directly modifies** the original string object using `put-text-property` or `set-text-properties`.
+> - **Buffer forms**: Always modify the buffer in-place.
+>
+> This distinction applies to all core property functions: `tp-set`, `tp-reset`, `tp-add`, and `tp-remove`.
+
 #### `tp-set` - Set Text Properties
 
 Set text properties on a string or buffer region. Replaces only the specified properties, preserving others.
 
 ```elisp
-;; Current buffer (properties as a list)
+;; Current buffer (properties as a list) - modifies buffer in-place
 (tp-set START END '(PROPERTY VALUE ...))
 (tp-set START END LAYER-NAME)
 
-;; Specific buffer or string
+;; Specific buffer or string - modifies OBJECT in-place
 (tp-set START END '(PROPERTY VALUE ...) OBJECT)
 (tp-set START END LAYER-NAME OBJECT)
 
-;; Entire string (flat properties or layer name)
+;; Entire string (flat properties or layer name) - returns NEW string
 (tp-set STRING PROPERTY VALUE ...)
 (tp-set STRING LAYER-NAME)
 ```
 
 LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
+
+**Return Values:**
+- Buffer forms: Returns `(START . END)` cons cell
+- String region form `(tp-set 0 5 '(...) string)`: Returns the modified string (same object)
+- Entire string form `(tp-set "string" ...)`: Returns a **new** propertized string
 
 **Examples:**
 
@@ -476,14 +499,21 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
   (kill-buffer my-buffer))
 ;; => (1 . 10)
 
-;; Set properties on a string (0-indexed)
-(let ((my-string (tp-set 0 5 '(face italic) "Hello World")))
+;; Set properties on a string region (0-indexed) - MODIFIES original string
+(let ((my-string (copy-sequence "Hello World")))
+  (tp-set 0 5 '(face italic) my-string)
   my-string)
 ;; => #("Hello World" 0 5 (face italic))
 
-;; Set properties on entire string
-(tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
-;; => #("Hello" 0 5 (face bold mouse-face highlight))
+;; Set properties on entire string - returns NEW string, original unchanged
+(let ((original "Hello"))
+  (let ((result (tp-set original 'face 'bold)))
+    (list :original original
+          :result result
+          :original-has-props (get-text-property 0 'face original)
+          :result-has-props (get-text-property 0 'face result))))
+;; => (:original "Hello" :result #("Hello" 0 5 (face bold)) 
+;;     :original-has-props nil :result-has-props bold)
 
 ;; Use a defined layer name on entire string
 (define-tp my-style ()
@@ -519,12 +549,20 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 Completely replace ALL text properties with the specified ones.
 
 ```elisp
+;; Buffer/region forms - modifies in-place
 (tp-reset START END '(PROPERTY VALUE ...) &optional OBJECT)
 (tp-reset START END LAYER-NAME &optional OBJECT)
+
+;; Entire string form - returns NEW string
 (tp-reset STRING PROPERTY VALUE ...)
 ```
 
 LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
+
+**Return Values:**
+- Buffer forms: Returns `(START . END)` cons cell
+- String region form: Returns the modified string (same object)
+- Entire string form: Returns a **new** propertized string
 
 **Examples:**
 
@@ -537,9 +575,12 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
   (tp-at 1))
 ;; => (face bold)  ; help-echo is gone
 
-;; On string
-(tp-reset "Hello" 'face 'italic)
-;; => #("Hello" 0 5 (face italic))
+;; On entire string - returns NEW string, original unchanged
+(let ((original "Hello"))
+  (let ((result (tp-reset original 'face 'italic)))
+    (list :original-modified (get-text-property 0 'face original)
+          :result-face (get-text-property 0 'face result))))
+;; => (:original-modified nil :result-face italic)
 
 ;; Use a defined layer name
 (define-tp error-style ()
@@ -557,12 +598,20 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 Add or update properties with deep merge support for nested plists.
 
 ```elisp
+;; Buffer/region forms - modifies in-place
 (tp-add START END '(PROPERTY VALUE ...) &optional OBJECT)
 (tp-add START END LAYER-NAME &optional OBJECT)
+
+;; Entire string form - returns NEW string
 (tp-add STRING PROPERTY VALUE ...)
 ```
 
 LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
+
+**Return Values:**
+- Buffer forms: Returns `(START . END)` cons cell
+- String region form: Returns the modified string (same object)
+- Entire string form: Returns a **new** propertized string
 
 **Examples:**
 
@@ -583,11 +632,12 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
   (tp-at 1 'face))
 ;; => (:foreground "red" :background "blue")
 
-;; Face prepending - symbol faces are prepended to face list
-(let ((str (tp-set "Hello" 'face 'bold)))
-  (tp-add str 'face 'shadow)
-  (tp-at 0 'face str))
-;; => (shadow bold)
+;; Entire string form - returns NEW string, original unchanged
+(let ((original "Hello"))
+  (let ((result (tp-add original 'face 'bold)))
+    (list :original-modified (get-text-property 0 'face original)
+          :result-face (get-text-property 0 'face result))))
+;; => (:original-modified nil :result-face bold)
 
 ;; Use a defined layer name
 (define-tp highlight-style ()
@@ -761,20 +811,24 @@ For single-position property queries (previously done with `tp-get`), use `tp-at
 Remove a property or nested sub-property from a region or entire string.
 
 ```elisp
-;; Remove entire property (buffer)
+;; Remove entire property (buffer) - modifies in-place
 (tp-remove START END PROPERTY &optional OBJECT)
 
-;; Remove sub-property (buffer)
+;; Remove sub-property (buffer) - modifies in-place
 (tp-remove START END '(PROPERTY SUB-KEY) &optional OBJECT)
 
-;; Remove nested sub-properties (buffer)
+;; Remove nested sub-properties (buffer) - modifies in-place
 (tp-remove START END '(PROPERTY SUB-KEY (NESTED-KEYS...)) &optional OBJECT)
 
-;; Remove from entire string
+;; Remove from entire string - returns NEW string
 (tp-remove STRING PROP1 PROP2 ...)
 (tp-remove STRING PROPERTY SUB-KEY)
 (tp-remove STRING PROPERTY SUB-KEY '(NESTED-KEYS...))
 ```
+
+**Return Values:**
+- Buffer forms: Returns `nil`
+- Entire string forms: Returns a **new** string with properties removed
 
 **Examples:**
 
@@ -803,24 +857,24 @@ Remove a property or nested sub-property from a region or entire string.
   (tp-at 1 '(face :underline)))
 ;; => (:color "blue")  ; :style and :position removed, :color preserved
 
-;; Remove from entire string - multiple properties
-(let ((str (tp-set "Hello World" 'face 'bold 'help-echo "tip")))
-  (tp-remove str 'face 'help-echo)
-  (tp-at 0 str))
-;; => nil
+;; Remove from entire string - returns NEW string, original unchanged
+(let ((original (propertize "Hello" 'face 'bold 'help-echo "tip")))
+  (let ((result (tp-remove original 'face)))
+    (list :original-face (get-text-property 0 'face original)
+          :result-face (get-text-property 0 'face result))))
+;; => (:original-face bold :result-face nil)
 
-;; Remove sub-property from string
-(let ((str (copy-sequence "Hello World")))
-  (tp-set 0 11 '(face (:foreground "red" :underline t)) str)
-  (tp-remove str 'face :underline)
-  (tp-at 0 'face str))
-;; => (:foreground "red")
+;; Remove sub-property from string - returns NEW string
+(let ((original (propertize "Hello" 'face '(:foreground "red" :underline t))))
+  (let ((result (tp-remove original 'face :underline)))
+    (list :original (get-text-property 0 'face original)
+          :result (get-text-property 0 'face result))))
+;; => (:original (:foreground "red" :underline t) :result (:foreground "red"))
 
 ;; Remove nested keys from string
-(let ((str (copy-sequence "Hello World")))
-  (tp-set 0 11 '(face (:underline (:style wave :color "blue"))) str)
-  (tp-remove str 'face :underline '(:style))
-  (tp-at 0 '(face :underline) str))
+(let ((original (propertize "Hello" 'face '(:underline (:style wave :color "blue")))))
+  (let ((result (tp-remove original 'face :underline '(:style))))
+    (get-text-property 0 '(face :underline) result)))
 ;; => (:color "blue")
 ```
 

@@ -4095,17 +4095,16 @@ Regression test for: (tp-set \"emacs\" 'face nil) erroring with
       ;; Strings should not be eq (different objects)
       (should (not (eq original result))))))
 
-(ert-deftest tp-test-set-region-does-not-modify-original-string ()
-  "Test that tp-set with region returns a new string and does not modify the original."
-  (let ((original "Hello World"))
+(ert-deftest tp-test-set-region-modifies-original-string ()
+  "Test that tp-set with region form DOES modify the original string.
+The region form (tp-set START END PROPS STRING) modifies the string in-place."
+  (let ((original (copy-sequence "Hello World")))
     (let ((result (tp-set 0 5 '(face bold) original)))
-      ;; Result should be a new string with properties on the region
-      (should (stringp result))
+      ;; Result should be the same object as original (modified in-place)
+      (should (eq result original))
+      ;; Both should have the face property
       (should (eq (get-text-property 0 'face result) 'bold))
-      ;; Original should NOT be modified (no properties)
-      (should (null (get-text-property 0 'face original)))
-      ;; Strings should not be eq (different objects)
-      (should (not (eq original result))))))
+      (should (eq (get-text-property 0 'face original) 'bold)))))
 
 (ert-deftest tp-test-match-set-does-not-modify-original-string ()
   "Test that tp-match-set returns a new string and does not modify the original."
