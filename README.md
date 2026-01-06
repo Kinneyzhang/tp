@@ -880,7 +880,7 @@ OBJECT is a buffer or string; nil means current buffer.
   (tp-match-set "TODO" '(face warning)))
 ;; => ((1 . 5) (17 . 21))
 
-;; On string - returns modified string
+;; On string - returns a NEW propertized string (original is not modified)
 (tp-match-set "o" '(face bold) "Hello World")
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
@@ -2357,7 +2357,7 @@ Add or merge properties to specific layers in a region or string.
 - **IDX-OR-LAYER-NAME-LIST** is a list of layer indices (integers) or layer names (symbols). For indices: 0 means top layer, -1 means bottom layer.
 - Properties are deeply merged into the specified layers (nested plists are merged, not replaced).
 - OBJECT defaults to current buffer for region form.
-- Returns the modified string or nil for buffer operations.
+- For strings, returns a NEW string (original is not modified). For buffers, returns nil.
 
 **Examples:**
 
@@ -2392,7 +2392,7 @@ Add or merge properties to all layers in a region or string.
 
 - Properties are deeply merged into all existing layers.
 - OBJECT defaults to current buffer for region form.
-- Returns the modified string or nil for buffer operations.
+- For strings, returns a NEW string (original is not modified). For buffers, returns nil.
 
 **Examples:**
 

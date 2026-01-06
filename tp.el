@@ -1235,6 +1235,60 @@ Supports multiple calling conventions:
       (setq props (or (tp--resolve-props props) props)))
     (list object start finish props)))
 
+(defun tp--apply-props-to-string (str start end props &optional merge-mode)
+  "Apply PROPS to string STR from START to END, returning a NEW string.
+This function does not modify the original string.
+
+MERGE-MODE controls how properties are applied:
+  nil or :set - Set properties, preserving existing unspecified ones
+  :reset - Completely replace all properties
+  :add - Merge properties deeply (for face, prepend symbols)
+
+Returns a new propertized string."
+  (let* ((len (length str))
+         ;; Ensure bounds are valid
+         (start (max 0 start))
+         (end (min end len))
+         ;; Build the result string piece by piece
+         (before (when (> start 0)
+                   (substring str 0 start)))
+         (middle-text (substring-no-properties str start end))
+         (after (when (< end len)
+                  (substring str end len)))
+         ;; Get existing properties for the middle section
+         (existing-props (when (not (eq merge-mode :reset))
+                           (text-properties-at start str)))
+         ;; Calculate final properties for the middle section
+         (final-props
+          (cond
+           ;; :reset - use only new props
+           ((eq merge-mode :reset)
+            props)
+           ;; :add - deep merge with face prepending
+           ((eq merge-mode :add)
+            (let ((result existing-props))
+              (cl-loop
+               for (key val) on props by #'cddr
+               do (let* ((current-val (plist-get result key))
+                         (new-val (cond
+                                   ((eq key 'face) (tp--prepend-face val current-val))
+                                   ((and (listp val) (keywordp (car-safe val))
+                                         (listp current-val) (keywordp (car-safe current-val)))
+                                    (tp--deep-merge-plist current-val val))
+                                   (t val))))
+                    (setq result (plist-put result key new-val))))
+              result))
+           ;; nil/:set - set properties, preserving unspecified ones
+           (t
+            (let ((result (copy-sequence existing-props)))
+              (cl-loop for (key val) on props by #'cddr
+                       do (setq result (plist-put result key val)))
+              result))))
+         ;; Create the middle section with properties using propertize
+         (middle-propertized (apply #'propertize middle-text final-props)))
+    ;; Concatenate the parts
+    (concat before middle-propertized after)))
+
 ;;;============================================================================
 ;;; Layer 2: Core Property Functions - Set/Reset/Add
 ;;;============================================================================
@@ -1250,7 +1304,9 @@ Supports four calling conventions:
 PROPS can be a plist or a layer/group name symbol.
 Preserves existing properties not specified in PROPS.
 For tp-text, props override embedded text properties.
-Returns modified string or (START . END) cons for buffer."
+
+For strings, returns a NEW propertized string (original is not modified).
+For buffers, returns (START . END) cons."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
     ;; Handle tp-text property specially - :override means props override embedded props
@@ -1259,25 +1315,25 @@ Returns modified string or (START . END) cons for buffer."
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
-    ;; Check if we have any existing properties in the range
-    (let ((has-existing-props (text-properties-at start object)))
-      (if (and (not has-existing-props)
-               ;; Also check if this is a uniform range (no intervals)
-               (or (stringp object)
-                   (= start (or (next-single-property-change start nil object finish) finish))))
-          ;; No existing properties - can use set-text-properties to preserve duplicate keys
-          (set-text-properties start finish props object)
-        ;; Has existing properties - use put-text-property for proper interval handling
-        ;; This may lose duplicate keys but correctly handles overlapping regions
-        (cl-loop for (key val) on props by #'cddr
-                 do (put-text-property start finish key val object))))
-    (if (stringp object) object (cons start finish))))
+    (if (stringp object)
+        ;; For strings: create a new propertized string (non-destructive)
+        (tp--apply-props-to-string object start finish props nil)
+      ;; For buffers: modify in place (standard behavior)
+      (let ((has-existing-props (text-properties-at start object)))
+        (if (and (not has-existing-props)
+                 (= start (or (next-single-property-change start nil object finish) finish)))
+            (set-text-properties start finish props object)
+          (cl-loop for (key val) on props by #'cddr
+                   do (put-text-property start finish key val object))))
+      (cons start finish))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
 Like `tp-set' but replaces ALL existing properties.
 For tp-text, embedded text properties are ignored - only props are used.
-Returns modified string or (START . END) cons for buffer."
+
+For strings, returns a NEW propertized string (original is not modified).
+For buffers, returns (START . END) cons."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
     ;; Handle tp-text property - :reset means only use props, ignore embedded props
@@ -1286,9 +1342,12 @@ Returns modified string or (START . END) cons for buffer."
       (setq props new-props finish new-finish object new-object)
       (when (and (stringp object) (plist-member props 'tp-text))
         (setq start 0)))
-    ;; Completely replace all properties
-    (set-text-properties start finish props object)
-    (if (stringp object) object (cons start finish))))
+    (if (stringp object)
+        ;; For strings: create a new propertized string (non-destructive)
+        (tp--apply-props-to-string object start finish props :reset)
+      ;; For buffers: modify in place (standard behavior)
+      (set-text-properties start finish props object)
+      (cons start finish))))
 
 (defun tp--prepend-face (new-face existing-face)
   "Prepend NEW-FACE to EXISTING-FACE for the face property.
@@ -1378,7 +1437,9 @@ Duplicate faces are not added."
 Unlike `tp-set', deeply merges nested properties.
 For `face' property, symbol faces are prepended to existing face list.
 For tp-text, embedded text properties are merged with props.
-Returns modified string or (START . END) cons for buffer."
+
+For strings, returns a NEW propertized string (original is not modified).
+For buffers, returns (START . END) cons."
   (pcase-let ((`(,object ,start ,finish ,props)
                (tp--parse-args start-or-string end-or-prop props-or-val rest)))
     ;; Handle tp-text property - :merge means embedded props are merged with props
@@ -1388,10 +1449,14 @@ Returns modified string or (START . END) cons for buffer."
         (setq props new-props finish new-finish object new-object)
         (when (and (stringp object) has-tp-text)
           (setq start 0))))
-    ;; For strings with tp-text, properties are already merged - just apply them
-    ;; For other cases, process each property with deep merging
-    (if (and (stringp object) (plist-member props 'tp-text))
-        (set-text-properties start finish props object)
+    (if (stringp object)
+        ;; For strings: create a new propertized string (non-destructive)
+        (if (plist-member props 'tp-text)
+            ;; For tp-text, properties are already merged
+            (tp--apply-props-to-string object start finish props :reset)
+          ;; Otherwise use :add mode for deep merging
+          (tp--apply-props-to-string object start finish props :add))
+      ;; For buffers: modify in place with deep merging
       (let ((pos start))
         (while (< pos finish)
           (let* ((current-props (text-properties-at pos object))
@@ -1406,8 +1471,8 @@ Returns modified string or (START . END) cons for buffer."
                                   (tp--deep-merge-plist current-val val))
                                  (t val))))
                   (put-text-property pos next-pos key new-val object)))
-            (setq pos next-pos)))))
-    (if (stringp object) object (cons start finish))))
+            (setq pos next-pos))))
+      (cons start finish))))
 
 ;;;============================================================================
 ;;; Layer 2: Core Property Functions - Get/At
@@ -1705,39 +1770,39 @@ This function supports multiple calling conventions:
    (tp-remove STRING PROPERTY SUB-KEY \\='(NESTED-KEYS...))
    (tp-remove \"Hello\" \\='face :underline \\='(:style :position))
 
-Returns the modified string for string input, or nil for buffer operations."
+For strings, returns a NEW string with properties removed (original is not modified).
+For buffers, returns nil."
   (cond
-   ;; First arg is a string - apply to entire string
+   ;; First arg is a string - apply to entire string, non-destructively
    ((stringp start-or-string)
-    (let ((str start-or-string)
-          (start 0)
-          (end (length start-or-string)))
+    (let* ((str start-or-string)
+           (start 0)
+           (end (length str)))
       (cond
        ;; (tp-remove str 'face :underline '(:style :position)) - nested sub-property removal with list
        ((and (symbolp end-or-prop)
              (keywordp prop-or-sub)
              rest
              (listp (car rest)))
-        (tp--remove-property start end (list end-or-prop prop-or-sub (car rest)) str))
+        (tp--remove-property-from-string str start end (list end-or-prop prop-or-sub (car rest))))
        ;; (tp-remove str 'face :underline :position :style ...) - nested sub-property removal with keywords
        ((and (symbolp end-or-prop)
              (keywordp prop-or-sub)
              rest
              (keywordp (car rest)))
-        (tp--remove-property start end (list end-or-prop prop-or-sub rest) str))
+        (tp--remove-property-from-string str start end (list end-or-prop prop-or-sub rest)))
        ;; (tp-remove str 'face :underline) - sub-property removal
        ((and (symbolp end-or-prop) (keywordp prop-or-sub))
-        (tp--remove-sub start end end-or-prop prop-or-sub str))
+        (tp--remove-sub-from-string str start end end-or-prop prop-or-sub))
        ;; (tp-remove str 'face 'help-echo ...) - multiple properties
        ((symbolp end-or-prop)
-        (let ((props (cons end-or-prop (cons prop-or-sub rest))))
-          ;; Filter to only include valid property symbols (not nil)
-          (dolist (prop (cl-remove-if-not #'symbolp props))
-            (remove-text-properties start end (list prop nil) str))))
+        (let ((props-to-remove (cl-remove-if-not #'symbolp
+                                                  (cons end-or-prop (cons prop-or-sub rest)))))
+          (tp--remove-props-from-string str start end props-to-remove)))
        ;; (tp-remove str '(face :underline)) - nested property spec
        ((listp end-or-prop)
-        (tp--remove-property start end end-or-prop str)))
-      str))
+        (tp--remove-property-from-string str start end end-or-prop))
+       (t str))))
    ;; First arg is a number - buffer region
    ((numberp start-or-string)
     (let* ((start start-or-string)
@@ -1747,6 +1812,127 @@ Returns the modified string for string input, or nil for buffer operations."
       (tp--remove-property start end property object)
       nil))
    (t (error "Invalid arguments to tp-remove"))))
+
+(defun tp--remove-props-from-string (str start end props-to-remove)
+  "Create a new string from STR with PROPS-TO-REMOVE removed from START to END.
+Returns a new string (original is not modified)."
+  (let* ((len (length str))
+         (start (max 0 start))
+         (end (min end len))
+         (before (when (> start 0)
+                   (substring str 0 start)))
+         (middle-text (substring-no-properties str start end))
+         (after (when (< end len)
+                  (substring str end len)))
+         ;; Get existing properties and remove the specified ones
+         (existing-props (text-properties-at start str))
+         (final-props (let ((result nil))
+                        (cl-loop for (key val) on existing-props by #'cddr
+                                 unless (memq key props-to-remove)
+                                 do (setq result (plist-put result key val)))
+                        result))
+         (middle-propertized (if final-props
+                                 (apply #'propertize middle-text final-props)
+                               middle-text)))
+    (concat before middle-propertized after)))
+
+(defun tp--remove-sub-from-string (str start end property sub-key)
+  "Create a new string from STR with SUB-KEY removed from PROPERTY.
+Returns a new string (original is not modified)."
+  (let* ((len (length str))
+         (start (max 0 start))
+         (end (min end len))
+         (before (when (> start 0)
+                   (substring str 0 start)))
+         (middle-text (substring-no-properties str start end))
+         (after (when (< end len)
+                  (substring str end len)))
+         ;; Get existing properties and modify the face
+         (existing-props (text-properties-at start str))
+         (prop-value (plist-get existing-props property))
+         (new-value (when (and prop-value (listp prop-value) (keywordp (car-safe prop-value)))
+                      (let ((result nil))
+                        (cl-loop for (k v) on prop-value by #'cddr
+                                 unless (eq k sub-key)
+                                 do (setq result (plist-put result k v)))
+                        result)))
+         (final-props (let ((result nil))
+                        (cl-loop for (key val) on existing-props by #'cddr
+                                 do (setq result (plist-put result key
+                                                            (if (eq key property)
+                                                                new-value
+                                                              val))))
+                        result))
+         (middle-propertized (if final-props
+                                 (apply #'propertize middle-text final-props)
+                               middle-text)))
+    (concat before middle-propertized after)))
+
+(defun tp--remove-property-from-string (str start end property-spec)
+  "Create a new string from STR with PROPERTY-SPEC removed from START to END.
+PROPERTY-SPEC can be a symbol or a nested spec like (PROPERTY SUB-KEY ...).
+Returns a new string (original is not modified)."
+  (cond
+   ((symbolp property-spec)
+    (tp--remove-props-from-string str start end (list property-spec)))
+   ((listp property-spec)
+    (let ((property (car property-spec))
+          (sub-key (cadr property-spec))
+          (nested-keys (caddr property-spec)))
+      (cond
+       ;; Nested sub-property removal
+       ((and sub-key nested-keys)
+        ;; For complex nested removal, we need to handle this specially
+        (let* ((len (length str))
+               (start (max 0 start))
+               (end (min end len))
+               (before (when (> start 0)
+                         (substring str 0 start)))
+               (middle-text (substring-no-properties str start end))
+               (after (when (< end len)
+                        (substring str end len)))
+               (existing-props (text-properties-at start str))
+               (prop-value (plist-get existing-props property))
+               (new-value (when (and prop-value (listp prop-value))
+                            (tp--remove-nested-keys prop-value sub-key nested-keys)))
+               (final-props (let ((result nil))
+                              (cl-loop for (key val) on existing-props by #'cddr
+                                       do (setq result (plist-put result key
+                                                                  (if (eq key property)
+                                                                      new-value
+                                                                    val))))
+                              result))
+               (middle-propertized (if final-props
+                                       (apply #'propertize middle-text final-props)
+                                     middle-text)))
+          (concat before middle-propertized after)))
+       ;; Simple sub-property removal
+       (sub-key
+        (tp--remove-sub-from-string str start end property sub-key))
+       ;; Just a property name
+       (t
+        (tp--remove-props-from-string str start end (list property))))))
+   (t str)))
+
+(defun tp--remove-nested-keys (plist sub-key nested-keys)
+  "Remove NESTED-KEYS from the SUB-KEY value within PLIST.
+Returns the modified plist."
+  (let* ((sub-value (plist-get plist sub-key))
+         (keys-to-remove (if (listp nested-keys) nested-keys (list nested-keys)))
+         (new-sub-value (when (and sub-value (listp sub-value))
+                          (let ((result nil))
+                            (cl-loop for (k v) on sub-value by #'cddr
+                                     unless (memq k keys-to-remove)
+                                     do (setq result (plist-put result k v)))
+                            result))))
+    (if new-sub-value
+        (plist-put plist sub-key new-sub-value)
+      ;; Remove the sub-key entirely if no value left
+      (let ((result nil))
+        (cl-loop for (k v) on plist by #'cddr
+                 unless (eq k sub-key)
+                 do (setq result (plist-put result k v)))
+        result))))
 
 ;;;###autoload
 (defun tp-clear (&optional start end object)
@@ -1762,18 +1948,22 @@ If START and END are not provided, clear the entire buffer."
 ;;;============================================================================
 
 (defun tp--match-apply-single (pattern properties apply-fn object)
-  "Apply APPLY-FN to matches of single PATTERN in OBJECT."
+  "Apply APPLY-FN to matches of single PATTERN in OBJECT.
+For strings, returns a new string with properties applied (non-destructive).
+For buffers, modifies in-place and returns list of regions."
   (cond
    ;; String object
    ((stringp object)
-    (let ((pos 0))
-      (while (string-match (regexp-quote pattern) object pos)
+    (let ((result object)
+          (pos 0)
+          (offset 0))  ; Track offset for position changes (though properties shouldn't change length)
+      (while (string-match (regexp-quote pattern) result pos)
         (let ((beg (match-beginning 0))
               (end (match-end 0)))
           (when properties
-            (funcall apply-fn beg end properties object))
+            (setq result (funcall apply-fn beg end properties result)))
           (setq pos (if (= beg end) (1+ beg) end))))
-      object))
+      result))
    ;; Buffer or nil (current buffer)
    (t
     (let ((buf (or object (current-buffer))))
@@ -1794,14 +1984,16 @@ If START and END are not provided, clear the entire buffer."
 PATTERN can be a string or a list of strings (multiple patterns).
 When PATTERN is a list, each element is a pattern to match.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
-Returns modified object or list of regions."
+For strings, returns a NEW string with properties applied (non-destructive).
+For buffers, returns list of regions."
   (let ((patterns (if (listp pattern) pattern (list pattern))))
     (cond
      ;; String object
      ((stringp object)
-      (dolist (p patterns)
-        (tp--match-apply-single p properties apply-fn object))
-      object)
+      (let ((result object))
+        (dolist (p patterns)
+          (setq result (tp--match-apply-single p properties apply-fn result)))
+        result))
      ;; Buffer or nil (current buffer)
      (t
       (let ((all-regions nil))
@@ -1813,18 +2005,20 @@ Returns modified object or list of regions."
 (defun tp--regexp-apply-single (pattern properties apply-fn object)
   "Apply APPLY-FN to regexp matches of single PATTERN in OBJECT.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
-Returns modified object or list of regions."
+For strings, returns a NEW string with properties applied (non-destructive).
+For buffers, modifies in-place and returns list of regions."
   (cond
    ;; String object
    ((stringp object)
-    (let ((pos 0))
-      (while (string-match pattern object pos)
+    (let ((result object)
+          (pos 0))
+      (while (string-match pattern result pos)
         (let ((beg (match-beginning 0))
               (end (match-end 0)))
           (when properties
-            (funcall apply-fn beg end properties object))
+            (setq result (funcall apply-fn beg end properties result)))
           (setq pos (if (= beg end) (1+ beg) end))))
-      object))
+      result))
    ;; Buffer or nil (current buffer)
    (t
     (let ((buf (or object (current-buffer))))
@@ -1845,14 +2039,16 @@ Returns modified object or list of regions."
 PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
 When PATTERN is a list, each element is a regexp to match.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
-Returns modified object or list of regions."
+For strings, returns a NEW string with properties applied (non-destructive).
+For buffers, returns list of regions."
   (let ((patterns (if (listp pattern) pattern (list pattern))))
     (cond
      ;; String object
      ((stringp object)
-      (dolist (p patterns)
-        (tp--regexp-apply-single p properties apply-fn object))
-      object)
+      (let ((result object))
+        (dolist (p patterns)
+          (setq result (tp--regexp-apply-single p properties apply-fn result)))
+        result))
      ;; Buffer or nil (current buffer)
      (t
       (let ((all-regions nil))
@@ -1863,22 +2059,29 @@ Returns modified object or list of regions."
 
 (defun tp--deep-merge-apply (start end props obj)
   "Apply PROPS to OBJ from START to END with deep merge.
-Merges nested plists instead of replacing them."
-  (let ((pos start))
-    (while (< pos end)
-      (let* ((current-props (text-properties-at pos obj))
-             (next-pos (or (next-property-change pos obj end) end)))
-        (cl-loop for (key val) on props by #'cddr
-                 do (let* ((current-val (plist-get current-props key))
-                           (new-val
-                            (cond
-                             ((and (listp val) (keywordp (car-safe val))
-                                   (listp current-val)
-                                   (keywordp (car-safe current-val)))
-                              (tp--deep-merge-plist current-val val))
-                             (t val))))
-                      (put-text-property pos next-pos key new-val obj)))
-        (setq pos next-pos)))))
+Merges nested plists instead of replacing them.
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place."
+  (if (stringp obj)
+      ;; For strings: create a new propertized string using tp--apply-props-to-string with :add mode
+      (tp--apply-props-to-string obj start end props :add)
+    ;; For buffers: modify in-place
+    (let ((pos start))
+      (while (< pos end)
+        (let* ((current-props (text-properties-at pos obj))
+               (next-pos (or (next-property-change pos obj end) end)))
+          (cl-loop for (key val) on props by #'cddr
+                   do (let* ((current-val (plist-get current-props key))
+                             (new-val
+                              (cond
+                               ((and (listp val) (keywordp (car-safe val))
+                                     (listp current-val)
+                                     (keywordp (car-safe current-val)))
+                                (tp--deep-merge-plist current-val val))
+                               (t val))))
+                        (put-text-property pos next-pos key new-val obj)))
+          (setq pos next-pos))))
+    obj))
 
 (defun tp-match-set (pattern plist &optional object)
   "Set properties on all occurrences of PATTERN.
@@ -1908,11 +2111,22 @@ or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
-Unlike `tp-match-set', this completely replaces all existing properties."
+Unlike `tp-match-set', this completely replaces all existing properties.
+
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place and returns list of regions."
   (tp--match-apply pattern (tp--ensure-props plist)
-                   (lambda (start end props obj)
-                     (set-text-properties start end props obj))
+                   #'tp--reset-apply
                    object))
+
+(defun tp--reset-apply (start end props obj)
+  "Apply PROPS to OBJ from START to END, completely replacing existing properties.
+For strings, returns a NEW string.
+For buffers, modifies in-place."
+  (if (stringp obj)
+      (tp--apply-props-to-string obj start end props :reset)
+    (set-text-properties start end props obj)
+    obj))
 
 (defun tp-match-add (pattern plist &optional object)
   "Add/update properties on all occurrences of PATTERN.
@@ -1956,10 +2170,12 @@ or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 
-Unlike `tp-regexp-set', this completely replaces all existing properties."
+Unlike `tp-regexp-set', this completely replaces all existing properties.
+
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place and returns list of regions."
   (tp--regexp-apply pattern (tp--ensure-props plist)
-                    (lambda (start end props obj)
-                      (set-text-properties start end props obj))
+                    #'tp--reset-apply
                     object))
 
 (defun tp-regexp-add (pattern plist &optional object)

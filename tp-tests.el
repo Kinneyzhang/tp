@@ -4041,5 +4041,95 @@ Regression test for: (tp-set \"emacs\" 'face nil) erroring with
     (tp-set 1 6 '(face nil))
     (should (eq (tp-at 1 'face) nil))))
 
+;;; ============================================================
+;;; Non-Destructive String Modification Tests
+;;; ============================================================
+
+(ert-deftest tp-test-set-does-not-modify-original-string ()
+  "Test that tp-set returns a new string and does not modify the original."
+  (let ((original "Hello"))
+    (let ((result (tp-set original 'face 'bold)))
+      ;; Result should be a new string with properties
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold))
+      ;; Original should NOT be modified (no properties)
+      (should (null (get-text-property 0 'face original)))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
+(ert-deftest tp-test-reset-does-not-modify-original-string ()
+  "Test that tp-reset returns a new string and does not modify the original."
+  (let ((original "Hello"))
+    (let ((result (tp-reset original 'face 'bold)))
+      ;; Result should be a new string with properties
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold))
+      ;; Original should NOT be modified (no properties)
+      (should (null (get-text-property 0 'face original)))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
+(ert-deftest tp-test-add-does-not-modify-original-string ()
+  "Test that tp-add returns a new string and does not modify the original."
+  (let ((original "Hello"))
+    (let ((result (tp-add original 'face 'bold)))
+      ;; Result should be a new string with properties
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold))
+      ;; Original should NOT be modified (no properties)
+      (should (null (get-text-property 0 'face original)))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
+(ert-deftest tp-test-remove-does-not-modify-original-string ()
+  "Test that tp-remove returns a new string and does not modify the original."
+  ;; First create a propertized string (using propertize to create the original)
+  (let ((original (propertize "Hello" 'face 'bold 'help-echo "tip")))
+    (let ((result (tp-remove original 'face)))
+      ;; Result should be a new string without face property
+      (should (stringp result))
+      (should (null (get-text-property 0 'face result)))
+      (should (equal (get-text-property 0 'help-echo result) "tip"))
+      ;; Original should still have face property
+      (should (eq (get-text-property 0 'face original) 'bold))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
+(ert-deftest tp-test-set-region-does-not-modify-original-string ()
+  "Test that tp-set with region returns a new string and does not modify the original."
+  (let ((original "Hello World"))
+    (let ((result (tp-set 0 5 '(face bold) original)))
+      ;; Result should be a new string with properties on the region
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold))
+      ;; Original should NOT be modified (no properties)
+      (should (null (get-text-property 0 'face original)))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
+(ert-deftest tp-test-match-set-does-not-modify-original-string ()
+  "Test that tp-match-set returns a new string and does not modify the original."
+  (let ((original "Hello World"))
+    (let ((result (tp-match-set "Hello" '(face bold) original)))
+      ;; Result should be a new string with properties
+      (should (stringp result))
+      (should (eq (get-text-property 0 'face result) 'bold))
+      ;; Original should NOT be modified (no properties)
+      (should (null (get-text-property 0 'face original)))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
+(ert-deftest tp-test-regexp-set-does-not-modify-original-string ()
+  "Test that tp-regexp-set returns a new string and does not modify the original."
+  (let ((original "abc 123 def"))
+    (let ((result (tp-regexp-set "[0-9]+" '(face bold) original)))
+      ;; Result should be a new string with properties on the match
+      (should (stringp result))
+      (should (eq (get-text-property 4 'face result) 'bold))
+      ;; Original should NOT be modified (no properties)
+      (should (null (get-text-property 4 'face original)))
+      ;; Strings should not be eq (different objects)
+      (should (not (eq original result))))))
+
 (provide 'tp-ert-tests)
 ;;; tp-ert-tests.el ends here
