@@ -427,25 +427,48 @@ tp.el 所有函数按类别组织的完整概览：
 
 ### 核心属性函数
 
+> **重要：字符串修改行为**
+>
+> 核心属性函数（`tp-set`、`tp-reset`、`tp-add`、`tp-remove`）根据调用方式有不同的行为：
+>
+> | 调用方式 | 底层实现 | 是否修改原始对象？ |
+> |---------|---------|------------------|
+> | `(tp-set STRING PROP VAL ...)` | 内部使用 `propertize` | **否** - 返回新字符串 |
+> | `(tp-set START END PROPS)` | 对缓冲区使用 `put-text-property` | 是 - 修改当前缓冲区 |
+> | `(tp-set START END PROPS STRING)` | 对字符串使用 `put-text-property` | **是** - 修改原始字符串 |
+> | `(tp-set START END PROPS BUFFER)` | 对缓冲区使用 `put-text-property` | 是 - 修改缓冲区 |
+>
+> **总结：**
+> - **整个字符串形式** `(tp-set "string" ...)`：创建一个**新的**带属性字符串。原始字符串不会被修改。内部使用 `propertize` 实现。
+> - **区域形式（字符串对象）** `(tp-set 0 5 '(...) string)`：使用 `put-text-property` 或 `set-text-properties` **直接修改**原始字符串对象。
+> - **缓冲区形式**：始终就地修改缓冲区。
+>
+> 这一区别适用于所有核心属性函数：`tp-set`、`tp-reset`、`tp-add` 和 `tp-remove`。
+
 #### `tp-set` - 设置文本属性
 
 在字符串或缓冲区区域上设置文本属性。只替换指定的属性，保留其他属性。
 
 ```elisp
-;; 当前缓冲区（属性作为列表）
+;; 当前缓冲区（属性作为列表）- 就地修改缓冲区
 (tp-set START END '(PROPERTY VALUE ...))
 (tp-set START END LAYER-NAME)
 
-;; 特定缓冲区或字符串
+;; 特定缓冲区或字符串 - 就地修改 OBJECT
 (tp-set START END '(PROPERTY VALUE ...) OBJECT)
 (tp-set START END LAYER-NAME OBJECT)
 
-;; 整个字符串（平铺属性或层名称）
+;; 整个字符串（平铺属性或层名称）- 返回新字符串
 (tp-set STRING PROPERTY VALUE ...)
 (tp-set STRING LAYER-NAME)
 ```
 
 LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或通过 `define-tps` 定义的属性组名称。
+
+**返回值：**
+- 缓冲区形式：返回 `(START . END)` 点对
+- 字符串区域形式 `(tp-set 0 5 '(...) string)`：返回修改后的字符串（同一对象）
+- 整个字符串形式 `(tp-set "string" ...)`：返回一个**新的**带属性字符串
 
 **示例：**
 
@@ -470,14 +493,21 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
   (kill-buffer my-buffer))
 ;; => (1 . 10)
 
-;; 在字符串上设置属性（0 索引）
-(let ((my-string (tp-set 0 5 '(face italic) "Hello World")))
+;; 在字符串区域设置属性（0 索引）- 修改原始字符串
+(let ((my-string (copy-sequence "Hello World")))
+  (tp-set 0 5 '(face italic) my-string)
   my-string)
 ;; => #("Hello World" 0 5 (face italic))
 
-;; 在整个字符串上设置属性
-(tp-set "Hello" 'face 'bold 'mouse-face 'highlight)
-;; => #("Hello" 0 5 (face bold mouse-face highlight))
+;; 在整个字符串上设置属性 - 返回新字符串，原始字符串不变
+(let ((original "Hello"))
+  (let ((result (tp-set original 'face 'bold)))
+    (list :original original
+          :result result
+          :original-has-props (get-text-property 0 'face original)
+          :result-has-props (get-text-property 0 'face result))))
+;; => (:original "Hello" :result #("Hello" 0 5 (face bold)) 
+;;     :original-has-props nil :result-has-props bold)
 
 ;; 在整个字符串上使用已定义的层名称
 (define-tp my-style ()
@@ -513,12 +543,20 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 用指定的属性完全替换所有文本属性。
 
 ```elisp
+;; 缓冲区/区域形式 - 就地修改
 (tp-reset START END '(PROPERTY VALUE ...) &optional OBJECT)
 (tp-reset START END LAYER-NAME &optional OBJECT)
+
+;; 整个字符串形式 - 返回新字符串
 (tp-reset STRING PROPERTY VALUE ...)
 ```
 
 LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或通过 `define-tps` 定义的属性组名称。
+
+**返回值：**
+- 缓冲区形式：返回 `(START . END)` 点对
+- 字符串区域形式：返回修改后的字符串（同一对象）
+- 整个字符串形式：返回一个**新的**带属性字符串
 
 **示例：**
 
@@ -531,9 +569,12 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
   (tp-at 1))
 ;; => (face bold)  ; help-echo 被移除了
 
-;; 在字符串上
-(tp-reset "Hello" 'face 'italic)
-;; => #("Hello" 0 5 (face italic))
+;; 在整个字符串上 - 返回新字符串，原始字符串不变
+(let ((original "Hello"))
+  (let ((result (tp-reset original 'face 'italic)))
+    (list :original-modified (get-text-property 0 'face original)
+          :result-face (get-text-property 0 'face result))))
+;; => (:original-modified nil :result-face italic)
 
 ;; 使用已定义的层名称
 (define-tp error-style ()
@@ -551,12 +592,20 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 添加或更新属性，支持嵌套属性列表的深度合并。
 
 ```elisp
+;; 缓冲区/区域形式 - 就地修改
 (tp-add START END '(PROPERTY VALUE ...) &optional OBJECT)
 (tp-add START END LAYER-NAME &optional OBJECT)
+
+;; 整个字符串形式 - 返回新字符串
 (tp-add STRING PROPERTY VALUE ...)
 ```
 
 LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或通过 `define-tps` 定义的属性组名称。
+
+**返回值：**
+- 缓冲区形式：返回 `(START . END)` 点对
+- 字符串区域形式：返回修改后的字符串（同一对象）
+- 整个字符串形式：返回一个**新的**带属性字符串
 
 **示例：**
 
@@ -577,11 +626,12 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
   (tp-at 1 'face))
 ;; => (:foreground "red" :background "blue")
 
-;; Face 前置 - 符号 face 会被添加到 face 列表的开头
-(let ((str (tp-set "Hello" 'face 'bold)))
-  (tp-add str 'face 'shadow)
-  (tp-at 0 'face str))
-;; => (shadow bold)
+;; 整个字符串形式 - 返回新字符串，原始字符串不变
+(let ((original "Hello"))
+  (let ((result (tp-add original 'face 'bold)))
+    (list :original-modified (get-text-property 0 'face original)
+          :result-face (get-text-property 0 'face result))))
+;; => (:original-modified nil :result-face bold)
 
 ;; 使用已定义的层名称
 (define-tp highlight-style ()
@@ -755,20 +805,24 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 从区域或整个字符串中移除属性或嵌套子属性。
 
 ```elisp
-;; 移除整个属性（缓冲区）
+;; 移除整个属性（缓冲区）- 就地修改
 (tp-remove START END PROPERTY &optional OBJECT)
 
-;; 移除子属性（缓冲区）
+;; 移除子属性（缓冲区）- 就地修改
 (tp-remove START END '(PROPERTY SUB-KEY) &optional OBJECT)
 
-;; 移除嵌套子属性（缓冲区）
+;; 移除嵌套子属性（缓冲区）- 就地修改
 (tp-remove START END '(PROPERTY SUB-KEY (NESTED-KEYS...)) &optional OBJECT)
 
-;; 从整个字符串移除
+;; 从整个字符串移除 - 返回新字符串
 (tp-remove STRING PROP1 PROP2 ...)
 (tp-remove STRING PROPERTY SUB-KEY)
 (tp-remove STRING PROPERTY SUB-KEY '(NESTED-KEYS...))
 ```
+
+**返回值：**
+- 缓冲区形式：返回 `nil`
+- 整个字符串形式：返回一个**新的**移除了属性的字符串
 
 **示例：**
 
@@ -797,24 +851,24 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
   (tp-at 1 '(face :underline)))
 ;; => (:color "blue")  ; :style 和 :position 被移除, :color 保留
 
-;; 从整个字符串移除 - 移除多个属性
-(let ((str (tp-set "Hello World" 'face 'bold 'help-echo "tip")))
-  (tp-remove str 'face 'help-echo)
-  (tp-at 0 str))
-;; => nil
+;; 从整个字符串移除 - 返回新字符串，原始字符串不变
+(let ((original (propertize "Hello" 'face 'bold 'help-echo "tip")))
+  (let ((result (tp-remove original 'face)))
+    (list :original-face (get-text-property 0 'face original)
+          :result-face (get-text-property 0 'face result))))
+;; => (:original-face bold :result-face nil)
 
-;; 从字符串移除子属性
-(let ((str (copy-sequence "Hello World")))
-  (tp-set 0 11 '(face (:foreground "red" :underline t)) str)
-  (tp-remove str 'face :underline)
-  (tp-at 0 'face str))
-;; => (:foreground "red")
+;; 从字符串移除子属性 - 返回新字符串
+(let ((original (propertize "Hello" 'face '(:foreground "red" :underline t))))
+  (let ((result (tp-remove original 'face :underline)))
+    (list :original (get-text-property 0 'face original)
+          :result (get-text-property 0 'face result))))
+;; => (:original (:foreground "red" :underline t) :result (:foreground "red"))
 
 ;; 从字符串移除嵌套键
-(let ((str (copy-sequence "Hello World")))
-  (tp-set 0 11 '(face (:underline (:style wave :color "blue"))) str)
-  (tp-remove str 'face :underline '(:style))
-  (tp-at 0 '(face :underline) str))
+(let ((original (propertize "Hello" 'face '(:underline (:style wave :color "blue")))))
+  (let ((result (tp-remove original 'face :underline '(:style))))
+    (get-text-property 0 '(face :underline) result)))
 ;; => (:color "blue")
 ```
 
@@ -874,7 +928,7 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (tp-match-set "TODO" '(face warning)))
 ;; => ((1 . 5) (17 . 21))
 
-;; 在字符串上 - 返回修改后的字符串
+;; 在字符串上 - 返回新的带属性字符串（原始字符串不变）
 (tp-match-set "o" '(face bold) "Hello World")
 ;; => #("Hello World" 4 5 (face bold) 7 8 (face bold))
 
@@ -2354,7 +2408,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - **IDX-OR-LAYER-NAME-LIST** 是层索引（整数）或层名称（符号）的列表。对于索引：0 表示顶层，-1 表示底层。
 - 属性被深度合并到指定的层中（嵌套的 plist 被合并，而非替换）。
 - OBJECT 在区域形式中默认为当前缓冲区。
-- 返回修改后的字符串或 nil（对于缓冲区操作）。
+- 对于字符串，返回一个新的字符串（原始字符串不变）。对于缓冲区，返回 nil。
 
 **示例：**
 
@@ -2389,7 +2443,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 - 属性被深度合并到所有现有层中。
 - OBJECT 在区域形式中默认为当前缓冲区。
-- 返回修改后的字符串或 nil（对于缓冲区操作）。
+- 对于字符串，返回一个新的字符串（原始字符串不变）。对于缓冲区，返回 nil。
 
 **示例：**
 
