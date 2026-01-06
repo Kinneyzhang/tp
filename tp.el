@@ -1846,7 +1846,7 @@ If PROPERTY is a layer name, all properties added by that layer are removed."
                   (if new-value
                       (put-text-property pos next-pos prop-name new-value object)
                     (remove-text-properties pos next-pos (list prop-name nil) object))))
-              (setq pos next-pos))))))))
+              (setq pos next-pos)))))))))
 
 (defun tp-remove (start-or-string end-or-prop &optional prop-or-sub &rest rest)
   "Remove properties from text.
