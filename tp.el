@@ -69,6 +69,99 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
 (defvar tp--anonymous-layer-counter 0
   "Counter for generating unique anonymous layer names.")
 
+;;; --- Buffer-Layer Registry (Performance Optimization) ---
+
+(defvar tp-layer-buffer-registry nil
+  "Hash table mapping layer names to sets of buffers that use them.
+This registry enables O(1) lookup of which buffers need updating when
+a reactive variable changes, avoiding the need to scan all buffers.
+Each entry: LAYER-NAME -> hash-set of buffer objects.")
+
+(defun tp--init-layer-buffer-registry ()
+  "Initialize the layer-buffer registry if not already created."
+  (unless (hash-table-p tp-layer-buffer-registry)
+    (setq tp-layer-buffer-registry (make-hash-table :test 'eq))))
+
+(defun tp--register-layer-in-buffer (layer-name buffer)
+  "Register that LAYER-NAME is used in BUFFER.
+This enables efficient updates when the layer's reactive variables change."
+  (when (and layer-name buffer (buffer-live-p buffer))
+    (tp--init-layer-buffer-registry)
+    (let ((buffer-set (gethash layer-name tp-layer-buffer-registry)))
+      (unless buffer-set
+        (setq buffer-set (make-hash-table :test 'eq))
+        (puthash layer-name buffer-set tp-layer-buffer-registry))
+      (puthash buffer t buffer-set))))
+
+(defun tp--unregister-layer-from-buffer (layer-name buffer)
+  "Unregister LAYER-NAME from BUFFER."
+  (when (and layer-name (hash-table-p tp-layer-buffer-registry))
+    (let ((buffer-set (gethash layer-name tp-layer-buffer-registry)))
+      (when buffer-set
+        (remhash buffer buffer-set)
+        ;; Clean up empty entries
+        (when (= (hash-table-count buffer-set) 0)
+          (remhash layer-name tp-layer-buffer-registry))))))
+
+(defun tp--get-buffers-with-layer (layer-name)
+  "Return a list of live buffers that have LAYER-NAME applied.
+Returns nil if no buffers are registered for this layer."
+  (when (hash-table-p tp-layer-buffer-registry)
+    (let ((buffer-set (gethash layer-name tp-layer-buffer-registry))
+          (result nil))
+      (when buffer-set
+        (maphash (lambda (buf _)
+                   (if (buffer-live-p buf)
+                       (push buf result)
+                     ;; Clean up dead buffers
+                     (remhash buf buffer-set)))
+                 buffer-set))
+      result)))
+
+(defun tp--cleanup-dead-buffers-from-registry ()
+  "Remove all dead buffers from the layer-buffer registry."
+  (when (hash-table-p tp-layer-buffer-registry)
+    (maphash
+     (lambda (layer-name buffer-set)
+       (maphash (lambda (buf _)
+                  (unless (buffer-live-p buf)
+                    (remhash buf buffer-set)))
+                buffer-set)
+       ;; Clean up empty entries
+       (when (= (hash-table-count buffer-set) 0)
+         (remhash layer-name tp-layer-buffer-registry)))
+     tp-layer-buffer-registry)))
+
+(defun tp--reset-layer-buffer-registry ()
+  "Reset the layer-buffer registry."
+  (setq tp-layer-buffer-registry nil))
+
+(defun tp--maybe-register-layer-buffer (props object)
+  "Register buffer if PROPS contains tp-name and OBJECT is a buffer.
+This should be called after applying text properties with a layer.
+Only registers if OBJECT is a buffer (not a string) and PROPS has tp-name."
+  (when-let ((layer-name (plist-get props 'tp-name)))
+    (let ((buffer (cond
+                   ((bufferp object) object)
+                   ((null object) (current-buffer))
+                   ;; For strings, we don't track them in the registry
+                   ((stringp object) nil)
+                   (t nil))))
+      (when buffer
+        (tp--register-layer-in-buffer layer-name buffer)))))
+
+(defun tp--buffer-kill-hook ()
+  "Clean up the layer-buffer registry when a buffer is killed."
+  (when (hash-table-p tp-layer-buffer-registry)
+    (let ((buf (current-buffer)))
+      (maphash
+       (lambda (_layer-name buffer-set)
+         (remhash buf buffer-set))
+       tp-layer-buffer-registry))))
+
+;; Add the buffer kill hook
+(add-hook 'kill-buffer-hook #'tp--buffer-kill-hook)
+
 ;;; --- Debug Mode ---
 
 (defcustom tp-debug-mode nil
@@ -918,7 +1011,9 @@ Re-applies the layer properties using tp-search-map and tp-add.
 
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
-  - If WHERE is nil, update all buffers that have the text property (setq case)."
+  - If WHERE is nil, update registered buffers that have the layer.
+
+Performance: Uses `tp-layer-buffer-registry' to avoid scanning all buffers."
   (let ((props (tp-layer-props layer-name t)))  ; include tp-name for reactive tracking
     (when props
       ;; Callback for tp-search-map: applies props to matched region.
@@ -932,12 +1027,15 @@ WHERE specifies which buffers to update:
             (tp-with-current-buffer where
               (save-excursion
                 (tp-search-map apply-props-fn 'tp-name layer-name)))
-          ;; setq case: update all buffers that have the text property
-          (dolist (buf (buffer-list))
-            (when (buffer-live-p buf)
-              (tp-with-current-buffer buf
-                (save-excursion
-                  (tp-search-map apply-props-fn 'tp-name layer-name))))))))))
+          ;; setq case: update only registered buffers for this layer
+          ;; This is a major performance optimization - instead of scanning
+          ;; all buffers, we only update buffers that actually have this layer
+          (let ((registered-buffers (tp--get-buffers-with-layer layer-name)))
+            (dolist (buf registered-buffers)
+              (when (buffer-live-p buf)
+                (tp-with-current-buffer buf
+                  (save-excursion
+                    (tp-search-map apply-props-fn 'tp-name layer-name)))))))))))
 
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."
@@ -950,7 +1048,9 @@ WHERE specifies which buffers to update:
   (setq tp-reactive-deps nil)
   (setq tp-layer-watchers nil)
   (setq tp-layer-computed nil)
-  (setq tp-layer-data nil))
+  (setq tp-layer-data nil)
+  ;; Clear buffer-layer registry
+  (tp--reset-layer-buffer-registry))
 
 ;;;============================================================================
 ;;; Layer 4: Reactive Text (tp-text property)
@@ -982,10 +1082,12 @@ This is called when a reactive variable bound to tp-text changes.
 
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
-  - If WHERE is nil, update all buffers that have the text property (setq case).
+  - If WHERE is nil, update registered buffers that have the layer.
 
 If a transform function is registered for LAYER-NAME via `:transform',
-it will be applied to the text before updating."
+it will be applied to the text before updating.
+
+Performance: Uses `tp-layer-buffer-registry' to avoid scanning all buffers."
   (let ((props (tp-layer-props layer-name t)))  ; include tp-name for reactive tracking
     (when props
       (let* ((raw-text (plist-get props 'tp-text))
@@ -1008,12 +1110,15 @@ it will be applied to the text before updating."
               (tp-with-current-buffer where
                 (save-excursion
                   (tp--replace-reactive-text-in-buffer layer-name new-text props)))
-            ;; setq case: update all buffers that have the text property
-            (dolist (buf (buffer-list))
-              (when (buffer-live-p buf)
-                (tp-with-current-buffer buf
-                  (save-excursion
-                    (tp--replace-reactive-text-in-buffer layer-name new-text props)))))))))))
+            ;; setq case: update only registered buffers for this layer
+            ;; This is a major performance optimization - instead of scanning
+            ;; all buffers, we only update buffers that actually have this layer
+            (let ((registered-buffers (tp--get-buffers-with-layer layer-name)))
+              (dolist (buf registered-buffers)
+                (when (buffer-live-p buf)
+                  (tp-with-current-buffer buf
+                    (save-excursion
+                      (tp--replace-reactive-text-in-buffer layer-name new-text props))))))))))))
 
 (defvar tp-preserve-external-properties '(keymap mouse-face cursor pointer help-echo)
   "List of text properties to preserve during reactive text updates.
@@ -1271,6 +1376,8 @@ Returns modified string or (START . END) cons for buffer."
         ;; This may lose duplicate keys but correctly handles overlapping regions
         (cl-loop for (key val) on props by #'cddr
                  do (put-text-property start finish key val object))))
+    ;; Register buffer-layer relationship for efficient reactive updates
+    (tp--maybe-register-layer-buffer props object)
     (if (stringp object) object (cons start finish))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
@@ -1288,6 +1395,8 @@ Returns modified string or (START . END) cons for buffer."
         (setq start 0)))
     ;; Completely replace all properties
     (set-text-properties start finish props object)
+    ;; Register buffer-layer relationship for efficient reactive updates
+    (tp--maybe-register-layer-buffer props object)
     (if (stringp object) object (cons start finish))))
 
 (defun tp--prepend-face (new-face existing-face)
@@ -1407,6 +1516,8 @@ Returns modified string or (START . END) cons for buffer."
                                  (t val))))
                   (put-text-property pos next-pos key new-val object)))
             (setq pos next-pos)))))
+    ;; Register buffer-layer relationship for efficient reactive updates
+    (tp--maybe-register-layer-buffer props object)
     (if (stringp object) object (cons start finish))))
 
 ;;;============================================================================
@@ -3639,7 +3750,15 @@ OBJECT defaults to current buffer for region form."
               (+ start i-start) (+ start i-end)
               (tp--build-layer-props new-stack)
               obj)))
-         start end obj)))
+         start end obj))
+      
+      ;; Register buffer-layer relationships for efficient reactive updates
+      ;; Only register if the target is a buffer (not a string)
+      (unless (stringp obj)
+        (let ((buffer (or obj (current-buffer))))
+          (dolist (layer-props layers-to-add)
+            (when-let ((layer-name (plist-get layer-props 'tp-name)))
+              (tp--register-layer-in-buffer layer-name buffer))))))
     (or obj (cons start end))))
 
 (defun tp-push-layer (start-or-string &optional end-or-layer layer-or-object object)
