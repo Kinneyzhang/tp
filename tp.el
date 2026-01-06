@@ -2097,8 +2097,8 @@ Returns a new string (original is not modified)."
          (after (when (< end len)
                   (substring str end len)))
          (existing-props (text-properties-at start str))
-         ;; Collect face contributions from layers to subtract
-         (face-to-subtract nil)
+         ;; Remaining face after layer subtractions
+         (remaining-face nil)
          ;; Track if face was modified by layer subtraction
          (face-was-modified nil)
          ;; Collect all properties to remove entirely (non-face or non-layer)
@@ -2106,13 +2106,13 @@ Returns a new string (original is not modified)."
     ;; Process each property to remove
     (dolist (prop props-to-remove)
       (if (tp--is-layer-name-p prop)
-          ;; Layer name - get its face contribution and add to subtract list
+          ;; Layer name - get its face contribution and subtract from face
           (let* ((layer-prop-value (plist-get existing-props prop))
                  (layer-face (tp--get-layer-face-contribution prop layer-prop-value)))
             ;; Subtract layer's face from the current face
             (when layer-face
-              (let ((current-face (or face-to-subtract (plist-get existing-props 'face))))
-                (setq face-to-subtract
+              (let ((current-face (or remaining-face (plist-get existing-props 'face))))
+                (setq remaining-face
                       (tp--subtract-face-from-face-value current-face layer-face))
                 ;; Mark that we processed the face (even if result is nil)
                 (setq face-was-modified t)))
@@ -2130,8 +2130,8 @@ Returns a new string (original is not modified)."
                        do (cond
                            ;; Face property with layer subtraction
                            ((and (eq key 'face) face-was-modified)
-                            (when face-to-subtract
-                              (setq result (plist-put result key face-to-subtract))))
+                            (when remaining-face
+                              (setq result (plist-put result key remaining-face))))
                            ;; Property to remove entirely
                            ((memq key props-to-remove-entirely)
                             nil) ; skip
