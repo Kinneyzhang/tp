@@ -1280,8 +1280,14 @@ Returns a new propertized string."
               result))
            ;; nil/:set - set properties, preserving unspecified ones
            (t
-            (let ((result (copy-sequence existing-props)))
+            ;; Build a new plist by iterating through existing props and overriding with new props
+            (let ((result nil))
+              ;; First add all props from new props
               (cl-loop for (key val) on props by #'cddr
+                       do (setq result (plist-put result key val)))
+              ;; Then add existing props that are not in new props
+              (cl-loop for (key val) on existing-props by #'cddr
+                       unless (plist-member props key)
                        do (setq result (plist-put result key val)))
               result))))
          ;; Create the middle section with properties using propertize
@@ -1494,9 +1500,14 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
        ;; Entire string form: create a new propertized string (non-destructive)
        ((and (stringp object) entire-string-form)
         (if (plist-member props 'tp-text)
-            ;; For tp-text, properties are already merged
+            ;; For tp-text: tp--handle-tp-text-property has already merged embedded
+            ;; properties with props (in :merge mode above). The new-object is a
+            ;; fresh string with tp-text content, and new-props contains all merged
+            ;; properties. We use :reset mode here to simply apply these final
+            ;; merged properties to the new string, without re-merging with any
+            ;; (non-existent) existing properties on the new string.
             (tp--apply-props-to-string object start finish props :reset)
-          ;; Otherwise use :add mode for deep merging
+          ;; Otherwise use :add mode for deep merging with any existing properties
           (tp--apply-props-to-string object start finish props :add)))
        ;; Region form with string object: modify in-place with deep merging
        ((stringp object)
@@ -1864,7 +1875,7 @@ Returns: For buffers, nil. For entire string forms, a new string."
        ;; (tp-remove str 'face 'help-echo ...) - multiple properties
        ((symbolp end-or-prop)
         (let ((props-to-remove (cl-remove-if-not #'symbolp
-                                                  (cons end-or-prop (cons prop-or-sub rest)))))
+                                                  (list* end-or-prop prop-or-sub rest))))
           (tp--remove-props-from-string str start end props-to-remove)))
        ;; (tp-remove str '(face :underline)) - nested property spec
        ((listp end-or-prop)
@@ -2028,15 +2039,20 @@ For buffers, modifies in-place and returns list of regions."
   (cond
    ;; String object
    ((stringp object)
-    (let ((result object)
+    ;; First, collect all match positions from the original string
+    (let ((matches nil)
           (pos 0))
-      (while (string-match (regexp-quote pattern) result pos)
+      (while (string-match (regexp-quote pattern) object pos)
         (let ((beg (match-beginning 0))
               (end (match-end 0)))
-          (when properties
-            (setq result (funcall apply-fn beg end properties result)))
+          (push (cons beg end) matches)
           (setq pos (if (= beg end) (1+ beg) end))))
-      result))
+      ;; Apply function to each match in order (reverse to get correct order)
+      (let ((result object))
+        (dolist (match (nreverse matches))
+          (when properties
+            (setq result (funcall apply-fn (car match) (cdr match) properties result))))
+        result)))
    ;; Buffer or nil (current buffer)
    (t
     (let ((buf (or object (current-buffer))))
@@ -2083,15 +2099,20 @@ For buffers, modifies in-place and returns list of regions."
   (cond
    ;; String object
    ((stringp object)
-    (let ((result object)
+    ;; First, collect all match positions from the original string
+    (let ((matches nil)
           (pos 0))
-      (while (string-match pattern result pos)
+      (while (string-match pattern object pos)
         (let ((beg (match-beginning 0))
               (end (match-end 0)))
-          (when properties
-            (setq result (funcall apply-fn beg end properties result)))
+          (push (cons beg end) matches)
           (setq pos (if (= beg end) (1+ beg) end))))
-      result))
+      ;; Apply function to each match in order (reverse to get correct order)
+      (let ((result object))
+        (dolist (match (nreverse matches))
+          (when properties
+            (setq result (funcall apply-fn (car match) (cdr match) properties result))))
+        result)))
    ;; Buffer or nil (current buffer)
    (t
     (let ((buf (or object (current-buffer))))
@@ -2105,7 +2126,7 @@ For buffers, modifies in-place and returns list of regions."
                 (when properties
                   (funcall apply-fn beg end properties buf))
                 (push (cons beg end) regions)))
-            (nreverse regions))))))))
+            (nreverse regions)))))))))
 
 (defun tp--regexp-apply (pattern properties apply-fn &optional object)
   "Internal function to apply APPLY-FN to regexp matches of PATTERN.
