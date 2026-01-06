@@ -1774,11 +1774,42 @@ Returns the modified plist, or nil if empty after removal."
 
 (defun tp--remove-property (start end property object)
   "Internal function to remove PROPERTY from START to END in OBJECT.
-PROPERTY can be a symbol or a list for nested removal."
+PROPERTY can be a symbol (including layer names) or a list for nested removal.
+If PROPERTY is a layer name, all properties added by that layer are removed."
   (cond
-   ;; Simple property removal
+   ;; Simple property removal (or layer name)
    ((symbolp property)
-    (remove-text-properties start end (list property nil) object))
+    ;; Check if this is a layer name
+    (if (tp--is-layer-name-p property)
+        ;; Layer name - need to remove all properties added by the layer
+        (let ((pos start))
+          (while (< pos end)
+            (let* ((tp-name-at-pos (get-text-property pos 'tp-name object))
+                   (next-pos (or (next-single-property-change pos 'tp-name object end) end)))
+              (when (eq tp-name-at-pos property)
+                ;; This region has the layer applied - get the layer's property keys
+                ;; For parameterized layers, we pass a dummy arg (t) since we only need key names
+                (let* ((layer-props
+                        (cond
+                         ((tp-layer-parameterized-p property)
+                          (tp-layer-props-with-arg property t nil)) ; arg=t, include-tp-name=nil
+                         ((assoc property tp-layer-alist)
+                          (tp-layer-props property nil)) ; include-tp-name=nil
+                         ((assoc property tp-layer-groups)
+                          (when-let ((layer-props-list (tp-group-props property t)))
+                            (tp--build-layer-props layer-props-list)))))
+                       (props-to-remove
+                        (when layer-props
+                          (cl-loop for (key _val) on layer-props by #'cddr
+                                   collect key into keys
+                                   finally return (if (memq 'tp-name keys)
+                                                      keys
+                                                    (cons 'tp-name keys))))))
+                  (dolist (prop-key (or props-to-remove (list property 'tp-name)))
+                    (remove-text-properties pos next-pos (list prop-key nil) object))))
+              (setq pos next-pos))))
+      ;; Regular property removal
+      (remove-text-properties start end (list property nil) object)))
    ;; Nested property removal
    ((listp property)
     (let* ((prop-name (car property))
@@ -1815,7 +1846,7 @@ PROPERTY can be a symbol or a list for nested removal."
                   (if new-value
                       (put-text-property pos next-pos prop-name new-value object)
                     (remove-text-properties pos next-pos (list prop-name nil) object))))
-              (setq pos next-pos)))))))))
+              (setq pos next-pos))))))))
 
 (defun tp-remove (start-or-string end-or-prop &optional prop-or-sub &rest rest)
   "Remove properties from text.
@@ -1891,8 +1922,56 @@ Returns: For buffers, nil. For entire string forms, a new string."
       nil))
    (t (error "Invalid arguments to tp-remove"))))
 
+(defun tp--expand-layer-to-props-list (layer-name str start)
+  "Expand LAYER-NAME to a list of property keys it contributes.
+If LAYER-NAME is a layer defined in `tp-layer-alist', returns a list
+of the property keys that the layer adds, plus 'tp-name.
+STR and START are used to get the argument value for parameterized layers.
+For non-layer symbols, returns a list containing just that symbol."
+  (if (tp--is-layer-name-p layer-name)
+      (let* ((existing-props (text-properties-at start str))
+             (existing-tp-name (plist-get existing-props 'tp-name))
+             ;; Only proceed if this layer is actually applied here
+             (layer-props
+              (when (eq existing-tp-name layer-name)
+                (cond
+                 ;; Parameterized layer - get property keys it would produce
+                 ;; We pass a dummy arg (t) since we only need the key names, not values
+                 ((tp-layer-parameterized-p layer-name)
+                  (tp-layer-props-with-arg layer-name t nil)) ; arg=t, include-tp-name=nil
+                 ;; Non-parameterized layer
+                 ((assoc layer-name tp-layer-alist)
+                  (tp-layer-props layer-name nil)) ; include-tp-name=nil
+                 ;; Layer group
+                 ((assoc layer-name tp-layer-groups)
+                  (when-let ((layer-props-list (tp-group-props layer-name t)))
+                    (tp--build-layer-props layer-props-list)))))))
+        (if layer-props
+            ;; Return all property keys from the layer plus tp-name
+            (let ((keys (cl-loop for (key _val) on layer-props by #'cddr
+                                 collect key)))
+              (if (memq 'tp-name keys)
+                  keys
+                (cons 'tp-name keys)))
+          ;; Layer name doesn't match tp-name, just remove the literal symbol
+          (list layer-name)))
+    ;; Not a layer name, just return the symbol itself
+    (list layer-name)))
+
+(defun tp--expand-props-to-remove (props-to-remove str start)
+  "Expand PROPS-TO-REMOVE list, expanding any layer names to their property keys.
+STR and START are used to determine context for parameterized layers."
+  (let ((result nil))
+    (dolist (prop props-to-remove)
+      (dolist (expanded (tp--expand-layer-to-props-list prop str start))
+        (unless (memq expanded result)
+          (push expanded result))))
+    (nreverse result)))
+
 (defun tp--remove-props-from-string (str start end props-to-remove)
   "Create a new string from STR with PROPS-TO-REMOVE removed from START to END.
+PROPS-TO-REMOVE can include layer names, which will be expanded to include
+all properties that the layer adds.
 Returns a new string (original is not modified)."
   (let* ((len (length str))
          (start (max 0 start))
@@ -1902,11 +1981,13 @@ Returns a new string (original is not modified)."
          (middle-text (substring-no-properties str start end))
          (after (when (< end len)
                   (substring str end len)))
+         ;; Expand layer names to their actual properties
+         (expanded-props (tp--expand-props-to-remove props-to-remove str start))
          ;; Get existing properties and remove the specified ones
          (existing-props (text-properties-at start str))
          (final-props (let ((result nil))
                         (cl-loop for (key val) on existing-props by #'cddr
-                                 unless (memq key props-to-remove)
+                                 unless (memq key expanded-props)
                                  do (setq result (plist-put result key val)))
                         result))
          (middle-propertized (if final-props
