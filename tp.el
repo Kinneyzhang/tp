@@ -2099,6 +2099,8 @@ Returns a new string (original is not modified)."
          (existing-props (text-properties-at start str))
          ;; Collect face contributions from layers to subtract
          (face-to-subtract nil)
+         ;; Track if face was modified by layer subtraction
+         (face-was-modified nil)
          ;; Collect all properties to remove entirely (non-face or non-layer)
          (props-to-remove-entirely nil))
     ;; Process each property to remove
@@ -2107,15 +2109,13 @@ Returns a new string (original is not modified)."
           ;; Layer name - get its face contribution and add to subtract list
           (let* ((layer-prop-value (plist-get existing-props prop))
                  (layer-face (tp--get-layer-face-contribution prop layer-prop-value)))
-            ;; Add layer's face to the subtraction list
+            ;; Subtract layer's face from the current face
             (when layer-face
-              (setq face-to-subtract
-                    (tp--subtract-face-from-face-value
-                     (or face-to-subtract (plist-get existing-props 'face))
-                     layer-face))
-              ;; If face-to-subtract is not yet set, initialize it
-              (unless face-to-subtract
-                (setq face-to-subtract (plist-get existing-props 'face))))
+              (let ((current-face (or face-to-subtract (plist-get existing-props 'face))))
+                (setq face-to-subtract
+                      (tp--subtract-face-from-face-value current-face layer-face))
+                ;; Mark that we processed the face (even if result is nil)
+                (setq face-was-modified t)))
             ;; Add the layer property itself to remove list
             (push prop props-to-remove-entirely)
             ;; Also add tp-name if it matches
@@ -2124,10 +2124,7 @@ Returns a new string (original is not modified)."
         ;; Non-layer property - remove entirely
         (push prop props-to-remove-entirely)))
     ;; Build final properties
-    (let* ((face-was-modified (and face-to-subtract
-                                   (not (equal face-to-subtract
-                                               (plist-get existing-props 'face)))))
-           (final-props
+    (let* ((final-props
             (let ((result nil))
               (cl-loop for (key val) on existing-props by #'cddr
                        do (cond
@@ -2202,7 +2199,7 @@ Returns a new string (original is not modified)."
                (existing-props (text-properties-at start str))
                (prop-value (plist-get existing-props property))
                (new-value (when (and prop-value (listp prop-value))
-                            (tp--remove-nested-keys prop-value sub-key nested-keys)))
+                            (tp--remove-nested-sub-keys prop-value sub-key nested-keys)))
                (final-props (let ((result nil))
                               (cl-loop for (key val) on existing-props by #'cddr
                                        do (setq result (plist-put result key
@@ -2222,7 +2219,7 @@ Returns a new string (original is not modified)."
         (tp--remove-props-from-string str start end (list property))))))
    (t str)))
 
-(defun tp--remove-nested-keys (plist sub-key nested-keys)
+(defun tp--remove-nested-sub-keys (plist sub-key nested-keys)
   "Remove NESTED-KEYS from the SUB-KEY value within PLIST.
 Returns a new plist (does not modify the original)."
   (let* ((sub-value (plist-get plist sub-key))

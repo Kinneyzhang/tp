@@ -1435,34 +1435,34 @@ Later values should override earlier values for the same sub-property."
 
 (ert-deftest tp-test-remove-entire-string-single-prop ()
   "Test tp-remove removes single property from entire string."
-  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test")))
-    (tp-remove str 'face)
-    (should (null (get-text-property 0 'face str)))
-    (should (equal (get-text-property 0 'help-echo str) "test"))))
+  (let* ((str (tp-set "Hello" 'face 'bold 'help-echo "test"))
+         (result (tp-remove str 'face)))
+    (should (null (get-text-property 0 'face result)))
+    (should (equal (get-text-property 0 'help-echo result) "test"))))
 
 (ert-deftest tp-test-remove-entire-string-multiple-props ()
   "Test tp-remove removes multiple properties from entire string."
-  (let ((str (tp-set "Hello" 'face 'bold 'help-echo "test" 'mouse-face 'highlight)))
-    (tp-remove str 'face 'help-echo)
-    (should (null (get-text-property 0 'face str)))
-    (should (null (get-text-property 0 'help-echo str)))
-    (should (eq (get-text-property 0 'mouse-face str) 'highlight))))
+  (let* ((str (tp-set "Hello" 'face 'bold 'help-echo "test" 'mouse-face 'highlight))
+         (result (tp-remove str 'face 'help-echo)))
+    (should (null (get-text-property 0 'face result)))
+    (should (null (get-text-property 0 'help-echo result)))
+    (should (eq (get-text-property 0 'mouse-face result) 'highlight))))
 
 (ert-deftest tp-test-remove-entire-string-sub-prop ()
   "Test tp-remove removes sub-property from entire string."
-  (let ((str (copy-sequence "Hello")))
-    (put-text-property 0 5 'face '(:foreground "red" :underline t) str)
-    (tp-remove str 'face :underline)
-    (let ((face (get-text-property 0 'face str)))
+  (let* ((str (copy-sequence "Hello"))
+         (_ (put-text-property 0 5 'face '(:foreground "red" :underline t) str))
+         (result (tp-remove str 'face :underline)))
+    (let ((face (get-text-property 0 'face result)))
       (should (equal (plist-get face :foreground) "red"))
       (should (null (plist-get face :underline))))))
 
 (ert-deftest tp-test-remove-entire-string-nested-sub-prop ()
   "Test tp-remove removes nested sub-properties from entire string."
-  (let ((str (copy-sequence "Hello")))
-    (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave :color "blue")) str)
-    (tp-remove str 'face :underline '(:style))
-    (let* ((face (get-text-property 0 'face str))
+  (let* ((str (copy-sequence "Hello"))
+         (_ (put-text-property 0 5 'face '(:foreground "red" :underline (:style wave :color "blue")) str))
+         (result (tp-remove str 'face :underline '(:style))))
+    (let* ((face (get-text-property 0 'face result))
            (underline (plist-get face :underline)))
       (should (equal (plist-get face :foreground) "red"))
       (should (equal (plist-get underline :color) "blue"))
@@ -1472,11 +1472,11 @@ Later values should override earlier values for the same sub-property."
   "Test tp-remove removes a single nested key from a sub-property.
 This tests the fix for the bug where (tp-remove str 'face :underline :position)
 was removing the entire :underline instead of just :position."
-  (let ((str (copy-sequence "happy hacking emacs")))
-    (tp-set str 'face '(:foreground "red" :underline (:position t :color "green"))
-            'line-prefix ">> " 'other "other")
-    (tp-remove str 'face :underline :position)
-    (let* ((face (get-text-property 0 'face str))
+  (let* ((str (tp-set "happy hacking emacs"
+                      'face '(:foreground "red" :underline (:position t :color "green"))
+                      'line-prefix ">> " 'other "other"))
+         (result (tp-remove str 'face :underline :position)))
+    (let* ((face (get-text-property 0 'face result))
            (underline (plist-get face :underline)))
       ;; :foreground should be preserved
       (should (equal (plist-get face :foreground) "red"))
@@ -1485,8 +1485,8 @@ was removing the entire :underline instead of just :position."
       (should (equal (plist-get underline :color) "green"))
       (should (null (plist-get underline :position)))
       ;; Other properties should be preserved
-      (should (equal (get-text-property 0 'line-prefix str) ">> "))
-      (should (equal (get-text-property 0 'other str) "other")))))
+      (should (equal (get-text-property 0 'line-prefix result) ">> "))
+      (should (equal (get-text-property 0 'other result) "other")))))
 
 ;;; ============================================================
 ;;; New API Tests - Issue 3 & 4: tp-get for strings and new API
