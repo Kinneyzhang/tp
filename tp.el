@@ -1316,6 +1316,7 @@ Supports multiple calling conventions:
 (defun tp--apply-props-to-string (str start end props &optional merge-mode)
   "Apply PROPS to string STR from START to END, returning a NEW string.
 This function does not modify the original string.
+Preserves the original text property intervals by using `propertize'.
 
 MERGE-MODE controls how properties are applied:
   nil or :set - Set properties, preserving existing unspecified ones
@@ -1326,52 +1327,34 @@ Returns a new propertized string."
   (let* ((len (length str))
          ;; Ensure bounds are valid
          (start (max 0 start))
-         (end (min end len))
-         ;; Build the result string piece by piece
-         (before (when (> start 0)
-                   (substring str 0 start)))
-         (middle-text (substring-no-properties str start end))
-         (after (when (< end len)
-                  (substring str end len)))
-         ;; Get existing properties for the middle section
-         (existing-props (when (not (eq merge-mode :reset))
-                           (text-properties-at start str)))
-         ;; Calculate final properties for the middle section
-         (final-props
-          (cond
-           ;; :reset - use only new props
-           ((eq merge-mode :reset)
-            props)
-           ;; :add - deep merge with face prepending
-           ((eq merge-mode :add)
-            (let ((result existing-props))
-              (cl-loop
-               for (key val) on props by #'cddr
-               do (let* ((current-val (plist-get result key))
-                         (new-val (cond
-                                   ((eq key 'face) (tp--prepend-face val current-val))
-                                   ((and (listp val) (keywordp (car-safe val))
-                                         (listp current-val) (keywordp (car-safe current-val)))
-                                    (tp--deep-merge-plist current-val val))
-                                   (t val))))
-                    (setq result (plist-put result key new-val))))
-              result))
-           ;; nil/:set - set properties, preserving unspecified ones
-           (t
-            ;; Build a new plist by iterating through existing props and overriding with new props
-            (let ((result nil))
-              ;; First add all props from new props
-              (cl-loop for (key val) on props by #'cddr
-                       do (setq result (plist-put result key val)))
-              ;; Then add existing props that are not in new props
-              (cl-loop for (key val) on existing-props by #'cddr
-                       unless (plist-member props key)
-                       do (setq result (plist-put result key val)))
-              result))))
-         ;; Create the middle section with properties using propertize
-         (middle-propertized (apply #'propertize middle-text final-props)))
-    ;; Concatenate the parts
-    (concat before middle-propertized after)))
+         (end (min end len)))
+    (cond
+     ;; :reset - completely replace properties in the range
+     ((eq merge-mode :reset)
+      (let ((result (copy-sequence str)))
+        (set-text-properties start end props result)
+        result))
+     ;; :add - deep merge with face prepending
+     ((eq merge-mode :add)
+      (let ((result (copy-sequence str)))
+        (cl-loop
+         for (key val) on props by #'cddr
+         do (let ((pos start))
+              (while (< pos end)
+                (let* ((current-val (get-text-property pos key result))
+                       (new-val (cond
+                                 ((eq key 'face) (tp--prepend-face val current-val))
+                                 ((and (listp val) (keywordp (car-safe val))
+                                       (listp current-val) (keywordp (car-safe current-val)))
+                                  (tp--deep-merge-plist current-val val))
+                                 (t val)))
+                       (next-change (or (next-single-property-change pos key result end) end)))
+                  (put-text-property pos next-change key new-val result)
+                  (setq pos next-change)))))
+        result))
+     ;; nil/:set - use propertize which creates a new copy and preserves existing properties
+     (t
+      (apply #'propertize str props)))))
 
 ;;;============================================================================
 ;;; Layer 2: Core Property Functions - Set/Reset/Add

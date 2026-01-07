@@ -4057,6 +4057,28 @@ Regression test for: (tp-set \"emacs\" 'face nil) erroring with
 ;;; Non-Destructive String Modification Tests
 ;;; ============================================================
 
+(ert-deftest tp-test-set-preserves-text-property-intervals ()
+  "Test that tp-set preserves text property intervals when adding new properties.
+When a string has different properties at different positions, adding a new
+property should preserve the original interval structure."
+  (let ((original #(" button " 0 1 (display (space :width (4)))
+                               7 8 (display (space :width (4))))))
+    (let ((result (tp-set original 'face '(:foreground "red"))))
+      ;; Result should be a new string with properties
+      (should (stringp result))
+      ;; Result should NOT be the same object as original
+      (should (not (eq original result)))
+      ;; Original should NOT be modified
+      (should (null (get-text-property 0 'face original)))
+      ;; Result should have face property everywhere
+      (should (equal (get-text-property 0 'face result) '(:foreground "red")))
+      (should (equal (get-text-property 4 'face result) '(:foreground "red")))
+      (should (equal (get-text-property 7 'face result) '(:foreground "red")))
+      ;; Result should preserve display property at original positions
+      (should (equal (get-text-property 0 'display result) '(space :width (4))))
+      (should (null (get-text-property 2 'display result)))  ;; No display at position 2
+      (should (equal (get-text-property 7 'display result) '(space :width (4)))))))
+
 (ert-deftest tp-test-set-does-not-modify-original-string ()
   "Test that tp-set returns a new string and does not modify the original."
   (let ((original "Hello"))
