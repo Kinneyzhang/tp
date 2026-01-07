@@ -4060,7 +4060,12 @@ Regression test for: (tp-set \"emacs\" 'face nil) erroring with
 (ert-deftest tp-test-set-preserves-text-property-intervals ()
   "Test that tp-set preserves text property intervals when adding new properties.
 When a string has different properties at different positions, adding a new
-property should preserve the original interval structure."
+property should preserve the original interval structure.
+
+Test string: \" button \" (8 characters, positions 0-7)
+  - Position 0-1: display property (first space character)
+  - Position 1-7: no display property (text \"button \")
+  - Position 7-8: display property (last space character)"
   (let ((original #(" button " 0 1 (display (space :width (4)))
                                7 8 (display (space :width (4))))))
     (let ((result (tp-set original 'face '(:foreground "red"))))

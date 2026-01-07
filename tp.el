@@ -1316,7 +1316,7 @@ Supports multiple calling conventions:
 (defun tp--apply-props-to-string (str start end props &optional merge-mode)
   "Apply PROPS to string STR from START to END, returning a NEW string.
 This function does not modify the original string.
-Preserves the original text property intervals by using `propertize'.
+Preserves the original text property intervals.
 
 MERGE-MODE controls how properties are applied:
   nil or :set - Set properties, preserving existing unspecified ones
@@ -1352,9 +1352,18 @@ Returns a new propertized string."
                   (put-text-property pos next-change key new-val result)
                   (setq pos next-change)))))
         result))
-     ;; nil/:set - use propertize which creates a new copy and preserves existing properties
+     ;; nil/:set - set properties while preserving existing ones
+     ;; If applying to the entire string, use propertize for efficiency
+     ;; Otherwise, use copy-sequence + put-text-property to apply to specific range
      (t
-      (apply #'propertize str props)))))
+      (if (and (= start 0) (= end len))
+          ;; Entire string: use propertize which creates a new copy and preserves existing properties
+          (apply #'propertize str props)
+        ;; Partial range: copy string and apply properties to the range
+        (let ((result (copy-sequence str)))
+          (cl-loop for (key val) on props by #'cddr
+                   do (put-text-property start end key val result))
+          result))))))
 
 ;;;============================================================================
 ;;; Layer 2: Core Property Functions - Set/Reset/Add
