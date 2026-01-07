@@ -3082,8 +3082,9 @@ text content but different properties, the properties should be updated."
 ;;; ============================================================
 
 (ert-deftest tp-test-tp-text-with-embedded-properties-string ()
-  "Test that tp-set with tp-text overrides embedded properties on strings."
-  ;; When tp-text is a propertized string and tp-set is used, props override embedded
+  "Test that tp-set with tp-text preserves embedded properties on strings."
+  ;; When tp-text is a propertized string, embedded properties should be preserved
+  ;; (props still override embedded if there's a conflict)
   (let* ((propertized-text (copy-sequence "Hello"))
          (_ (put-text-property 0 5 'custom-prop 'embedded-value propertized-text))
          (result (tp-set "X" 'tp-text propertized-text 'face 'bold)))
@@ -3091,8 +3092,8 @@ text content but different properties, the properties should be updated."
     (should (equal result "Hello"))
     ;; The face property from props should be applied
     (should (equal (tp-at 0 'face result) 'bold))
-    ;; tp-set overrides - embedded custom-prop should NOT be present
-    (should (null (tp-at 0 'custom-prop result)))))
+    ;; tp-set now preserves embedded props
+    (should (equal (tp-at 0 'custom-prop result) 'embedded-value))))
 
 (ert-deftest tp-test-tp-add-with-embedded-properties-string ()
   "Test that tp-add with tp-text merges embedded properties on strings."
@@ -3108,15 +3109,15 @@ text content but different properties, the properties should be updated."
     (should (equal (tp-at 0 'custom-prop result) 'embedded-value))))
 
 (ert-deftest tp-test-tp-text-with-embedded-face-string ()
-  "Test that tp-set with tp-text overrides embedded face on strings."
+  "Test that tp-set with tp-text preserves embedded face on strings."
   (let* ((propertized-text (copy-sequence "Hello"))
          (_ (put-text-property 0 5 'face 'italic propertized-text))
          ;; Set tp-text with its own face, and also specify help-echo
          (result (tp-set "X" 'tp-text propertized-text 'help-echo "tip")))
     ;; The text content should be from tp-text
     (should (equal result "Hello"))
-    ;; tp-set overrides - embedded face should NOT be present (no face in props)
-    (should (null (tp-at 0 'face result)))
+    ;; tp-set now preserves embedded face
+    (should (equal (tp-at 0 'face result) 'italic))
     ;; The help-echo from props should be applied
     (should (equal (tp-at 0 'help-echo result) "tip"))))
 
@@ -3134,7 +3135,7 @@ text content but different properties, the properties should be updated."
     (should (equal (tp-at 0 'help-echo result) "tip"))))
 
 (ert-deftest tp-test-tp-text-with-embedded-properties-buffer ()
-  "Test that tp-set with tp-text overrides embedded properties in buffers."
+  "Test that tp-set with tp-text preserves embedded properties in buffers."
   (tp-test-with-temp-buffer
     (insert "Original")
     (let* ((propertized-text (copy-sequence "New"))
@@ -3144,12 +3145,12 @@ text content but different properties, the properties should be updated."
       (should (equal (buffer-substring-no-properties 1 4) "New"))
       ;; The face from props should be applied
       (should (equal (tp-at 1 'face) 'bold))
-      ;; tp-set overrides embedded props - custom-prop should NOT be present
-      (should (null (tp-at 1 'custom-prop))))))
+      ;; tp-set now preserves embedded props
+      (should (equal (tp-at 1 'custom-prop) 'embedded-value)))))
 
 (ert-deftest tp-test-tp-text-with-mixed-properties ()
-  "Test that tp-set with tp-text overrides embedded properties."
-  ;; tp-set should override embedded props, not merge them
+  "Test that tp-set with tp-text preserves embedded properties."
+  ;; tp-set now preserves embedded props (props still take precedence for conflicts)
   (let* ((propertized-text (copy-sequence "ABCD"))
          ;; Set a property at position 0
          (_ (put-text-property 0 4 'region-type 'start propertized-text))
@@ -3159,11 +3160,11 @@ text content but different properties, the properties should be updated."
     ;; The face from props should be applied uniformly
     (should (equal (tp-at 0 'face result) 'bold))
     (should (equal (tp-at 3 'face result) 'bold))
-    ;; tp-set overrides embedded props - region-type should NOT be present
-    (should (null (tp-at 0 'region-type result)))))
+    ;; tp-set now preserves embedded props
+    (should (equal (tp-at 0 'region-type result) 'start))))
 
 (ert-deftest tp-test-tp-reset-with-embedded-properties ()
-  "Test that tp-reset ignores embedded text properties entirely."
+  "Test that tp-reset preserves embedded text properties from tp-text."
   (let* ((propertized-text (copy-sequence "Test"))
          (_ (put-text-property 0 4 'custom-prop 'value propertized-text))
          (result (tp-reset "X" 'tp-text propertized-text 'face 'bold)))
@@ -3171,8 +3172,8 @@ text content but different properties, the properties should be updated."
     (should (equal result "Test"))
     ;; The face from props should be applied
     (should (equal (tp-at 0 'face result) 'bold))
-    ;; tp-reset ignores embedded props - custom-prop should NOT be present
-    (should (null (tp-at 0 'custom-prop result)))))
+    ;; tp-reset now preserves embedded props from tp-text
+    (should (equal (tp-at 0 'custom-prop result) 'value))))
 
 (ert-deftest tp-test-tp-add-with-embedded-properties ()
   "Test that tp-add with embedded text properties preserves them."

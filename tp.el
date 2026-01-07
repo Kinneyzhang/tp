@@ -1147,9 +1147,10 @@ If tp-text is a string different from current text, replace the text.
 When PRESERVE-PROPS is non-nil, existing text properties are preserved
 on the replaced text (used by tp-set and tp-add).
 MERGE-MODE controls how embedded text properties in tp-text are handled:
-  :merge - embedded properties are merged with props (tp-add behavior)
-  :override or nil - props override embedded properties (tp-set behavior)
-  :reset - embedded properties are ignored, only props used (tp-reset behavior)
+  All modes now preserve embedded text properties from tp-text.
+  :merge - embedded properties are merged with props, with face merging (tp-add)
+  :override or nil - props take precedence over embedded properties (tp-set)
+  :reset - props take precedence over embedded properties (tp-reset)
 Returns (PROPS NEW-END NEW-OBJECT) where PROPS is the updated props,
 NEW-END is the new end position after any text replacement, and
 NEW-OBJECT is the new string object (only different for strings with tp-text)."
@@ -1197,15 +1198,14 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                        tp-text-val))
                   tp-text-val))
                ;; Handle embedded text properties based on merge-mode:
-               ;; :merge - merge embedded props with props (tp-add)
-               ;; :override/nil - props take precedence, don't merge (tp-set)
-               ;; :reset - ignore embedded props entirely (tp-reset)
+               ;; All modes now preserve embedded text properties from tp-text.
+               ;; :merge - merge embedded props with props, with face merging (tp-add)
+               ;; :override/nil - props take precedence over embedded props (tp-set)
+               ;; :reset - props take precedence over embedded props (tp-reset)
+               ;; In all cases, use tp--merge-string-props-into-plist which handles
+               ;; props taking precedence and special face merging when needed.
                (result-props
-                (if (eq merge-mode :merge)
-                    ;; tp-add: merge embedded properties with props
-                    (tp--merge-string-props-into-plist final-text props)
-                  ;; tp-set/:override or tp-reset: just use props as-is
-                  props)))
+                (tp--merge-string-props-into-plist final-text props)))
           (if (stringp object)
               ;; For strings: create a new string with tp-text content
               ;; Strip properties - result-props will be applied by the caller
@@ -1425,7 +1425,7 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
 Like `tp-set' but replaces ALL existing properties.
-For tp-text, embedded text properties are ignored - only props are used.
+For tp-text, embedded text properties are preserved (props override if there's a conflict).
 
 **String Modification Behavior:**
 - Entire string form (tp-reset STRING ...): Returns a NEW propertized string
