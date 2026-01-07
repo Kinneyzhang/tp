@@ -257,9 +257,9 @@ Returns nil if SYMBOL is unbound or doesn't contain :border."
     ((pred tp-palette-p) symbol)
     ((pred tp-palette-fg-p)
      (intern (string-trim-right (symbol-name symbol) "-fg")))
-    ((pred tp-palette-bg-p) symbol
+    ((pred tp-palette-bg-p)
      (intern (string-trim-right (symbol-name symbol) "-bg")))
-    ((pred tp-palette-fbg-p) symbol
+    ((pred tp-palette-fbg-p)
      (intern (string-trim-right (symbol-name symbol) "-fbg")))
     ((pred tp-palette-border-p)
      (intern (string-trim-right (symbol-name symbol) "-border")))
