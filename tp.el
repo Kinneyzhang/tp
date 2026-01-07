@@ -1146,11 +1146,9 @@ If tp-text is nil, initialize it to the current text in the region.
 If tp-text is a string different from current text, replace the text.
 When PRESERVE-PROPS is non-nil, existing text properties are preserved
 on the replaced text (used by tp-set and tp-add).
-MERGE-MODE controls how embedded text properties in tp-text are handled:
-  All modes now preserve embedded text properties from tp-text.
-  :merge - embedded properties are merged with props, with face merging (tp-add)
-  :override or nil - props take precedence over embedded properties (tp-set)
-  :reset - props take precedence over embedded properties (tp-reset)
+MERGE-MODE is retained for backward compatibility but no longer affects behavior.
+All modes now preserve embedded text properties from tp-text, with props taking
+precedence over embedded props when there's a conflict.
 Returns (PROPS NEW-END NEW-OBJECT) where PROPS is the updated props,
 NEW-END is the new end position after any text replacement, and
 NEW-OBJECT is the new string object (only different for strings with tp-text)."
@@ -1197,13 +1195,12 @@ NEW-OBJECT is the new string object (only different for strings with tp-text)."
                        (message "tp: transform error for %s: %s" layer-name err)
                        tp-text-val))
                   tp-text-val))
-               ;; Handle embedded text properties based on merge-mode:
-               ;; All modes now preserve embedded text properties from tp-text.
-               ;; :merge - merge embedded props with props, with face merging (tp-add)
-               ;; :override/nil - props take precedence over embedded props (tp-set)
-               ;; :reset - props take precedence over embedded props (tp-reset)
-               ;; In all cases, use tp--merge-string-props-into-plist which handles
-               ;; props taking precedence and special face merging when needed.
+               ;; Embedded text properties from tp-text are now preserved in all cases.
+               ;; The props passed to this function take precedence over embedded props
+               ;; when there's a conflict (e.g., both have 'face' property).
+               ;; The merge-mode parameter is retained for backward compatibility but
+               ;; no longer affects behavior in this function - all modes use the same
+               ;; merging strategy via tp--merge-string-props-into-plist.
                (result-props
                 (tp--merge-string-props-into-plist final-text props)))
           (if (stringp object)
