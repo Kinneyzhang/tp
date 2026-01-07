@@ -1323,12 +1323,16 @@ Later values should override earlier values for the same sub-property."
     (should (eq (get-text-property 12 'face result) 'bold))))
 
 (ert-deftest tp-test-regexp-add-on-string ()
-  "Test tp-regexp-add on string."
+  "Test tp-regexp-add on string.
+For strings, returns a NEW string (original is not modified)."
   (let ((str (copy-sequence "abc 123 def 456")))
     (tp-set 4 7 '(help-echo "original") str)
-    (tp-regexp-add "[0-9]+" '(face bold) str)
-    (should (eq (get-text-property 4 'face str) 'bold))
-    (should (equal (get-text-property 4 'help-echo str) "original"))))
+    (let ((result (tp-regexp-add "[0-9]+" '(face bold) str)))
+      ;; Result should have both properties (face added, help-echo preserved)
+      (should (eq (get-text-property 4 'face result) 'bold))
+      (should (equal (get-text-property 4 'help-echo result) "original"))
+      ;; Original should NOT have face property added by tp-regexp-add
+      (should (null (get-text-property 4 'face str))))))
 
 (ert-deftest tp-test-match-set-string-as-last-arg ()
   "Test tp-match-set with string as last argument."
@@ -2053,16 +2057,20 @@ When using tp-match-set (direct property setting), tp-name is NOT added."
 
 (ert-deftest tp-test-match-set-with-layer-name-on-string ()
   "Test tp-match-set accepts a layer name on string.
-When using tp-match-set (direct property setting), tp-name is NOT added."
+When using tp-match-set (direct property setting), tp-name is NOT added.
+For strings, returns a NEW string (original is not modified)."
   (let ((str (copy-sequence "Hello World Hello")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
     (define-tp match-style () '(face italic))
-    (tp-match-set "Hello" 'match-style str)
-    (should (eq (get-text-property 0 'face str) 'italic))
-    (should (eq (get-text-property 12 'face str) 'italic))
-    ;; tp-name should NOT be set for direct property setting
-    (should-not (get-text-property 0 'tp-name str))))
+    (let ((result (tp-match-set "Hello" 'match-style str)))
+      ;; Result should have the properties
+      (should (eq (get-text-property 0 'face result) 'italic))
+      (should (eq (get-text-property 12 'face result) 'italic))
+      ;; tp-name should NOT be set for direct property setting
+      (should-not (get-text-property 0 'tp-name result))
+      ;; Original should NOT be modified
+      (should (null (get-text-property 0 'face str))))))
 
 (ert-deftest tp-test-match-reset-with-layer-name ()
   "Test tp-match-reset accepts a layer name."
@@ -2095,14 +2103,18 @@ When using tp-match-set (direct property setting), tp-name is NOT added."
     (should (eq (tp-at 13 'face) 'bold))))
 
 (ert-deftest tp-test-regexp-set-with-layer-name-on-string ()
-  "Test tp-regexp-set accepts a layer name on string."
+  "Test tp-regexp-set accepts a layer name on string.
+For strings, returns a NEW string (original is not modified)."
   (let ((str (copy-sequence "abc 123 def 456")))
     (setq tp-layer-alist nil)
     (setq tp-layer-groups nil)
     (define-tp number-style () '(face italic))
-    (tp-regexp-set "[0-9]+" 'number-style str)
-    (should (eq (get-text-property 4 'face str) 'italic))
-    (should (eq (get-text-property 12 'face str) 'italic))))
+    (let ((result (tp-regexp-set "[0-9]+" 'number-style str)))
+      ;; Result should have the properties
+      (should (eq (get-text-property 4 'face result) 'italic))
+      (should (eq (get-text-property 12 'face result) 'italic))
+      ;; Original should NOT be modified
+      (should (null (get-text-property 4 'face str))))))
 
 (ert-deftest tp-test-regexp-reset-with-layer-name ()
   "Test tp-regexp-reset accepts a layer name."

@@ -2275,7 +2275,8 @@ For buffers, modifies in-place and returns list of regions."
           (push (cons beg end) matches)
           (setq pos (if (= beg end) (1+ beg) end))))
       ;; Apply function to each match in order (reverse to get correct order)
-      (let ((result object))
+      ;; Make a copy to ensure original string is not modified
+      (let ((result (copy-sequence object)))
         (dolist (match (nreverse matches))
           (when properties
             (setq result (funcall apply-fn (car match) (cdr match) properties result))))
@@ -2335,7 +2336,8 @@ For buffers, modifies in-place and returns list of regions."
           (push (cons beg end) matches)
           (setq pos (if (= beg end) (1+ beg) end))))
       ;; Apply function to each match in order (reverse to get correct order)
-      (let ((result object))
+      ;; Make a copy to ensure original string is not modified
+      (let ((result (copy-sequence object)))
         (dolist (match (nreverse matches))
           (when properties
             (setq result (funcall apply-fn
