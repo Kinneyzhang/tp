@@ -4783,13 +4783,17 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
               (stringp (cdr color)))
          (cond
           ((tp-theme-light-p) (car color))
-          ((tp-theme-dark-p) (cdr color))))
+          ((tp-theme-dark-p) (cdr color))
+          ;; Default to light color when background-mode is unknown
+          (t (car color))))
         ((and (plistp color)
               (or (plist-member color :light)
                   (plist-member color :dark)))
          (cond
           ((tp-theme-light-p) (plist-get color :light))
-          ((tp-theme-dark-p) (plist-get color :dark))))
+          ((tp-theme-dark-p) (plist-get color :dark))
+          ;; Default to light color when background-mode is unknown
+          (t (plist-get color :light))))
         ((null color) nil)
         (t (error "Invalid format of color %S" color))))
 
