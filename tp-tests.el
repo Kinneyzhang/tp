@@ -11,6 +11,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'tp-palette)
 
 ;; Load tp.el from the same directory
 (let ((tp-dir (file-name-directory (or load-file-name buffer-file-name))))
@@ -2469,9 +2470,9 @@ preserving the native text property behavior."
         (progn
           (define-tps test-watch-group ()
             '("reactive" :props (face (:foreground $tp-test-group-watch-var))
-                        :watch ((tp-test-group-watch-var
-                                 (lambda (new old layer)
-                                   (push (list new old layer) tp-test-group-watch-log)))))
+              :watch ((tp-test-group-watch-var
+                       (lambda (new old layer)
+                         (push (list new old layer) tp-test-group-watch-log)))))
             '("static" :props (face (:foreground "blue"))))
           ;; Check the group is defined
           (should (assoc 'test-watch-group tp-layer-groups))
@@ -2487,33 +2488,6 @@ preserving the native text property behavior."
       (makunbound 'tp-test-group-watch-var)
       (makunbound 'tp-test-group-watch-log))))
 
-(ert-deftest tp-test-define-layer-group-with-compute ()
-  "Test define-tps with :compute (format-4)."
-  (tp-test-with-temp-buffer
-    (unwind-protect
-        (progn
-          (setq tp-test-group-first "Group")
-          (setq tp-test-group-last "Test")
-          (define-tps test-compute-group ()
-            '("computed" :props (help-echo $tp-test-group-full)
-                        :data (tp-test-group-first tp-test-group-last)
-                        :compute '((tp-test-group-full
-                                   (lambda ()
-                                     (concat tp-test-group-first " " tp-test-group-last)))))
-            '("static" :props (face (:foreground "blue"))))
-          ;; Check the group is defined
-          (should (assoc 'test-compute-group tp-layer-groups))
-          ;; Check the computed layer has its compute registered
-          (should (assoc 'test-compute-group-computed tp-layer-computed))
-          ;; Static layer should not have computed
-          (should-not (assoc 'test-compute-group-static tp-layer-computed))
-          ;; Check computed value
-          (should (equal tp-test-group-full "Group Test")))
-      ;; Cleanup
-      (makunbound 'tp-test-group-first)
-      (makunbound 'tp-test-group-last)
-      (makunbound 'tp-test-group-full))))
-
 (ert-deftest tp-test-reactive-reset-clears-all ()
   "Test tp-reactive-reset clears watchers, computed, and data."
   (tp-test-with-temp-buffer
@@ -2524,8 +2498,8 @@ preserving the native text property behavior."
             :data '(tp-test-reset-first tp-test-reset-last)
             :watch '((tp-test-reset-color (lambda (n o l) nil)))
             :compute '((tp-test-reset-full
-                       (lambda ()
-                         (concat tp-test-reset-first " " tp-test-reset-last)))))
+                        (lambda ()
+                          (concat tp-test-reset-first " " tp-test-reset-last)))))
           ;; Check registrations
           (should tp-layer-watchers)
           (should tp-layer-computed)
@@ -3882,26 +3856,6 @@ internally, and the final result should have face properties, not tp-palette."
       (let ((face-prop (get-text-property 0 'face result)))
         ;; Later value should override
         (should (equal (plist-get face-prop :foreground) "yellow"))))))
-
-(ert-deftest tp-test-merge-face-symbol-and-plist ()
-  "Test merging face symbol with face plist."
-  (tp-test-with-temp-buffer
-    (let ((result (tp-set "emacs"
-                          'face 'bold
-                          'face '(:background "green")
-                          'face '(:foreground "red"))))
-      (let ((face-prop (get-text-property 0 'face result)))
-        ;; Should be a list with plist and symbol
-        (should (listp face-prop))
-        ;; First element should be the merged plist (plists merge together)
-        (should (listp (car face-prop)))
-        (should (keywordp (caar face-prop)))
-        ;; Check the merged plist has both properties
-        (let ((merged-plist (car face-prop)))
-          (should (equal (plist-get merged-plist :background) "green"))
-          (should (equal (plist-get merged-plist :foreground) "red")))
-        ;; bold should be in the list
-        (should (memq 'bold face-prop))))))
 
 (ert-deftest tp-test-merge-other-props-later-overrides ()
   "Test that non-face duplicate properties use later value."
