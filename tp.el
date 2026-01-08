@@ -1093,20 +1093,34 @@ it will be applied to the text before updating."
                   (save-excursion
                     (tp--replace-reactive-text-in-buffer layer-name new-text props)))))))))))
 
-(defvar tp-preserve-external-properties '(keymap mouse-face cursor pointer help-echo)
-  "List of text properties to preserve during reactive text updates.
-These properties are typically set by external libraries (like twidget's event
-system) and should not be overwritten when tp.el updates reactive text.
-Properties in this list will be preserved from the buffer during updates,
-while other properties will be replaced with the new values.")
+(defun tp--merge-props-with-base (base-props new-props)
+  "Merge NEW-PROPS into BASE-PROPS, with NEW-PROPS taking precedence.
+For face properties (face, font-lock-face, mouse-face), uses `tp--merge-face-values'
+to properly merge face values. For other properties, NEW-PROPS values override.
+BASE-PROPS are the original properties, NEW-PROPS are the new properties to apply.
+Returns the merged plist."
+  (if (null base-props)
+      new-props
+    (let ((result (copy-sequence new-props)))
+      (cl-loop for (key val) on base-props by #'cddr
+               do (let ((new-val (plist-get result key)))
+                    (if (plist-member result key)
+                        ;; New props has this key - merge if face property
+                        (when (memq key '(face font-lock-face mouse-face))
+                          (setq result
+                                (plist-put result key
+                                           (tp--merge-face-values val new-val))))
+                      ;; New props doesn't have this key - add from base
+                      (setq result (plist-put result key val)))))
+      result)))
 
 (defun tp--replace-reactive-text-in-buffer (layer-name new-text props)
   "Replace text in current buffer for reactive text with LAYER-NAME.
 NEW-TEXT is the new text to replace with.
 PROPS are the properties to apply to the new text.
-+Text properties embedded in NEW-TEXT are merged with PROPS.
-+Properties listed in `tp-preserve-external-properties' that were applied
-+by other libraries are preserved during the update."  
+Text properties embedded in NEW-TEXT are merged with PROPS.
+All original text properties are preserved and merged with the new properties,
+with new properties taking precedence over original properties."
   (goto-char (point-min))
   (let ((match (text-property-search-forward 'tp-name layer-name t))
         ;; Merge embedded text properties from new-text into props
@@ -1115,28 +1129,21 @@ PROPS are the properties to apply to the new text.
       (let* ((m-start (prop-match-beginning match))
              (m-end (prop-match-end match))
              (old-text (buffer-substring-no-properties m-start m-end))
-             ;; Preserve only specific external properties
+             ;; Get ALL existing properties from the original text
              (existing-props (text-properties-at m-start))
-             (preserved-props nil))
-        ;; Extract only the explicitly listed external properties to preserve
-        (dolist (prop-name tp-preserve-external-properties)
-          (let ((val (plist-get existing-props prop-name)))
-            (when (and val (not (plist-member merged-props prop-name)))
-              (setq preserved-props
-                    (plist-put preserved-props prop-name val)))))
-        ;; Combine merged-props with preserved external props
-        (let ((final-props (append merged-props preserved-props)))
-          (if (equal old-text (substring-no-properties new-text))
-              ;; Text content is the same, but properties may differ
-              ;; Use set-text-properties to replace with final properties
-              (set-text-properties m-start m-end final-props)
-            ;; Text content is different - delete old text and insert new
-            (delete-region m-start m-end)
-            (goto-char m-start)
-            (insert (substring-no-properties new-text))
-            ;; Apply final properties
-            (let ((new-end (+ m-start (length new-text))))
-              (set-text-properties m-start new-end final-props)))))
+             ;; Merge: existing props as base, merged-props as new (takes precedence)
+             (final-props (tp--merge-props-with-base existing-props merged-props)))
+        (if (equal old-text (substring-no-properties new-text))
+            ;; Text content is the same, but properties may differ
+            ;; Use set-text-properties to replace with final properties
+            (set-text-properties m-start m-end final-props)
+          ;; Text content is different - delete old text and insert new
+          (delete-region m-start m-end)
+          (goto-char m-start)
+          (insert (substring-no-properties new-text))
+          ;; Apply final properties
+          (let ((new-end (+ m-start (length new-text))))
+            (set-text-properties m-start new-end final-props))))
       ;; Search for next match
       (setq match (text-property-search-forward 'tp-name layer-name t)))))
 
