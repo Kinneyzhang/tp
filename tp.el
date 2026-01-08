@@ -4864,8 +4864,7 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
 (define-tp tp-button (type)
   (let ((palette (intern
                   (format "%s%s%s" "button-" (symbol-name type) "-fbg"))))
-    `( tp-palette ,palette
-       mouse-face highlight cursor hand
+    `( tp-palette ,palette pointer hand
        face (:box ( :line-width -1
                     :style released-button)))))
 
@@ -4880,7 +4879,7 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
     `( tp-underline ,color
        tp-palette info-fg
        mouse-face highlight
-       cursor hand)))
+       pointer hand)))
 
 (define-tp tp-space (width)
   `(display (space :width ,width)))
