@@ -193,7 +193,71 @@
   :fg ("#57606a" . "#8b949e") :bg ("#f6f8fa" .  "#21262d")
   :border ("#d0d7de" .  "#888"))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; github 经典绿色主题
+(define-tp-palette heatmap-g0
+  :fg ("#ebedf0" . "#161b22"))
+
+(define-tp-palette heatmap-g1
+  :fg ("#9be9a8" . "#0e4429"))
+
+(define-tp-palette heatmap-g2
+  :fg ("#40c463" . "#006d32"))
+
+(define-tp-palette heatmap-g3
+  :fg ("#30a14e" . "#26a641"))
+
+(define-tp-palette heatmap-g4
+  :fg ("#216e39" . "#39d353"))
+
+;; github 万圣节主题
+(define-tp-palette heatmap-h0
+  :fg ("#ebedf0" . "#161b22"))
+
+(define-tp-palette heatmap-h1
+  :fg ("#ffee4a" . "#631c03"))
+
+(define-tp-palette heatmap-h2
+  :fg ("#ffc501" . "#bd561d"))
+
+(define-tp-palette heatmap-h3
+  :fg ("#fe9600" . "#fa7a18"))
+
+(define-tp-palette heatmap-h4
+  :fg ("#03001c" . "#fddf68"))
+
 ;;; Utilities
+
+(defun tp-theme-dark-p ()
+  (eq (frame-parameter nil 'background-mode) 'dark))
+
+(defun tp-theme-light-p ()
+  (eq (frame-parameter nil 'background-mode) 'light))
+
+(defun tp-parse-color (color)
+  "e.g.1 (tp-parse-color \"red\")
+e.g.2 (tp-parse-color '(\"red\" . \"green\"))
+e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
+  (cond ((stringp color) color)
+        ((and (consp color)
+              (stringp (car color))
+              (stringp (cdr color)))
+         (cond
+          ((tp-theme-light-p) (car color))
+          ((tp-theme-dark-p) (cdr color))
+          ;; Default to light color when background-mode is unknown
+          (t (car color))))
+        ((and (plistp color)
+              (or (plist-member color :light)
+                  (plist-member color :dark)))
+         (cond
+          ((tp-theme-light-p) (plist-get color :light))
+          ((tp-theme-dark-p) (plist-get color :dark))
+          ;; Default to light color when background-mode is unknown
+          (t (plist-get color :light))))
+        ((null color) nil)
+        (t (error "Invalid format of color %S" color))))
 
 (defun tp-palette--get-color (symbol key)
   "Get color value for KEY from palette SYMBOL.

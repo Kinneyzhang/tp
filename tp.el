@@ -4745,61 +4745,29 @@ Returns the modified object (string) or nil for buffer operations."
        (read-only-mode 1))
      (switch-to-buffer buffer)))
 
-(defun tp-theme-dark-p ()
-  (eq (frame-parameter nil 'background-mode) 'dark))
-
-(defun tp-theme-light-p ()
-  (eq (frame-parameter nil 'background-mode) 'light))
-
-(defun tp-parse-color (color)
-  "e.g.1 (tp-parse-color \"red\")
-e.g.2 (tp-parse-color '(\"red\" . \"green\"))
-e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
-  (cond ((stringp color) color)
-        ((and (consp color)
-              (stringp (car color))
-              (stringp (cdr color)))
-         (cond
-          ((tp-theme-light-p) (car color))
-          ((tp-theme-dark-p) (cdr color))
-          ;; Default to light color when background-mode is unknown
-          (t (car color))))
-        ((and (plistp color)
-              (or (plist-member color :light)
-                  (plist-member color :dark)))
-         (cond
-          ((tp-theme-light-p) (plist-get color :light))
-          ((tp-theme-dark-p) (plist-get color :dark))
-          ;; Default to light color when background-mode is unknown
-          (t (plist-get color :light))))
-        ((null color) nil)
-        (t (error "Invalid format of color %S" color))))
-
 ;;; Built-in text properties
 
 (require 'tp-palette)
 
 (define-tp tp-palette (palette)
   (let* ((pure-palette (tp-palette-pure palette))
-         (fg-color (or (tp-palette-fg-color pure-palette)
-                       (face-attribute 'default :foreground)))
-         (bg-color (or (tp-palette-bg-color pure-palette)
-                       (face-attribute 'default :background)))
-         (border-color (or (tp-palette-border-color pure-palette)
-                           (face-attribute 'default :foreground))))
+         (fg-color (tp-palette-fg-color pure-palette))
+         (bg-color (tp-palette-bg-color pure-palette))
+         (border-color (tp-palette-border-color pure-palette)))
     (pcase palette
       ((pred tp-palette-p)
-       `(face ( :foreground ,fg-color
-                :background ,bg-color
-                :box (:color ,border-color))))
+       `(face (,@(when fg-color (list :foreground fg-color))
+               ,@(when bg-color (list :background bg-color))
+               ,@(when border-color (list :box (list :color border-color))))))
       ((pred tp-palette-fg-p)
-       `(face (:foreground ,fg-color)))
+       `(face (,@(when fg-color (list :foreground fg-color)))))
       ((pred tp-palette-bg-p)
-       `(face (:background ,bg-color)))
+       `(face (,@(when bg-color (list :background bg-color)))))
       ((pred tp-palette-fbg-p)
-       `(face (:foreground ,fg-color :background ,bg-color)))
+       `(face (,@(when fg-color (list :foreground fg-color))
+               ,@(when bg-color (list :background bg-color)))))
       ((pred tp-palette-border-p)
-       `(face (:box (:color ,border-color))))
+       `(face (,@(when border-color (list :box (list :color border-color))))))
       (_ (error "Invalid palette: %S" palette)))))
 
 (defun tp-suffix-symbol (symbol string)
