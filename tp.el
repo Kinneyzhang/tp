@@ -1094,13 +1094,15 @@ it will be applied to the text before updating."
                     (tp--replace-reactive-text-in-buffer layer-name new-text props)))))))))))
 
 (defun tp--merge-props-with-base (base-props new-props)
-  "Merge NEW-PROPS into BASE-PROPS, with NEW-PROPS taking precedence.
-For face properties (face, font-lock-face, mouse-face), uses `tp--merge-face-values'
-to properly merge face values. For other properties, NEW-PROPS values override.
-BASE-PROPS are the original properties, NEW-PROPS are the new properties to apply.
-Returns the merged plist."
-  (if (null base-props)
-      new-props
+  "Merge NEW-PROPS into BASE-PROPS with NEW-PROPS taking precedence.
+Face properties are merged using `tp--merge-face-values', while other
+properties from NEW-PROPS override those in BASE-PROPS.  Properties only
+in BASE-PROPS are preserved.  Returns the merged plist, or nil if both
+arguments are nil."
+  (cond
+   ((null base-props) new-props)
+   ((null new-props) base-props)
+   (t
     (let ((result (copy-sequence new-props)))
       (cl-loop for (key val) on base-props by #'cddr
                do (let ((new-val (plist-get result key)))
@@ -1112,7 +1114,7 @@ Returns the merged plist."
                                            (tp--merge-face-values val new-val))))
                       ;; New props doesn't have this key - add from base
                       (setq result (plist-put result key val)))))
-      result)))
+      result))))
 
 (defun tp--replace-reactive-text-in-buffer (layer-name new-text props)
   "Replace text in current buffer for reactive text with LAYER-NAME.
