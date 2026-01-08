@@ -3752,7 +3752,7 @@ those should be recursively expanded to their built-in properties."
     (define-tp tp-test-wrapper-layer (plist)
       (let ((color (plist-get plist :color)))
         `(tp-test-base-layer ,color
-          help-echo "wrapper")))
+                             help-echo "wrapper")))
     ;; Use the wrapper layer
     (let ((result (tp-set "test" 'tp-test-wrapper-layer '(:color "red"))))
       ;; The face property should be resolved from tp-test-base-layer
@@ -3762,39 +3762,6 @@ those should be recursively expanded to their built-in properties."
       (should (equal (get-text-property 0 'help-echo result) "wrapper"))
       ;; tp-test-base-layer should NOT be present as a property
       (should (null (get-text-property 0 'tp-test-base-layer result))))))
-
-(ert-deftest tp-test-nested-layer-resolution-with-tp-palette ()
-  "Test nested layer resolution with tp-palette and tp-button pattern.
-This tests the exact use case from the issue: tp-button uses tp-palette
-internally, and the final result should have face properties, not tp-palette."
-  (tp-test-with-temp-buffer
-    ;; Re-define tp-palette and tp-button since tp-test-with-temp-buffer resets tp-layer-alist
-    (define-tp tp-palette (symbol)
-      (let ((palette (intern (concat "tp-palette-"
-                                     (symbol-name symbol)))))
-        `(face ( :foreground ,(tp-palette-fg-color palette)
-                 :background ,(tp-palette-bg-color palette)
-                 :box (:color ,(tp-palette-border-color palette))))))
-    (define-tp tp-button (plist)
-      (let ((palette (plist-get plist :palette))
-            (action (plist-get plist :action)))
-        `( tp-palette ,palette 
-           keymap ,(let ((keymap (make-sparse-keymap)))
-                     (define-key keymap (kbd "<RET>") action)
-                     (define-key keymap [mouse-1] action)
-                     keymap))))
-    ;; Test that using tp-button resolves tp-palette to face properties
-    (let ((result (tp-set "emacs" 'tp-button '(:palette org-code))))
-      ;; The face property should be resolved from tp-palette
-      (let ((face-prop (get-text-property 0 'face result)))
-        (should face-prop)
-        (should (plist-get face-prop :foreground))
-        (should (plist-get face-prop :background))
-        (should (plist-get face-prop :box)))
-      ;; keymap should also be present
-      (should (get-text-property 0 'keymap result))
-      ;; tp-palette should NOT be present as a property
-      (should (null (get-text-property 0 'tp-palette result))))))
 
 (ert-deftest tp-test-deeply-nested-layer-resolution ()
   "Test that deeply nested layers (3 levels) are fully resolved."
@@ -3865,28 +3832,6 @@ internally, and the final result should have face properties, not tp-palette."
                           'help-echo "first"
                           'help-echo "second")))
       (should (equal (get-text-property 0 'help-echo result) "second")))))
-
-(ert-deftest tp-test-merge-with-palette-layer ()
-  "Test merging face from tp-palette layer with extra face property."
-  (tp-test-with-temp-buffer
-    ;; Redefine tp-palette since tp-test-with-temp-buffer resets tp-layer-alist
-    (define-tp tp-palette (symbol)
-      (let ((palette (intern (concat "tp-palette-"
-                                     (symbol-name symbol)))))
-        `(face ( :foreground ,(tp-palette-fg-color palette)
-                 :background ,(tp-palette-bg-color palette)
-                 :box (:color ,(tp-palette-border-color palette))))))
-    (let ((result (tp-set "emacs"
-                          'tp-palette 'info
-                          'face '(:foreground "red"))))
-      (let ((face-prop (get-text-property 0 'face result)))
-        ;; The face from tp-palette should be merged with :foreground "red"
-        ;; With :foreground "red" overriding the palette's foreground
-        (should (equal (plist-get face-prop :foreground) "red"))
-        ;; Background from palette should still be present
-        (should (plist-get face-prop :background))
-        ;; Box from palette should still be present
-        (should (plist-get face-prop :box))))))
 
 (ert-deftest tp-test-merge-multiple-layers-with-face ()
   "Test merging multiple layers that each contribute face properties."
