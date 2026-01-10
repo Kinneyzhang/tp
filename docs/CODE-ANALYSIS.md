@@ -55,6 +55,7 @@ tp/
 ├── tp-tests.el     # ERT 测试套件（4113 行，100+ 测试用例）
 ├── docs/
 │   ├── ARCHITECTURE.md              # 架构文档
+│   ├── CODE-ANALYSIS.md             # 代码分析报告（本文档）
 │   ├── reactive-text-properties.md  # 响应式功能文档（中文）
 │   ├── reactive-text-properties-en.md # 响应式功能文档（英文）
 │   ├── reactive-optimization.md     # 优化文档（中文）
