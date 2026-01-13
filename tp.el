@@ -730,13 +730,16 @@ the batch completes. Layer definitions are still updated immediately.
 
 Uses `tp--equal-including-string-properties' for comparison to properly detect
 changes in text properties when the text content is the same."
-  (when (and (not (tp--equal-including-string-properties (symbol-value symbol) newval))
+  (when (and (not (tp--equal-including-string-properties
+                   (when (boundp symbol)
+                     (symbol-value symbol))
+                   newval))
              (eq operation 'set))
     (tp-debug-log "Variable %s changed: %S -> %S (where: %s)"
-                  symbol (symbol-value symbol) newval
+                  symbol (when (boundp symbol) (symbol-value symbol)) newval
                   (if where (buffer-name where) "global"))
     (let ((deps (cdr (assoc symbol tp-reactive-deps)))
-          (oldval (symbol-value symbol))
+          (oldval (when (boundp symbol) (symbol-value symbol)))
           ;; Create override alist with the new value
           ;; (watcher is called before the variable is actually updated)
           (override-alist (list (cons symbol newval))))
