@@ -2,6 +2,26 @@
 
 All notable changes to the tp library are documented here.
 
+## 0.3.0 (2026-07-27)
+
+### Infrastructure
+
+- GitHub Actions CI: Emacs 28.1 / 29.4 / 30.1 matrix running
+  byte-compilation with warnings-as-errors, the full ERT suite, a
+  shuffled-order rerun of every test (`make test-shuffled`,
+  `tp-run-shuffled.el`; `SHUFFLE_SEED=N` reproduces an order), and the
+  README doctests.
+- The whole tree byte-compiles with zero warnings (57 fixed:
+  docstring rewraps and quoting, `defvar` declarations for reactive
+  test variables, prefixed doctest counters, one impossible `eq`
+  comparison corrected to `equal`).
+- Autoload cookies for the interactive commands (`tp-debug-show`,
+  `tp-debug-clear`, `tp-reactive-reset`, `tp-layer-reset`,
+  `tp-palette-show`, `tp-clear`) and the `define-tp` / `define-tps`
+  macros.
+- Two doctest assertions made property-order-insensitive (Emacs 28
+  prints text-property plists in a different order than 29+).
+
 ## 0.2.0 (2026-07-26)
 
 ### Architecture

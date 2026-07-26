@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024-2026 Geekinney
 
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Keywords: convenience text-properties
 ;; Author: Geekinney (kinneyzhang666@gmail.com)
 ;; Package-Requires: ((emacs "28.1") (dash "2.19.1"))
