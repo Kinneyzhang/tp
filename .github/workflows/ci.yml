@@ -43,4 +43,14 @@ jobs:
         run: make test-shuffled LOAD_EXTRA="$LOAD_EXTRA"
 
       - name: README doctests
-        run: make doctest LOAD_EXTRA="$LOAD_EXTRA"
+        run: |
+          set -o pipefail
+          make doctest LOAD_EXTRA="$LOAD_EXTRA" 2>&1 | tee doctest.log || {
+            # Surface failing assertions as annotations (job logs are
+            # not readable anonymously; annotations are).
+            grep -E '^(FAIL|  expected:|  got:)' doctest.log | head -30 \
+              | while IFS= read -r l; do echo "::error::${l}"; done
+            grep -q '^FAIL' doctest.log || tail -n 8 doctest.log \
+              | while IFS= read -r l; do echo "::error::${l}"; done
+            exit 1
+          }
