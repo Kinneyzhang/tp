@@ -15,7 +15,8 @@
 ;; module recomputes layer definitions and re-renders every affected
 ;; buffer region, including live `tp-text' text replacement.  It
 ;; installs itself into tp-reactive.el (update/flush hooks) and
-;; tp-ops.el (`tp-text' handler).
+;; tp-layer.el (layer refresh hook), and calls down into tp-ops.el
+;; for the `tp-text' helper chain.
 
 ;;; Code:
 
@@ -229,96 +230,6 @@ variable values are honored."
                                                         props)))))))
     (tp--map-layer-buffers layer-name where update-buffer)))
 
-(defun tp--find-tp-text-reactive-var (layer-name)
-  "Find the reactive variable symbol used for tp-text in LAYER-NAME.
-Returns the variable symbol (e.g., tp-test-counter) if tp-text uses a
-reactive variable (e.g., $tp-test-counter), or nil if not found.
-Searches through `tp-reactive-deps' to find the original reactive props."
-  (catch 'found
-    (dolist (dep tp-reactive-deps)
-      (let* ((var-sym (car dep))
-             (layer-entry (assoc layer-name (cdr dep))))
-        (when layer-entry
-          (let ((reactive-props (cdr layer-entry)))
-            ;; Check if tp-text in reactive-props uses this variable
-            (when (plist-member reactive-props 'tp-text)
-              (let ((tp-text-val (plist-get reactive-props 'tp-text)))
-                ;; Check if tp-text-val is a reactive symbol for this variable
-                (when (and (tp--reactive-symbol-p tp-text-val)
-                           (eq (tp--reactive-var-symbol tp-text-val) var-sym))
-                  (throw 'found var-sym))))))))
-    nil))
-
-(defun tp--tp-text-transform (layer-name text)
-  "Return TEXT transformed by LAYER-NAME's `:transform', or TEXT.
-Transform errors are reported and TEXT is returned unchanged; a
-non-string transform result is ignored as well."
-  (let ((transform-fn (when layer-name
-                        (cdr (assoc layer-name tp-layer-transforms)))))
-    (if (not transform-fn)
-        text
-      (condition-case err
-          (let ((result (funcall transform-fn text)))
-            (tp-debug-log "  Transform %s: %S -> %S" layer-name text result)
-            (if (stringp result) result text))
-        (error
-         (message "tp: transform error for %s: %s" layer-name err)
-         text)))))
-
-(defun tp--merge-embedded-props (embedded props)
-  "Merge the EMBEDDED string props plist under PROPS; PROPS win.
-Like `tp--merge-string-props-into-plist' but takes the embedded plist
-directly instead of sampling position 0 of a string, so callers can
-merge per property interval.  Face-family values (see
-`tp-face-properties') are merged with PROPS taking precedence; other
-conflicting keys keep the PROPS value; keys only in EMBEDDED are
-added."
-  (let ((result (copy-sequence props)))
-    (cl-loop for (key val) on embedded by #'cddr
-             do (let ((existing (plist-get result key)))
-                  (setq result
-                        (plist-put result key
-                                   (if existing
-                                       (if (memq key tp-face-properties)
-                                           (tp--merge-face-values val existing)
-                                         existing)
-                                     val)))))
-    result))
-
-(defun tp--put-text-property-unless-equal (start end key val object)
-  "Apply KEY -> VAL over [START, END) of OBJECT unless already there.
-Like `put-text-property', but when every position of the span already
-holds a value `equal' to VAL for KEY the call is skipped, so an
-update that changes nothing does not flip the buffer-modified flag.
-OBJECT is a string, a buffer, or nil for the current buffer."
-  (when (< start end)
-    (unless (and (equal (get-text-property start key object) val)
-                 (>= (or (next-single-property-change start key object end)
-                         end)
-                     end))
-      (put-text-property start end key val object))))
-
-(defun tp--apply-reactive-text-props (source props offset &optional target)
-  "Apply PROPS merged with SOURCE's embedded props to TARGET at OFFSET.
-SOURCE is the (possibly propertized) replacement string; TARGET is a
-string, or nil for the current buffer.  For every embedded-property
-interval of SOURCE the interval's props are merged under PROPS (see
-`tp--merge-embedded-props') and the result is applied to the
-corresponding span of TARGET shifted by OFFSET.  This keeps
-per-interval styling of propertized reactive strings intact instead
-of smearing position-0 props across the whole region.  Spans that
-already carry an `equal' value are left untouched, so an update that
-changes nothing does not mark the buffer as modified."
-  (tp--map-intervals
-   source nil nil
-   (lambda (istart iend str-props)
-     (let ((merged (if str-props
-                       (tp--merge-embedded-props str-props props)
-                     props)))
-       (cl-loop for (key val) on merged by #'cddr
-                do (tp--put-text-property-unless-equal
-                    (+ offset istart) (+ offset iend) key val target))))))
-
 (defun tp--update-reactive-text (layer-name &optional where override-alist)
   "Update text regions that have tp-text property with LAYER-NAME applied.
 This is called when a reactive variable bound to tp-text changes.
@@ -513,134 +424,6 @@ is clamped to the start of that edit."
       (goto-char orig-point)
       (set-marker orig-point nil))))
 
-(defun tp--tp-text-replace (start end final-text result-props object preserve-props)
-  "Replace [START, END) of OBJECT with FINAL-TEXT, handling props.
-Implements the text replacement of `tp--handle-tp-text-property' and
-returns its (PROPS NEW-END NEW-OBJECT) result.
-
-For a string OBJECT a NEW string is built as prefix + FINAL-TEXT +
-suffix, so text outside the region survives.  RESULT-PROPS (merged
-per embedded interval of FINAL-TEXT) are applied to the replaced span
-here, because callers can only apply props from index 0, which would
-smear them over the preserved prefix; the returned NEW-END is 0 so
-the caller's own application over [0, NEW-END) is a no-op.
-
-For buffers the region text is replaced in place and the returned
-NEW-END is the end of the inserted text; the caller applies
-RESULT-PROPS itself.
-
-When PRESERVE-PROPS is non-nil, properties present at START whose
-keys RESULT-PROPS does not set are re-applied over the replacement."
-  (if (stringp object)
-      (let* ((plain (substring-no-properties final-text))
-             ;; Splice: keep the string outside [start, end) intact.
-             (new-string (concat (substring object 0 start)
-                                 plain
-                                 (substring object end)))
-             (new-end (+ start (length plain)))
-             (existing-props (when preserve-props
-                               (text-properties-at start object))))
-        ;; Preserve non-conflicting existing props of the replaced region
-        (cl-loop for (key val) on existing-props by #'cddr
-                 do (unless (plist-member result-props key)
-                      (put-text-property start new-end key val new-string)))
-        ;; Apply the merged props per embedded interval of FINAL-TEXT
-        (tp--apply-reactive-text-props final-text result-props start new-string)
-        (list result-props 0 new-string))
-    ;; Buffer object
-    (with-current-buffer (or object (current-buffer))
-      (let ((old-text (buffer-substring-no-properties start end)))
-        (if (equal old-text (substring-no-properties final-text))
-            ;; Same text content, no replacement needed
-            (list result-props end object)
-          ;; Need to replace text
-          (let ((existing-props (when preserve-props
-                                  (text-properties-at start)))
-                (inhibit-read-only t))
-            (save-excursion
-              (delete-region start end)
-              (goto-char start)
-              ;; Insert without properties - the caller applies RESULT-PROPS
-              (insert (substring-no-properties final-text)))
-            (let ((new-end (+ start (length final-text))))
-              ;; Re-apply existing properties to new text region if preserving
-              (cl-loop for (key val) on existing-props by #'cddr
-                       do (unless (plist-member result-props key)
-                            (put-text-property start new-end key val object)))
-              (list result-props new-end object))))))))
-
-(defun tp--handle-tp-text-property (start end props object &optional preserve-props merge-mode)
-  "Handle tp-text property in PROPS for region from START to END in OBJECT.
-If tp-text is nil, initialize it to the current text in the region;
-when the layer has a `:transform', the displayed text is the
-transformed value (matching later reactive updates) while the model -
-the reactive variable and the `tp-text' property - keeps the raw text.
-If tp-text is a string different from current text, replace the text.
-When PRESERVE-PROPS is non-nil, existing text properties are preserved
-on the replaced text (used by tp-set and tp-add).
-MERGE-MODE is retained for backward compatibility but no longer
-affects behavior.
-All modes now preserve embedded text properties from tp-text, with props taking
-precedence over embedded props when there's a conflict.
-Returns (PROPS NEW-END NEW-OBJECT) where PROPS is the updated props,
-NEW-END is the new end position after any text replacement, and
-NEW-OBJECT is the new string object (only different for strings whose
-text was replaced; see `tp--tp-text-replace' for the string-object
-convention of a 0 NEW-END with pre-applied properties)."
-  (ignore merge-mode)
-  (if (not (plist-member props 'tp-text))
-      ;; tp-text not in props - return unchanged
-      (list props end object)
-    (let ((tp-text-val (plist-get props 'tp-text))
-          (layer-name (plist-get props 'tp-name)))
-      (cond
-       ;; tp-text is nil - initialize it to the current text
-       ((null tp-text-val)
-        (let ((current-text
-               (if (stringp object)
-                   (substring-no-properties object start end)
-                 (with-current-buffer (or object (current-buffer))
-                   (buffer-substring-no-properties start end)))))
-          ;; If tp-text uses a reactive variable, update that variable to match
-          ;; This ensures the reactive variable and buffer text stay in sync
-          (when layer-name
-            (when-let ((reactive-var (tp--find-tp-text-reactive-var layer-name)))
-              ;; Update the reactive variable with the current text
-              ;; Note: Using global `set` here because the layer definition is global.
-              ;; When the variable is changed, the reactive watcher will update all
-              ;; buffers that have this layer applied.
-              (set reactive-var current-text)
-              ;; Also update the layer definition so future accesses see the new value
-              (let ((layer-props (cdr (assoc layer-name tp-layer-alist))))
-                (when layer-props
-                  (tp--set-layer-props layer-name
-                                       (plist-put layer-props 'tp-text current-text))))))
-          (setq props (plist-put props 'tp-text current-text))
-          ;; Apply the layer's :transform to the DISPLAYED text on this first
-          ;; render too, so the initial rendering matches later reactive
-          ;; updates.  The model value stays the raw text.
-          (let ((display-text (tp--tp-text-transform layer-name current-text)))
-            (if (equal display-text current-text)
-                (list props end object)
-              (tp--tp-text-replace
-               start end display-text
-               (tp--merge-string-props-into-plist display-text props)
-               object preserve-props)))))
-       ;; tp-text has a string value - replace the text in the region
-       ((stringp tp-text-val)
-        ;; Apply transform if layer has one registered
-        (let* ((final-text (tp--tp-text-transform layer-name tp-text-val))
-               ;; Embedded text properties from tp-text are preserved in all
-               ;; cases.  The props passed to this function take precedence
-               ;; over embedded props when there's a conflict (e.g. both have
-               ;; a `face' property).
-               (result-props
-                (tp--merge-string-props-into-plist final-text props)))
-          (tp--tp-text-replace start end final-text result-props
-                               object preserve-props)))
-       ;; Other types - return unchanged
-       (t (list props end object))))))
-
 (defun tp--reactive-apply-update (layer-name reactive-props symbol newval
                                              where override-alist)
   "Recompute LAYER-NAME's definition and re-render affected regions.
@@ -726,7 +509,6 @@ actually been set, so layer props re-resolve against current
 ;; Install the engine into the lower modules.
 (setq tp--reactive-update-function #'tp--reactive-apply-update)
 (setq tp--reactive-flush-function #'tp--reactive-flush-entry)
-(setq tp--tp-text-handler-function #'tp--handle-tp-text-property)
 (setq tp--layer-refresh-function #'tp--update-layer-regions)
 
 (provide 'tp-render)
