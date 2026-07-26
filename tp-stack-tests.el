@@ -796,6 +796,72 @@ nothing matched."
     (should (= (tp-rotate-layer 4 6) 0))
     (should (eq (get-text-property 1 'tp-name) 'la))))
 
+;;; API-ARG-01: canonical (START END DIRECTION COUNT OBJECT) rotate order
+
+(ert-deftest tp-stack-test-rotate-layer-canonical-order ()
+  "The canonical order needs no nil OBJECT placeholder."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)               ; top->bottom: lc lb la
+    (should (= (tp-rotate-layer 1 6 'up) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lc lb)))
+    (should (= (tp-rotate-layer 1 6 'down) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lc lb la)))
+    ;; COUNT rides fourth in the canonical order.
+    (should (= (tp-rotate-layer 1 6 'down 2) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lc lb)))
+    (should (= (tp-rotate-layer 1 6 'up 2) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lc lb la)))))
+
+(ert-deftest tp-stack-test-rotate-layer-canonical-order-object-last ()
+  "OBJECT rides last in the canonical order (buffer and string)."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)               ; top->bottom: lb la
+    (let ((buf (current-buffer)))
+      (with-temp-buffer                   ; a different current buffer
+        (should (= (tp-rotate-layer 1 6 'up 1 buf) 1))))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lb)))
+    ;; nil COUNT in the canonical order still defaults to 1.
+    (let ((buf (current-buffer)))
+      (with-temp-buffer
+        (should (= (tp-rotate-layer 1 6 'down nil buf) 1))))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lb la)))
+    ;; A string OBJECT in the canonical order's last slot.
+    (let ((str (copy-sequence "xyz")))
+      (tp-push-layer str 'la)
+      (tp-push-layer str 'lb)
+      (should (= (tp-rotate-layer 0 3 'up 1 str) 1))
+      (should (equal (mapcar #'car (tp-layer-stack-at 0 str)) '(la lb))))))
+
+(ert-deftest tp-stack-test-rotate-layer-legacy-order-still-works ()
+  "The legacy (START END OBJECT DIRECTION COUNT) order keeps working.
+A non-up/down third argument - nil, a buffer or a string - still
+selects the legacy order."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp la () '(face bold))
+      (define-tp lb () '(face italic))
+      (tp-push-layer str 'la)
+      (tp-push-layer str 'lb)             ; top->bottom: lb la
+      (should (= (tp-rotate-layer 0 6 str 'up 1) 1))
+      (should (equal (mapcar #'car (tp-layer-stack-at 0 str)) '(la lb))))
+    (insert "abcdef")
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (should (= (tp-rotate-layer 1 6 nil 'up 1) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lb)))
+    ;; Canonical-order direction errors still signal.
+    (should-error (tp-rotate-layer 1 6 'sideways))))
+
 ;;; 0.3.0 S3: tp-layer-stack-at
 
 (ert-deftest tp-stack-test-layer-stack-at-shape ()

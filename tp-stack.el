@@ -306,6 +306,11 @@ A LAYER naming an undefined layer or group normally signals an
 error.  If NOERROR is non-nil, return nil instead of signaling when
 LAYER cannot be resolved; nothing is modified in that case.
 
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.  The returned string is
+that same mutated object.
+
 Returns OBJECT when one was given (in particular the string in
 string forms), otherwise the cons (START . END)."
   (pcase-let ((`(,start ,end ,obj ,layer-spec ,idx)
@@ -352,6 +357,11 @@ A LAYER naming an undefined layer or group normally signals an
 error.  If NOERROR is non-nil, return nil instead of signaling when
 LAYER cannot be resolved; nothing is modified in that case.
 
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.  The returned string is
+that same mutated object.
+
 Returns what `tp-put-layer' returns: OBJECT when one was given (in
 particular the string in string forms), otherwise (START . END)."
   (pcase-let ((`(,start ,end ,obj ,layer)
@@ -376,6 +386,10 @@ LAYER-NAME/IDX can be:
 - An integer (layer index, 0=top, -1=bottom)
 
 Only text inside [START, END) is modified.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified.  A LAYER-NAME/IDX
 matching no layer never signals: unmatched runs are silently left
@@ -408,6 +422,10 @@ Calling conventions:
 
 2. Entire string:
    (tp-pop-layer STRING)
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified; 0 means no run in the
 region had a layer to pop."
@@ -497,6 +515,10 @@ Both indices refer to positions before the move.
 The layer at FROM-ID is removed and inserted at TO-IDX position.
 OBJECT defaults to current buffer for region form.
 
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
+
 Returns the number of property runs modified.  A FROM-ID matching no
 layer never signals: unmatched runs are silently left alone and a
 return value of 0 means nothing matched at all."
@@ -532,6 +554,10 @@ N defaults to 1.  The resulting position is clamped to the stack.
 
 Uses `tp--raise-layer-in-stack' internally, which is built on
 `tp--move-layer-in-stack'.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified.  An IDX/LAYER-NAME
 matching no layer never signals: unmatched runs are silently left
@@ -576,6 +602,10 @@ N defaults to 1.  The resulting position is clamped to the stack.
 
 OBJECT defaults to current buffer for region form.
 
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
+
 Returns the number of property runs modified.  An IDX/LAYER-NAME
 matching no layer never signals: unmatched runs are silently left
 alone and a return value of 0 means nothing matched at all."
@@ -586,15 +616,28 @@ alone and a return value of 0 means nothing matched at all."
     (setq n (or n 1))
     (tp-raise-layer start end layer-id (- n) obj)))
 
-(defun tp-rotate-layer (start-or-string &optional end-or-direction object-or-count direction count)
+(defun tp-rotate-layer (start-or-string &optional end-or-direction
+                                        direction-object-or-count
+                                        count-or-direction object-or-count)
   "Rotate layers, by default moving the top layer to the bottom.
 
 Calling conventions:
-1. Buffer/string region:
-   (tp-rotate-layer START END OBJECT DIRECTION COUNT)
+1. Buffer/string region (canonical order, OBJECT last like the rest
+   of the stack family):
+   (tp-rotate-layer START END DIRECTION &optional COUNT OBJECT)
 
 2. Entire string:
    (tp-rotate-layer STRING DIRECTION COUNT)
+
+3. Buffer/string region (legacy 0.3.0 order, kept working forever):
+   (tp-rotate-layer START END OBJECT DIRECTION COUNT)
+
+The two region orders are told apart by the third argument: the
+symbols `up' and `down' are never valid OBJECTs, so a third argument
+of `up'/`down' unambiguously selects the canonical order, e.g.
+\(tp-rotate-layer 1 5 \\='up) - no nil OBJECT placeholder needed.
+Any other third argument (a buffer, a string, or nil for the current
+buffer) selects the legacy order.
 
 DIRECTION is `down' or nil to move the top layer to the bottom (the
 historical behavior), or `up' to move the bottom layer to the top;
@@ -603,18 +646,41 @@ steps and defaults to 1; a COUNT below 1 rotates nothing.  Layers
 keep their relative order; hidden layers rotate with the rest of the
 stack.
 
-OBJECT defaults to current buffer for region form.
+OBJECT defaults to current buffer for region forms.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified; 0 means no run in the
 region had layers to rotate (or COUNT was below 1)."
-  (pcase-let ((`(,start ,end ,obj)
-               (tp--parse-layer-args
-                start-or-string
-                (list end-or-direction object-or-count) 0)))
-    (let* ((string-form (stringp start-or-string))
-           (dir (or (if string-form end-or-direction direction) 'down))
-           (cnt (or (if string-form object-or-count count) 1))
-           (applied 0))
+  (let (start end obj dir cnt)
+    (cond
+     ;; Entire string form: (STRING DIRECTION COUNT).
+     ((stringp start-or-string)
+      (setq start 0
+            end (length start-or-string)
+            obj start-or-string
+            dir end-or-direction
+            cnt direction-object-or-count))
+     ((numberp start-or-string)
+      (setq start start-or-string
+            end end-or-direction)
+      (if (memq direction-object-or-count '(up down))
+          ;; Canonical region order: (START END DIRECTION COUNT OBJECT).
+          (setq dir direction-object-or-count
+                cnt count-or-direction
+                obj object-or-count)
+        ;; Legacy region order: (START END OBJECT DIRECTION COUNT).
+        (setq obj direction-object-or-count
+              dir count-or-direction
+              cnt object-or-count)))
+     (t (error "Invalid layer arguments: %S"
+               (cons start-or-string
+                     (list end-or-direction direction-object-or-count)))))
+    (let ((applied 0))
+      (setq dir (or dir 'down)
+            cnt (or cnt 1))
       (unless (memq dir '(up down))
         (error "Invalid rotate direction: %S" dir))
       (when (>= cnt 1)
@@ -634,7 +700,12 @@ region had layers to rotate (or COUNT was below 1)."
       applied)))
 
 (defun tp-pin-layer (start-or-string &optional end-or-idx idx-or-object object)
-  "Pin a layer to the top (make it visible).
+  "Move layer IDX/LAYER-NAME to the top of the stack (one-shot).
+
+Despite the name, nothing stays pinned: this is a single move to
+index 0, exactly (tp-move-layer ... IDX/LAYER-NAME 0 ...), and
+nothing prevents a later `tp-push-layer' or `tp-put-layer' from
+covering the moved layer again.
 
 Calling conventions:
 1. Buffer/string region:
@@ -643,7 +714,9 @@ Calling conventions:
 2. Entire string:
    (tp-pin-layer STRING IDX/LAYER-NAME)
 
-Uses `tp-move-layer' internally to move the specified layer to index 0 (top).
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified.  An IDX/LAYER-NAME
 matching no layer never signals: unmatched runs are silently left
@@ -665,6 +738,10 @@ Calling conventions:
    (tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
 
 Uses `tp--switch-layers-in-stack' internally.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified.  When either layer is
 missing from a run's stack nothing signals: such runs are silently
@@ -714,6 +791,10 @@ property name inside layers, like `tp-name'.
 
 OBJECT defaults to current buffer for region form.
 
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
+
 Returns the number of property runs modified.  A NAME matching no
 layer never signals; runs whose match is already hidden are left
 alone as well, so a return value of 0 means nothing changed."
@@ -756,6 +837,10 @@ above the currently visible top layer it becomes the rendered layer
 again, restoring its properties onto the text.
 
 OBJECT defaults to current buffer for region form.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified.  A NAME matching no
 layer never signals; runs whose match is not hidden are left alone
@@ -819,6 +904,10 @@ never render what was hidden.  When EVERY matched layer of a run is
 hidden, the merged layer keeps their merged properties but carries
 the `tp-hidden' flag itself: the data is preserved without un-hiding
 anything, and `tp-show-layer' on the merged layer renders it.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
 
 Returns the number of property runs modified, counting like
 `tp-delete-layer': a run counts when at least one listed layer
@@ -888,6 +977,10 @@ was hidden.  When EVERY layer of a run is hidden, the run's
 properties are cleared entirely (bare text), consistent with the
 all-hidden rendering of `tp-hide-layer'.
 
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.
+
 Returns the number of property runs modified, counting like
 `tp-delete-layer': every run that had layers to flatten counts, and
 0 means no run in the region had any layers."
@@ -928,6 +1021,11 @@ For string form, PROP VAL ... are property-value pairs to merge.
 Properties are deeply merged (nested plists are merged, not replaced).
 
 OBJECT defaults to current buffer for region form.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.  The returned string is
+that same mutated object.
 
 Returns the modified object (string) or nil for buffer operations."
   (let (start end plist obj layer-ids)
@@ -1001,6 +1099,11 @@ OBJECT defaults to current buffer for region form.
 
 This function uses `tp-add-to-layers' internally, collecting all
 layer indices and passing them to add the plist to every layer.
+
+Unlike `tp-set', the string form modifies STRING destructively (in
+place) rather than returning a propertized copy: never pass a string
+literal or a shared string you do not own.  The returned string is
+that same mutated object.
 
 Returns the modified object (string) or nil for buffer operations."
   (let (start end plist obj)
