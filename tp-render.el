@@ -102,6 +102,51 @@ Returns an updated override-alist with the new computed values."
                      (tp--deep-merge-plist current-props resolved-props)))))))))))
   override-alist)
 
+(defun tp--buffer-has-layer-region-p (layer-name &optional buffer)
+  "Return non-nil when BUFFER has a region tagged with LAYER-NAME.
+BUFFER defaults to the current buffer; a dead BUFFER yields nil.
+Checks the `tp-name' text property."
+  (let ((buf (or buffer (current-buffer))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (save-excursion
+          (goto-char (point-min))
+          (and (text-property-search-forward 'tp-name layer-name t) t))))))
+
+(defun tp--render-visit-buffer (buffer fn)
+  "Call FN with BUFFER current and `inhibit-read-only' bound to t.
+Dead buffers are skipped.  This is the per-buffer seam of the
+reactive update walk; tests may advise it to count buffer visits."
+  (when (buffer-live-p buffer)
+    (tp-with-current-buffer buffer
+      (funcall fn))))
+
+(defun tp--map-layer-buffers (layer-name where fn)
+  "Run FN in each buffer that may show LAYER-NAME's regions.
+A non-nil WHERE (a live buffer, the `setq-local' case) restricts the
+walk to that buffer.  Otherwise the walk consults the buffer registry
+via `tp-reactive-layer-buffers' and visits only registered live
+buffers.  When the registry answers `unknown', the walk falls back to
+a full `buffer-list' scan, registering every buffer that actually
+contains a region of LAYER-NAME; once at least one buffer is
+registered the layer is known and later updates skip the full scan.
+A layer found in no buffer at all deliberately stays `unknown', so a
+later application through a path that does not register buffers is
+still picked up by the next update's full scan."
+  (if (and where (bufferp where) (buffer-live-p where))
+      (tp--render-visit-buffer where fn)
+    (let ((registered (tp-reactive-layer-buffers layer-name)))
+      (if (not (eq registered 'unknown))
+          (dolist (buf registered)
+            (tp--render-visit-buffer buf fn))
+        ;; Learning fallback: behave exactly like the historical full
+        ;; scan, but record which buffers actually carry the layer.
+        (dolist (buf (buffer-list))
+          (when (buffer-live-p buf)
+            (when (tp--buffer-has-layer-region-p layer-name buf)
+              (tp-reactive--register-layer-buffer layer-name buf))
+            (tp--render-visit-buffer buf fn)))))))
+
 (defun tp--update-layer-regions (layer-name &optional where override-alist)
   "Update text regions that have LAYER-NAME applied.
 Re-applies the layer's current properties to every region tagged with
@@ -112,7 +157,10 @@ properties contributed by other sources are left untouched.
 
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
-  - If WHERE is nil, update all buffers that have the text property.
+  - If WHERE is nil, update the buffers registered for the layer in
+    the reactive buffer registry, falling back to one full
+    `buffer-list' scan when the registry has no knowledge of the
+    layer (see `tp--map-layer-buffers').
 
 OVERRIDE-ALIST maps reactive variables to their new values when the
 watcher fires before the variables are set; layer props are
@@ -132,15 +180,7 @@ variable values are honored."
                              do (put-text-property start end key val))
                     nil)
                   'tp-name layer-name)))))))
-    (if (and where (bufferp where) (buffer-live-p where))
-        ;; setq-local case: only update the specific buffer
-        (tp-with-current-buffer where
-          (funcall update-buffer))
-      ;; setq case: update all buffers that have the text property
-      (dolist (buf (buffer-list))
-        (when (buffer-live-p buf)
-          (tp-with-current-buffer buf
-            (funcall update-buffer)))))))
+    (tp--map-layer-buffers layer-name where update-buffer)))
 
 (defun tp--find-tp-text-reactive-var (layer-name)
   "Find the reactive variable symbol used for tp-text in LAYER-NAME.
@@ -198,6 +238,19 @@ added."
                                      val)))))
     result))
 
+(defun tp--put-text-property-unless-equal (start end key val object)
+  "Apply KEY -> VAL over [START, END) of OBJECT unless already there.
+Like `put-text-property', but when every position of the span already
+holds a value `equal' to VAL for KEY the call is skipped, so an
+update that changes nothing does not flip the buffer-modified flag.
+OBJECT is a string, a buffer, or nil for the current buffer."
+  (when (< start end)
+    (unless (and (equal (get-text-property start key object) val)
+                 (>= (or (next-single-property-change start key object end)
+                         end)
+                     end))
+      (put-text-property start end key val object))))
+
 (defun tp--apply-reactive-text-props (source props offset &optional target)
   "Apply PROPS merged with SOURCE's embedded props to TARGET at OFFSET.
 SOURCE is the (possibly propertized) replacement string; TARGET is a
@@ -206,7 +259,9 @@ interval of SOURCE the interval's props are merged under PROPS (see
 `tp--merge-embedded-props') and the result is applied to the
 corresponding span of TARGET shifted by OFFSET.  This keeps
 per-interval styling of propertized reactive strings intact instead
-of smearing position-0 props across the whole region."
+of smearing position-0 props across the whole region.  Spans that
+already carry an `equal' value are left untouched, so an update that
+changes nothing does not mark the buffer as modified."
   (tp--map-intervals
    source nil nil
    (lambda (istart iend str-props)
@@ -214,8 +269,8 @@ of smearing position-0 props across the whole region."
                        (tp--merge-embedded-props str-props props)
                      props)))
        (cl-loop for (key val) on merged by #'cddr
-                do (put-text-property (+ offset istart) (+ offset iend)
-                                      key val target))))))
+                do (tp--put-text-property-unless-equal
+                    (+ offset istart) (+ offset iend) key val target))))))
 
 (defun tp--update-reactive-text (layer-name &optional where override-alist)
   "Update text regions that have tp-text property with LAYER-NAME applied.
@@ -223,7 +278,10 @@ This is called when a reactive variable bound to tp-text changes.
 
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
-  - If WHERE is nil, update all buffers that have the text property (setq case).
+  - If WHERE is nil, update the buffers registered for the layer in
+    the reactive buffer registry, falling back to one full
+    `buffer-list' scan when the registry has no knowledge of the
+    layer (see `tp--map-layer-buffers').
 
 OVERRIDE-ALIST maps reactive variables to their new values when the
 watcher fires before the variables are set; the layer's props are
@@ -244,20 +302,18 @@ it will be applied to the text before updating."
                    (save-excursion
                      (tp--replace-reactive-text-in-buffer
                       layer-name new-text props)))))))))
-    (if (and where (bufferp where) (buffer-live-p where))
-        ;; setq-local case: only update the specific buffer
-        (tp-with-current-buffer where
-          (funcall update-buffer))
-      ;; setq case: update all buffers that have the text property
-      (dolist (buf (buffer-list))
-        (when (buffer-live-p buf)
-          (tp-with-current-buffer buf
-            (funcall update-buffer)))))))
+    (tp--map-layer-buffers layer-name where update-buffer)))
 
 (defun tp--replace-reactive-text-in-buffer (layer-name new-text props)
   "Replace text in current buffer for reactive text with LAYER-NAME.
 NEW-TEXT is the new text to replace with.
 PROPS are the properties to apply to the new text.
+Only the differing span of each region is edited: the common prefix
+and suffix of the old and new text are left untouched, so point and
+markers sitting in unchanged text keep their positions (point inside
+the edited span ends up at the start of the edit).  An identical-text
+update touches no buffer text at all and does not mark the buffer as
+modified.
 Text properties embedded in NEW-TEXT are merged with PROPS per
 embedded interval, so a multi-interval propertized reactive string
 keeps its per-character styling.  Existing text properties whose keys
@@ -272,20 +328,44 @@ contributions on the same region."
              (m-end (prop-match-end match))
              (old-text (buffer-substring-no-properties m-start m-end)))
         (unless (equal old-text plain-text)
-          ;; Text content differs: replace it, carrying over the existing
-          ;; properties whose keys this layer does not set.
-          (let ((existing-props (text-properties-at m-start)))
-            (delete-region m-start m-end)
-            (goto-char m-start)
-            (insert plain-text)
-            (let ((new-end (+ m-start (length plain-text))))
-              (cl-loop for (key val) on existing-props by #'cddr
-                       do (unless (plist-member props key)
-                            (put-text-property m-start new-end key val))))))
+          ;; Text content differs: trim the common prefix and suffix and
+          ;; edit only the span that actually differs, so point and
+          ;; markers in the unchanged parts survive the update.
+          (let* ((old-len (length old-text))
+                 (new-len (length plain-text))
+                 (min-len (min old-len new-len))
+                 (prefix 0)
+                 (suffix 0))
+            (while (and (< prefix min-len)
+                        (eq (aref old-text prefix) (aref plain-text prefix)))
+              (setq prefix (1+ prefix)))
+            (while (and (< suffix (- min-len prefix))
+                        (eq (aref old-text (- old-len suffix 1))
+                            (aref plain-text (- new-len suffix 1))))
+              (setq suffix (1+ suffix)))
+            (let ((edit-start (+ m-start prefix))
+                  (edit-end (- m-end suffix))
+                  (insert-text (substring plain-text prefix (- new-len suffix)))
+                  (existing-props (text-properties-at m-start)))
+              (when (< edit-start edit-end)
+                (delete-region edit-start edit-end))
+              (when (> (length insert-text) 0)
+                (goto-char edit-start)
+                (insert insert-text))
+              ;; Carry over existing properties whose keys this layer does
+              ;; not set onto the newly inserted span; the untouched
+              ;; prefix and suffix keep their own properties as is.
+              (let ((mid-end (+ edit-start (length insert-text))))
+                (cl-loop for (key val) on existing-props by #'cddr
+                         do (unless (plist-member props key)
+                              (put-text-property edit-start mid-end key val)))))))
         ;; Apply the layer's props, merged per embedded interval of NEW-TEXT.
         ;; Keys are replaced (not accumulated); unrelated keys are untouched.
-        (tp--apply-reactive-text-props new-text props m-start))
-      ;; Search for next match
+        (tp--apply-reactive-text-props new-text props m-start)
+        ;; Continue searching after the fully updated region: a preserved
+        ;; suffix still carries the layer's `tp-name', and restarting the
+        ;; search inside it would re-match this region.
+        (goto-char (+ m-start (length plain-text))))
       (setq match (text-property-search-forward 'tp-name layer-name t)))))
 
 (defun tp--tp-text-replace (start end final-text result-props object preserve-props)
@@ -491,6 +571,42 @@ actually been set, so layer props re-resolve against current
   (if tp-text-affected
       (tp--update-reactive-text layer-name where)
     (tp--update-layer-regions layer-name where)))
+
+;;;###autoload
+(defun tp-gc-anonymous-layers ()
+  "Collect anonymous layers that no live buffer displays anymore.
+Walk `tp--anonymous-layer-registry' and, for every interned anonymous
+layer whose buffer registry has real knowledge (see
+`tp-reactive-layer-buffers'), check whether any registered live
+buffer still contains a region tagged with the layer's `tp-name'.
+Layers displayed nowhere are undefined via `tp-undefine-layer', which
+also drops their reactive dependencies, transforms and registry
+entries.
+
+Layers whose registry state is `unknown' are conservatively kept:
+they were never seen in any buffer through the registering paths,
+and detached strings may still reference them.  A layer becomes
+collectable only after it was registered for at least one buffer and
+none of the registered buffers still shows it (for example after the
+buffers were killed); call `tp-reactive-track-buffer' after
+inserting propertized strings so their buffers are registered too.
+
+Return the list of collected layer names."
+  (interactive)
+  (let ((collected nil))
+    ;; Snapshot the names first: `tp-undefine-layer' mutates the
+    ;; anonymous-layer registry while we iterate.
+    (dolist (name (mapcar #'cdr tp--anonymous-layer-registry))
+      (let ((bufs (tp-reactive-layer-buffers name)))
+        (when (and (not (eq bufs 'unknown))
+                   (not (cl-some (lambda (buf)
+                                   (tp--buffer-has-layer-region-p name buf))
+                                 bufs)))
+          (tp-undefine-layer name)
+          (push name collected))))
+    (when (called-interactively-p 'interactive)
+      (message "tp: collected %d anonymous layer(s)" (length collected)))
+    (nreverse collected)))
 
 ;; Install the engine into the lower modules.
 (setq tp--reactive-update-function #'tp--reactive-apply-update)

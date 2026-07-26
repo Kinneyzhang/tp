@@ -372,5 +372,243 @@ with predicate t, where VALUE nil matches property-absent runs."
       (should (equal (substring-no-properties str) "hello world"))
       (should (eq (get-text-property 0 'face str) 'bold)))))
 
+;;; 0.3.0 A1: capture-group targeting via SUBEXP in tp-regexp-*
+
+(ert-deftest tp-search-test-regexp-subexp-string ()
+  "SUBEXP applies properties to the capture group only (string path)."
+  (let ((s (tp-regexp-set "\\(foo\\)-bar" '(face bold)
+                          "foo-bar foo-bar" nil nil 1)))
+    (should (eq (get-text-property 0 'face s) 'bold))
+    (should (eq (get-text-property 2 'face s) 'bold))
+    (should-not (get-text-property 3 'face s))
+    (should-not (get-text-property 6 'face s))
+    (should (eq (get-text-property 8 'face s) 'bold))
+    (should-not (get-text-property 11 'face s))))
+
+(ert-deftest tp-search-test-regexp-subexp-buffer ()
+  "SUBEXP applies properties and reports regions for the group (buffer path)."
+  (with-temp-buffer
+    (insert "foo-bar")
+    (let ((regions (tp-regexp-set "\\(foo\\)-\\(bar\\)" '(face bold)
+                                  (current-buffer) nil nil 2)))
+      (should (equal regions '((5 . 8))))
+      (should (eq (get-text-property 5 'face) 'bold))
+      (should-not (get-text-property 1 'face))
+      (should-not (get-text-property 4 'face)))))
+
+(ert-deftest tp-search-test-regexp-subexp-group-not-participating ()
+  "A match where the SUBEXP group does not participate contributes nothing."
+  (with-temp-buffer
+    (insert "b a b")
+    (let ((regions (tp-regexp-set "\\(a\\)\\|b" '(face bold)
+                                  (current-buffer) nil nil 1)))
+      ;; Only the "a" match has group 1; the "b" matches contribute
+      ;; neither properties nor regions.
+      (should (equal regions '((3 . 4))))
+      (should (eq (get-text-property 3 'face) 'bold))
+      (should-not (get-text-property 1 'face))
+      (should-not (get-text-property 5 'face))))
+  ;; String path mirror.
+  (let ((s (tp-regexp-set "\\(a\\)\\|b" '(face bold) "b a b" nil nil 1)))
+    (should (eq (get-text-property 2 'face s) 'bold))
+    (should-not (get-text-property 0 'face s))
+    (should-not (get-text-property 4 'face s))))
+
+(ert-deftest tp-search-test-regexp-subexp-zero-width-guard ()
+  "The zero-width guard still terminates when SUBEXP is given."
+  ;; "\\(x\\)*" matches the empty string everywhere in "ab" with
+  ;; group 1 never participating; both paths must terminate cleanly.
+  (let ((s (tp-regexp-set "\\(x\\)*" '(face bold) "ab" nil nil 1)))
+    (should (equal (substring-no-properties s) "ab"))
+    (should-not (text-properties-at 0 s))
+    (should-not (text-properties-at 1 s)))
+  (with-temp-buffer
+    (insert "ab")
+    (should-not (tp-regexp-set "\\(x\\)*" '(face bold)
+                               (current-buffer) nil nil 1))
+    (should-not (get-text-property 1 'face))))
+
+;;; 0.3.0 A2: START/END bounds in tp-match-* / tp-regexp-*
+
+(ert-deftest tp-search-test-match-bounds-string ()
+  "START/END restrict tp-match-set to [START, END) in a string (0-based)."
+  (let ((s (tp-match-set "foo" '(face bold) "foo foo foo" 4 11)))
+    (should-not (get-text-property 0 'face s))
+    (should (eq (get-text-property 4 'face s) 'bold))
+    (should (eq (get-text-property 8 'face s) 'bold))))
+
+(ert-deftest tp-search-test-match-bounds-buffer ()
+  "START/END restrict tp-match-set to [START, END) in a buffer (1-based)."
+  (with-temp-buffer
+    (insert "foo foo foo")
+    (let ((regions (tp-match-set "foo" '(face bold) (current-buffer) 5 12)))
+      (should (equal regions '((5 . 8) (9 . 12))))
+      (should-not (get-text-property 1 'face))
+      (should (eq (get-text-property 5 'face) 'bold))
+      (should (eq (get-text-property 9 'face) 'bold)))))
+
+(ert-deftest tp-search-test-regexp-bounds-do-not-cross-boundary ()
+  "Bounded regexp matching behaves as if only [START, END) existed."
+  ;; A greedy "a+" would match the whole object; with bounds it must
+  ;; match exactly the bounded portion instead of being discarded.
+  (let ((s (tp-regexp-set "a+" '(face bold) "aaaa" 1 3)))
+    (should-not (get-text-property 0 'face s))
+    (should (eq (get-text-property 1 'face s) 'bold))
+    (should (eq (get-text-property 2 'face s) 'bold))
+    (should-not (get-text-property 3 'face s)))
+  (with-temp-buffer
+    (insert "aaaa")
+    (should (equal (tp-regexp-set "a+" '(face bold) (current-buffer) 2 4)
+                   '((2 . 4))))
+    (should-not (get-text-property 1 'face))
+    (should (eq (get-text-property 2 'face) 'bold))
+    (should-not (get-text-property 4 'face))))
+
+(ert-deftest tp-search-test-match-reset-and-add-accept-bounds ()
+  "tp-match-reset/add accept the same START/END bounds."
+  (let* ((base (tp-set "foo foo" 'face 'italic))
+         (s (tp-match-reset "foo" '(face bold) base 4 7)))
+    (should (eq (get-text-property 0 'face s) 'italic))
+    (should (eq (get-text-property 4 'face s) 'bold)))
+  (let ((s (tp-match-add "foo" '(face bold) "foo foo" 4 7)))
+    (should-not (get-text-property 0 'face s))
+    (should (eq (get-text-property 4 'face s) 'bold))))
+
+;;; 0.3.0 A3: PREDICATE / NOT-CURRENT exposure in tp-forward/tp-backward
+
+(defmacro tp-search-tests--with-lvl-buffer (&rest body)
+  "Run BODY in a temp buffer with `lvl' runs 1/2/3 over \"aaabbbccc\"."
+  (declare (indent 0))
+  `(with-temp-buffer
+     (insert "aaabbbccc")
+     (put-text-property 1 4 'lvl 1)
+     (put-text-property 4 7 'lvl 2)
+     (put-text-property 7 10 'lvl 3)
+     ,@body))
+
+(ert-deftest tp-search-test-forward-predicate-buffer ()
+  "A function PREDICATE selects buffer matches by property value."
+  (tp-search-tests--with-lvl-buffer
+    (goto-char (point-min))
+    (let ((m (tp-forward 'lvl nil nil 1
+                         (lambda (_ v) (and (numberp v) (> v 1))))))
+      (should m)
+      (should (equal (list (prop-match-beginning m)
+                           (prop-match-end m)
+                           (prop-match-value m))
+                     '(4 7 2))))))
+
+(ert-deftest tp-search-test-forward-predicate-string ()
+  "A function PREDICATE selects string matches by property value."
+  (let ((s (copy-sequence "aaabbbccc")))
+    (tp-set 0 3 '(lvl 1) s)
+    (tp-set 3 6 '(lvl 2) s)
+    (tp-set 6 9 '(lvl 3) s)
+    (should (equal (tp-forward 'lvl nil s 2
+                               (lambda (_ v) (and (numberp v) (> v 1))))
+                   '((3 6 2) (6 9 3))))))
+
+(ert-deftest tp-search-test-backward-predicate-buffer ()
+  "tp-backward accepts the same function PREDICATE as tp-forward."
+  (tp-search-tests--with-lvl-buffer
+    (goto-char (point-max))
+    (let ((m (tp-backward 'lvl nil nil 1
+                          (lambda (_ v) (and (numberp v) (< v 3))))))
+      (should m)
+      (should (equal (list (prop-match-beginning m)
+                           (prop-match-end m)
+                           (prop-match-value m))
+                     '(4 7 2))))))
+
+(ert-deftest tp-search-test-backward-predicate-string ()
+  "tp-backward with a PREDICATE returns string matches innermost first."
+  (let ((s (copy-sequence "aaabbbccc")))
+    (tp-set 0 3 '(lvl 1) s)
+    (tp-set 3 6 '(lvl 2) s)
+    (tp-set 6 9 '(lvl 3) s)
+    (should (equal (tp-backward 'lvl nil s 2
+                                (lambda (_ v) (and (numberp v) (> v 1))))
+                   '((6 9 3) (3 6 2))))))
+
+(ert-deftest tp-search-test-forward-not-current-skips-point-region ()
+  "NOT-CURRENT makes tp-forward skip the matching region around point."
+  (with-temp-buffer
+    (insert "aabbaa")
+    (put-text-property 1 3 'k 'x)
+    (put-text-property 3 5 'k 'y)
+    (put-text-property 5 7 'k 'x)
+    (goto-char (point-min))
+    (let ((m (tp-forward 'k 'x)))
+      (should (= (prop-match-beginning m) 1)))
+    (goto-char (point-min))
+    (let ((m (tp-forward 'k 'x nil 1 nil t)))
+      (should (= (prop-match-beginning m) 5))
+      (should (= (prop-match-end m) 7)))))
+
+(ert-deftest tp-search-test-backward-not-current-skips-point-region ()
+  "NOT-CURRENT makes tp-backward skip the matching region at point."
+  (with-temp-buffer
+    (insert "aa bb")
+    (put-text-property 1 3 'k 'x)
+    (put-text-property 4 6 'k 'x)
+    (goto-char (point-max))
+    ;; Default keeps the 0.2.0 behavior: the run ending at point wins.
+    (let ((m (save-excursion (tp-backward 'k 'x))))
+      (should (equal (list (prop-match-beginning m) (prop-match-end m))
+                     '(4 6))))
+    ;; NOT-CURRENT skips it and finds the previous matching run.
+    (let ((m (save-excursion (tp-backward 'k 'x nil 1 nil t))))
+      (should (equal (list (prop-match-beginning m) (prop-match-end m))
+                     '(1 3))))))
+
+(ert-deftest tp-search-test-predicate-t-equals-default ()
+  "An explicit PREDICATE of t keeps the default `equal' matching."
+  (tp-search-tests--with-lvl-buffer
+    (goto-char (point-min))
+    (let ((default-m (save-excursion (tp-forward 'lvl 2)))
+          (t-m (save-excursion (tp-forward 'lvl 2 nil 1 t))))
+      (should (= (prop-match-beginning default-m) (prop-match-beginning t-m)))
+      (should (= (prop-match-end default-m) (prop-match-end t-m))))))
+
+(ert-deftest tp-search-test-predicate-adjacent-runs-stay-separate ()
+  "Adjacent matching runs with different values are separate matches.
+Mirrors `text-property-search-forward', which ends a match where the
+value changes when a non-nil predicate is given."
+  (let ((s (copy-sequence "abcdef")))
+    (tp-set 0 3 '(lvl 1) s)
+    (tp-set 3 6 '(lvl 2) s)
+    (should (equal (tp-forward 'lvl nil s 5 (lambda (_ v) (numberp v)))
+                   '((0 3 1) (3 6 2))))))
+
+(ert-deftest tp-search-test-forward-do-predicate ()
+  "tp-forward-do passes PREDICATE through to select the target match."
+  (let ((s (copy-sequence "abc def")))
+    (tp-set 0 3 '(lvl 1) s)
+    (tp-set 4 7 '(lvl 2) s)
+    (should (= (tp-forward-do #'upcase 'lvl nil s 1 nil nil
+                              (lambda (_ v) (eq v 2)))
+               1))
+    (should (equal (substring-no-properties s) "abc DEF"))))
+
+(ert-deftest tp-search-test-backward-do-predicate ()
+  "tp-backward-do passes PREDICATE through to select the target match."
+  (with-temp-buffer
+    (insert "abc def")
+    (put-text-property 1 4 'lvl 1)
+    (put-text-property 5 8 'lvl 2)
+    (should (= (tp-backward-do #'upcase 'lvl nil (current-buffer) 1 nil nil
+                               (lambda (_ v) (eq v 1)))
+               1))
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "ABC def"))))
+
+(ert-deftest tp-search-test-forward-do-defaults-unchanged ()
+  "tp-forward-do without PREDICATE keeps the 0.2.0 `equal' matching."
+  (let ((s (copy-sequence "abc def")))
+    (tp-set 0 3 '(lvl 1) s)
+    (tp-set 4 7 '(lvl 2) s)
+    (should (= (tp-forward-do #'upcase 'lvl 2 s) 1))
+    (should (equal (substring-no-properties s) "abc DEF"))))
+
 (provide 'tp-search-tests)
 ;;; tp-search-tests.el ends here

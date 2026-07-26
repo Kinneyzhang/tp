@@ -338,5 +338,240 @@
     (tp-layer-reset)
     (should-not tp--anonymous-layer-registry)))
 
+;;; 0.3.0 A4: multi-argument parameterized layers
+
+(ert-deftest tp-layer-test-multi-arg-define-and-props-with-args ()
+  "define-tp accepts multi-symbol arglists; props-with-args expands them."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    (should (tp-layer-parameterized-p 'tp-layer-test-fgbg))
+    (should (equal (tp-layer-arglist 'tp-layer-test-fgbg) '(fg bg)))
+    (should (equal (tp-layer-props-with-args 'tp-layer-test-fgbg
+                                             '("red" "blue"))
+                   '(face (:foreground "red" :background "blue"))))
+    (should (equal (tp-layer-props-with-args 'tp-layer-test-fgbg
+                                             '("red" "blue") t)
+                   '(face (:foreground "red" :background "blue")
+                     tp-name tp-layer-test-fgbg)))))
+
+(ert-deftest tp-layer-test-props-with-arg-is-thin-wrapper ()
+  "tp-layer-props-with-arg keeps its single-argument contract."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fg1 (c) `(face (:foreground ,c)))
+    (should (equal (tp-layer-props-with-arg 'tp-layer-test-fg1 "red")
+                   '(face (:foreground "red"))))
+    (should (equal (tp-layer-props-with-arg 'tp-layer-test-fg1 "red")
+                   (tp-layer-props-with-args 'tp-layer-test-fg1 '("red"))))))
+
+(ert-deftest tp-layer-test-props-with-args-non-parameterized-nil ()
+  "props-with-args and tp-layer-arglist return nil for other layers."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-np () '(face bold))
+    (should-not (tp-layer-props-with-args 'tp-layer-test-np '(1)))
+    (should-not (tp-layer-arglist 'tp-layer-test-np))
+    (should-not (tp-layer-props-with-args 'tp-layer-test-missing '(1)))))
+
+(ert-deftest tp-layer-test-multi-arg-tp-set-flat-string-form ()
+  "The flat (tp-set STRING \\='LAYER ARG1 ARG2) form binds all params."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    (let ((s (tp-set "hello" 'tp-layer-test-fgbg "red" "blue")))
+      (should (equal (get-text-property 0 'face s)
+                     '(:foreground "red" :background "blue"))))))
+
+(ert-deftest tp-layer-test-multi-arg-tp-set-flat-with-extra-props ()
+  "Extra props after multi args survive, with no stray nil pair."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    (let ((s (tp-set "hello" 'tp-layer-test-fgbg "red" "blue"
+                     'help-echo "tip")))
+      (should (equal (plist-get (get-text-property 0 'face s) :foreground)
+                     "red"))
+      (should (equal (get-text-property 0 'help-echo s) "tip"))
+      ;; The odd-length flat spec is padded with nil by key merging;
+      ;; resolution must strip it instead of setting a nil property.
+      (should (equal (text-properties-at 0 s)
+                     '(face (:foreground "red" :background "blue")
+                       help-echo "tip"))))))
+
+(ert-deftest tp-layer-test-multi-arg-tp-set-region-list-form ()
+  "The region form (tp-set START END \\='(LAYER ARG1 ARG2)) works (1-based)."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    (with-temp-buffer
+      (insert "hello")
+      (tp-set 1 4 '(tp-layer-test-fgbg "red" "blue"))
+      (should (equal (get-text-property 1 'face)
+                     '(:foreground "red" :background "blue")))
+      (should-not (get-text-property 4 'face)))))
+
+(ert-deftest tp-layer-test-multi-arg-tp-set-wrapped-args-plist-form ()
+  "The plist spec (LAYER (ARG1 ARG2) EXTRA...) passes args as one list."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    ;; Layer at the head of the plist.
+    (let ((s (copy-sequence "hello")))
+      (tp-set 0 5 '(tp-layer-test-fgbg ("red" "blue") help-echo "tip") s)
+      (should (equal (get-text-property 0 'face s)
+                     '(:foreground "red" :background "blue")))
+      (should (equal (get-text-property 0 'help-echo s) "tip")))
+    ;; Layer at a non-head plist position.
+    (let ((s (copy-sequence "hello")))
+      (tp-set 0 5 '(help-echo "tip" tp-layer-test-fgbg ("red" "blue")) s)
+      (should (equal (plist-get (get-text-property 0 'face s) :background)
+                     "blue"))
+      (should (equal (get-text-property 0 'help-echo s) "tip")))))
+
+(ert-deftest tp-layer-test-multi-arg-normalize-layer-spec ()
+  "tp--normalize-layer-spec accepts (LAYER ARG1 ARG2) specs."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    (should (equal (tp--normalize-layer-spec
+                    '(tp-layer-test-fgbg "red" "blue"))
+                   '(face (:foreground "red" :background "blue")
+                     tp-name tp-layer-test-fgbg)))))
+
+(ert-deftest tp-layer-test-multi-arg-tp-put-layer ()
+  "tp-put-layer accepts multi-argument parameterized layer specs."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-fgbg (fg bg)
+      `(face (:foreground ,fg :background ,bg)))
+    (let ((s (copy-sequence "hi")))
+      (tp-put-layer s '(tp-layer-test-fgbg "red" "blue") 0)
+      (should (equal (get-text-property 0 'face s)
+                     '(:foreground "red" :background "blue")))
+      (should (eq (get-text-property 0 'tp-name s) 'tp-layer-test-fgbg)))))
+
+(ert-deftest tp-layer-test-multi-arg-cycle-detection ()
+  "Cycle detection still fires through the multi-argument path."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-mcyc (a b)
+      `(tp-layer-test-mcyc (,a ,b)))
+    (let ((err (should-error
+                (tp-layer-props-with-args 'tp-layer-test-mcyc '(1 2)))))
+      (should (string-match-p "cyclic layer reference"
+                              (error-message-string err))))))
+
+(ert-deftest tp-layer-test-multi-arg-props-are-copies ()
+  "props-with-args returns fresh copies; mutation cannot corrupt storage."
+  (tp-layer-tests--with-clean
+    ;; The (:weight bold) subform is a shared constant in the
+    ;; backquoted body; without copy-on-return, mutating the returned
+    ;; plist would corrupt every later expansion.
+    (define-tp tp-layer-test-mcopy (a b)
+      `(face (:weight bold) help-echo ,(format "%s-%s" a b)))
+    (let ((props (tp-layer-props-with-args 'tp-layer-test-mcopy '("x" "y"))))
+      (setcar (plist-get props 'face) 'MUTATED))
+    (should (equal (tp-layer-props-with-args 'tp-layer-test-mcopy '("x" "y"))
+                   '(face (:weight bold) help-echo "x-y")))))
+
+(ert-deftest tp-layer-test-multi-arg-group ()
+  "define-tps accepts multi-symbol arglists usable through tp-set specs."
+  (tp-layer-tests--with-clean
+    (define-tps tp-layer-test-mgrp (fg w)
+      `((face (:foreground ,fg)))
+      `((face (:weight ,w))))
+    (should (tp-group-parameterized-p 'tp-layer-test-mgrp))
+    (should (equal (tp--group-arglist 'tp-layer-test-mgrp) '(fg w)))
+    (should (equal (tp--group-props-with-args 'tp-layer-test-mgrp
+                                              '("red" bold))
+                   '((face (:foreground "red")) (face (:weight bold)))))
+    ;; Flat (GROUP ARG1 ARG2) spec through the tp-set pipeline.
+    (let ((props (tp--resolve-props '(tp-layer-test-mgrp "red" bold))))
+      (should (equal (plist-get props 'face) '(:foreground "red")))
+      (should (equal (plist-get props 'tp-layers)
+                     '((face (:weight bold))))))
+    ;; Single-argument groups keep working through the wrapper.
+    (define-tps tp-layer-test-sgrp (color)
+      `((face (:foreground ,color))))
+    (should (equal (tp-group-props-with-arg 'tp-layer-test-sgrp "red")
+                   '((face (:foreground "red")))))))
+
+;;; 0.3.0 A5: tp-describe-layer and its data collector
+
+(ert-deftest tp-layer-test-describe-data-unified ()
+  "Describe data for a define-tp layer reports the unified format."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-du () '(face bold))
+    (let ((data (tp--describe-layer-data 'tp-layer-test-du)))
+      (should (eq (plist-get data :name) 'tp-layer-test-du))
+      (should (eq (plist-get data :format) 'unified))
+      (should (equal (plist-get data :body) '(quote (face bold))))
+      (should (equal (plist-get data :props)
+                     '(face bold tp-name tp-layer-test-du)))
+      (should-not (plist-get data :arglist))
+      (should-not (plist-get data :reactive-deps))
+      (should-not (plist-get data :transform))
+      (should-not (plist-get data :group)))))
+
+(ert-deftest tp-layer-test-describe-data-flat ()
+  "Describe data for an old-format layer reports the flat format."
+  (tp-layer-tests--with-clean
+    (tp--set-layer-props 'tp-layer-test-df '(face italic))
+    (let ((data (tp--describe-layer-data 'tp-layer-test-df)))
+      (should (eq (plist-get data :format) 'flat))
+      (should (equal (plist-get data :body) '(face italic)))
+      (should (equal (plist-get data :props)
+                     '(face italic tp-name tp-layer-test-df))))))
+
+(ert-deftest tp-layer-test-describe-data-parameterized ()
+  "Describe data for a parameterized layer reports arglist and a note."
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-dp (a b)
+      `(face (:foreground ,a :background ,b)))
+    (let ((data (tp--describe-layer-data 'tp-layer-test-dp)))
+      (should (eq (plist-get data :format) 'parameterized))
+      (should (equal (plist-get data :arglist) '(a b)))
+      ;; Expanded props need arguments, so a placeholder note is used.
+      (should (stringp (plist-get data :props)))
+      (should (string-match-p "tp-layer-props-with-args"
+                              (plist-get data :props))))))
+
+(ert-deftest tp-layer-test-describe-data-reactive ()
+  "Describe data for a reactive layer reports format and dependencies."
+  (tp-layer-tests--with-clean
+    (setq tp-layer-test-b15-color "red")
+    (define-tp tp-layer-test-dr ()
+      '(face (:foreground $tp-layer-test-b15-color)))
+    (let ((data (tp--describe-layer-data 'tp-layer-test-dr)))
+      (should (eq (plist-get data :format) 'reactive))
+      (should (equal (plist-get data :reactive-deps)
+                     '(tp-layer-test-b15-color))))))
+
+(ert-deftest tp-layer-test-describe-data-group-and-transform ()
+  "Describe data reports the owning group and transform presence."
+  (tp-layer-tests--with-clean
+    (define-tps tp-layer-test-dg ()
+      '("a" :props (face bold) :transform upcase))
+    (let ((data (tp--describe-layer-data 'tp-layer-test-dg-a)))
+      (should (eq (plist-get data :group) 'tp-layer-test-dg))
+      (should (plist-get data :transform)))))
+
+(ert-deftest tp-layer-test-describe-data-unknown-layer-nil ()
+  "Describe data returns nil for names not in tp-layer-alist."
+  (tp-layer-tests--with-clean
+    (should-not (tp--describe-layer-data 'tp-layer-test-nonexistent))))
+
+(ert-deftest tp-layer-test-describe-layer-command ()
+  "tp-describe-layer is a command and renders a help buffer."
+  (should (commandp 'tp-describe-layer))
+  (tp-layer-tests--with-clean
+    (define-tp tp-layer-test-dc () '(face bold))
+    (save-window-excursion
+      (tp-describe-layer 'tp-layer-test-dc)
+      (with-current-buffer (help-buffer)
+        (should (string-match-p "tp-layer-test-dc is a tp layer"
+                                (buffer-string)))
+        (should (string-match-p "Storage format: unified"
+                                (buffer-string)))))
+    (should-error (tp-describe-layer 'tp-layer-test-missing)
+                  :type 'user-error)))
+
 (provide 'tp-layer-tests)
 ;;; tp-layer-tests.el ends here

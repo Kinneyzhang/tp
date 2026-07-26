@@ -12,8 +12,8 @@
 ;;; Commentary:
 
 ;; Photoshop-style layer stack operations on text regions: put/push/
-;; delete/pop/move/raise/rotate/pin/switch/merge/flatten, stack queries,
-;; and bulk layer property manipulation.
+;; delete/pop/move/raise/lower/rotate/pin/switch/hide/show/merge/
+;; flatten, stack queries, and bulk layer property manipulation.
 
 ;;; Code:
 
@@ -50,6 +50,41 @@ buffers)."
             (seq-take (cdr rest) n)))
    (t (error "Invalid layer arguments: %S" (cons start-or-string rest)))))
 
+(defun tp--stack-hidden-p (layer)
+  "Return non-nil when the layer plist LAYER is flagged hidden.
+A layer is hidden when its plist carries a non-nil `tp-hidden' entry;
+see `tp-hide-layer'."
+  (and (plist-get layer 'tp-hidden) t))
+
+(defun tp--plist-remove (plist key)
+  "Return a copy of PLIST without KEY and its value.
+Comparison uses `eq'.  PLIST itself is not modified."
+  (cl-loop for (k v) on plist by #'cddr
+           unless (eq k key) append (list k v)))
+
+(defun tp--stack-props-to-list (props)
+  "Return the ordered layer stack stored in raw text properties PROPS.
+The result is a list of layer plists, top layer first, including
+hidden layers (flagged with a non-nil `tp-hidden' entry) at their
+stack position.  Returns nil for bare text.
+
+This is the inverse of `tp--stack-build-props': when any entry of the
+`tp-layers' bookkeeping property is hidden, that property holds the
+whole ordered stack and the direct properties are only a render cache
+of the topmost non-hidden layer; otherwise the direct properties are
+the top layer and `tp-layers' holds the layers below it.  Direct
+property edits made outside the stack API (for example `tp-set') are
+therefore discarded by the next stack operation while any layer is
+hidden."
+  (let* ((idx (-elem-index 'tp-layers props))
+         (top (if idx
+                  (-remove-at-indices (list idx (1+ idx)) props)
+                props))
+         (belows (plist-get props 'tp-layers)))
+    (if (seq-some #'tp--stack-hidden-p belows)
+        belows
+      (tp--layer-stack-to-list top belows))))
+
 (defun tp--stack-map-region (start end object function)
   "Call FUNCTION over each property run of [START, END) in OBJECT.
 
@@ -57,7 +92,8 @@ OBJECT is a string, a buffer, or nil for the current buffer.
 FUNCTION receives (ABS-START ABS-END STACK): the run's bounds, clipped
 to [START, END) and expressed in OBJECT's native coordinates (0-based
 for strings, 1-based for buffers), and the run's layer stack as a list
-of layer plists, top layer first (empty for bare text).
+of layer plists, top layer first (empty for bare text).  Hidden layers
+\(see `tp-hide-layer') are included at their stack position.
 
 Returns the list of FUNCTION's non-nil results, in order.
 
@@ -69,13 +105,8 @@ previously property-less text."
         (tp--map-intervals
          object start end
          (lambda (i-start i-end props)
-           (let* ((idx (-elem-index 'tp-layers props))
-                  (top (if idx
-                           (-remove-at-indices (list idx (1+ idx)) props)
-                         props))
-                  (belows (plist-get props 'tp-layers)))
-             (funcall function i-start i-end
-                      (tp--layer-stack-to-list top belows)))))))
+           (funcall function i-start i-end
+                    (tp--stack-props-to-list props))))))
 
 (defun tp--stack-build-props (layer-list)
   "Build text properties from LAYER-LIST (top layer first).
@@ -83,9 +114,21 @@ Like `tp--build-layer-props', but the `tp-layers' entry is only added
 when there are below-layers, so single-layer stacks do not carry a
 garbage (tp-layers nil) property.  Consumers must therefore tolerate
 an absent `tp-layers' property (both `plist-get' and
-`tp--stack-map-region' do)."
+`tp--stack-map-region' do).
+
+When any layer in LAYER-LIST is hidden (non-nil `tp-hidden' entry,
+see `tp-hide-layer'), the storage switches to full-stack mode: the
+direct properties are those of the topmost non-hidden layer (or no
+layer properties at all when every layer is hidden) and the
+`tp-layers' property holds the complete ordered LAYER-LIST.
+`tp--stack-props-to-list' reverses either representation."
   (cond
    ((null layer-list) nil)
+   ((seq-some #'tp--stack-hidden-p layer-list)
+    (append (seq-find (lambda (layer)
+                        (not (tp--stack-hidden-p layer)))
+                      layer-list)
+            (list 'tp-layers layer-list)))
    ((null (cdr layer-list)) (copy-sequence (car layer-list)))
    (t (append (car layer-list)
               (list 'tp-layers (cdr layer-list))))))
@@ -140,11 +183,35 @@ Scans the region's property runs in order and returns the `tp-name'
 of the first top layer that has one, so bare or unnamed runs (for
 example before a layer that starts mid-region) do not hide layers
 later in the region.  Returns nil when no run in the region has a
-named top layer.  OBJECT defaults to current buffer."
+named top layer.  OBJECT defaults to current buffer.
+
+The topmost layer is reported in stack order even when it is hidden
+\(see `tp-hide-layer'); use `tp-layer-stack-at' to distinguish hidden
+layers from visible ones."
   (car (tp--stack-map-region
         start end object
         (lambda (_abs-start _abs-end stack)
           (plist-get (car stack) 'tp-name)))))
+
+(defun tp-layer-stack-at (pos &optional object)
+  "Return the full ordered layer stack at POS in OBJECT.
+
+The result is a list with one element per layer, topmost layer first
+and bottommost last, where each element is a cons (NAME . PROPS):
+- NAME is the layer's `tp-name' symbol, or nil for an unnamed layer.
+- PROPS is the layer's property plist without its `tp-name' entry.
+  A hidden layer (see `tp-hide-layer') is distinguishable by the
+  entry `tp-hidden' with value t in PROPS; visible layers never
+  carry a `tp-hidden' entry.
+
+Hidden layers are included at their stack position.  Returns nil for
+bare text.  POS is in OBJECT's native coordinates (0-based for
+strings, 1-based for buffers).  OBJECT is a string, a buffer, or nil
+for the current buffer."
+  (mapcar (lambda (layer)
+            (cons (plist-get layer 'tp-name)
+                  (tp--plist-remove layer 'tp-name)))
+          (tp--stack-props-to-list (text-properties-at pos object))))
 
 ;;; Layer spec normalization for tp-put-layer
 
@@ -212,15 +279,15 @@ defined layer or group name); a named inline layer has odd length
 
 ;;; Mutators
 
-(defun tp-put-layer (start-or-string &optional end-or-layer layer-or-idx idx-or-object object)
+(defun tp-put-layer (start-or-string &optional end-or-layer layer-or-idx idx-or-object object noerror)
   "Set layer(s) at a specific index position.
 
 Calling conventions:
 1. Buffer/string region:
-   (tp-put-layer START END LAYER IDX OBJECT)
+   (tp-put-layer START END LAYER IDX OBJECT NOERROR)
 
 2. Entire string:
-   (tp-put-layer STRING LAYER IDX)
+   (tp-put-layer STRING LAYER IDX NOERROR)
 
 LAYER can be:
 - A symbol (layer name from `tp-layer-alist' or `tp-layer-groups')
@@ -236,43 +303,65 @@ IDX specifies where to insert:
 - Other values insert at that position
 
 OBJECT defaults to current buffer for region form.  Only text inside
-\[START, END) is modified."
+\[START, END) is modified.
+
+A LAYER naming an undefined layer or group normally signals an
+error.  If NOERROR is non-nil, return nil instead of signaling when
+LAYER cannot be resolved; nothing is modified in that case.
+
+Returns OBJECT when one was given (in particular the string in
+string forms), otherwise the cons (START . END)."
   (pcase-let ((`(,start ,end ,obj ,layer-spec ,idx)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-layer layer-or-idx idx-or-object object) 2)))
     (setq idx (or idx 0))
-    (let ((layers-to-add (tp--put-layer-specs layer-spec)))
-      (tp--stack-map-region
-       start end obj
-       (lambda (abs-start abs-end stack)
-         (let* ((actual-idx (if (< idx 0)
-                                (max 0 (+ (length stack) 1 idx))
-                              (min idx (length stack))))
-                (new-stack (append (seq-take stack actual-idx)
-                                   layers-to-add
-                                   (seq-drop stack actual-idx))))
-           (set-text-properties abs-start abs-end
-                                (tp--stack-build-props new-stack)
-                                obj)))))
-    (or obj (cons start end))))
+    (let* ((noerr (if (stringp start-or-string) idx-or-object noerror))
+           (layers-to-add
+            (if noerr
+                (condition-case nil
+                    (tp--put-layer-specs layer-spec)
+                  (error 'tp--unresolved))
+              (tp--put-layer-specs layer-spec))))
+      (unless (eq layers-to-add 'tp--unresolved)
+        (tp--stack-map-region
+         start end obj
+         (lambda (abs-start abs-end stack)
+           (let* ((actual-idx (if (< idx 0)
+                                  (max 0 (+ (length stack) 1 idx))
+                                (min idx (length stack))))
+                  (new-stack (append (seq-take stack actual-idx)
+                                     layers-to-add
+                                     (seq-drop stack actual-idx))))
+             (set-text-properties abs-start abs-end
+                                  (tp--stack-build-props new-stack)
+                                  obj))))
+        (or obj (cons start end))))))
 
-(defun tp-push-layer (start-or-string &optional end-or-layer layer-or-object object)
+(defun tp-push-layer (start-or-string &optional end-or-layer layer-or-object object noerror)
   "Push layer(s) to the top of the layer stack.
 
 This is equivalent to (tp-put-layer ... LAYER 0 ...).
 
 Calling conventions:
 1. Buffer/string region:
-   (tp-push-layer START END LAYER OBJECT)
+   (tp-push-layer START END LAYER OBJECT NOERROR)
 
 2. Entire string:
-   (tp-push-layer STRING LAYER)"
+   (tp-push-layer STRING LAYER NOERROR)
+
+A LAYER naming an undefined layer or group normally signals an
+error.  If NOERROR is non-nil, return nil instead of signaling when
+LAYER cannot be resolved; nothing is modified in that case.
+
+Returns what `tp-put-layer' returns: OBJECT when one was given (in
+particular the string in string forms), otherwise (START . END)."
   (pcase-let ((`(,start ,end ,obj ,layer)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-layer layer-or-object object) 1)))
-    (tp-put-layer start end layer 0 obj)))
+    (let ((noerr (if (stringp start-or-string) layer-or-object noerror)))
+      (tp-put-layer start end layer 0 obj noerr))))
 
 (defun tp-delete-layer (start-or-string &optional end-or-idx idx-or-object object)
   "Delete layer by name or index.
@@ -288,20 +377,26 @@ LAYER-NAME/IDX can be:
 - A symbol (layer name)
 - An integer (layer index, 0=top, -1=bottom)
 
-Only text inside [START, END) is modified."
+Only text inside [START, END) is modified.
+
+Returns the number of property runs modified.  A LAYER-NAME/IDX
+matching no layer never signals: unmatched runs are silently left
+alone and a return value of 0 means nothing matched at all."
   (pcase-let ((`(,start ,end ,obj ,layer-id)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-idx idx-or-object object) 1)))
-    (tp--stack-map-region
-     start end obj
-     (lambda (abs-start abs-end stack)
-       (when-let ((found (tp--get-layer-by-idx-or-name stack layer-id)))
-         (set-text-properties
-          abs-start abs-end
-          (tp--stack-build-props (-remove-at (car found) stack))
-          obj))))
-    nil))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when-let ((found (tp--get-layer-by-idx-or-name stack layer-id)))
+           (set-text-properties
+            abs-start abs-end
+            (tp--stack-build-props (-remove-at (car found) stack))
+            obj)
+           (setq count (1+ count)))))
+      count)))
 
 (defun tp-pop-layer (start-or-string &optional end-or-object object)
   "Pop the top layer from the layer stack.
@@ -313,7 +408,10 @@ Calling conventions:
    (tp-pop-layer START END OBJECT)
 
 2. Entire string:
-   (tp-pop-layer STRING)"
+   (tp-pop-layer STRING)
+
+Returns the number of property runs modified; 0 means no run in the
+region had a layer to pop."
   (pcase-let ((`(,start ,end ,obj)
                (tp--parse-layer-args
                 start-or-string (list end-or-object object) 0)))
@@ -398,19 +496,25 @@ TO-IDX is the target position (integer index):
 
 Both indices refer to positions before the move.
 The layer at FROM-ID is removed and inserted at TO-IDX position.
-OBJECT defaults to current buffer for region form."
+OBJECT defaults to current buffer for region form.
+
+Returns the number of property runs modified.  A FROM-ID matching no
+layer never signals: unmatched runs are silently left alone and a
+return value of 0 means nothing matched at all."
   (pcase-let ((`(,start ,end ,obj ,from-id ,to-idx)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-from from-or-to to-or-object object) 2)))
-    (tp--stack-map-region
-     start end obj
-     (lambda (abs-start abs-end stack)
-       (when-let ((new-stack (tp--move-layer-in-stack stack from-id to-idx)))
-         (set-text-properties abs-start abs-end
-                              (tp--stack-build-props new-stack)
-                              obj))))
-    nil))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when-let ((new-stack (tp--move-layer-in-stack stack from-id to-idx)))
+           (set-text-properties abs-start abs-end
+                                (tp--stack-build-props new-stack)
+                                obj)
+           (setq count (1+ count)))))
+      count)))
 
 (defun tp-raise-layer (start-or-string &optional end-or-idx idx-or-n n-or-object object)
   "Raise a layer by N positions in the stack.
@@ -424,38 +528,108 @@ Calling conventions:
 
 Positive N moves the layer up (toward top/visible).
 Negative N moves the layer down (toward bottom).
+N defaults to 1.  The resulting position is clamped to the stack.
 
 Uses `tp--raise-layer-in-stack' internally, which is built on
-`tp--move-layer-in-stack'."
+`tp--move-layer-in-stack'.
+
+Returns the number of property runs modified.  An IDX/LAYER-NAME
+matching no layer never signals: unmatched runs are silently left
+alone and a return value of 0 means nothing matched at all."
   (pcase-let ((`(,start ,end ,obj ,layer-id ,n)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-idx idx-or-n n-or-object object) 2)))
     (setq n (or n 1))
-    (tp--stack-map-region
-     start end obj
-     (lambda (abs-start abs-end stack)
-       (when-let ((new-stack (tp--raise-layer-in-stack stack layer-id n)))
-         (set-text-properties abs-start abs-end
-                              (tp--stack-build-props new-stack)
-                              obj))))
-    nil))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when-let ((new-stack (tp--raise-layer-in-stack stack layer-id n)))
+           (set-text-properties abs-start abs-end
+                                (tp--stack-build-props new-stack)
+                                obj)
+           (setq count (1+ count)))))
+      count)))
 
-(defun tp-rotate-layer (start-or-string &optional end-or-object object)
-  "Rotate layers, moving top layer to bottom.
+(defun tp-lower-layer (start-or-string &optional end-or-idx idx-or-n n-or-object object)
+  "Lower a layer by N positions in the stack.
+
+This is the mirror image of `tp-raise-layer': lowering by N is
+raising by -N.
 
 Calling conventions:
 1. Buffer/string region:
-   (tp-rotate-layer START END OBJECT)
+   (tp-lower-layer START END IDX/LAYER-NAME N OBJECT)
 
 2. Entire string:
-   (tp-rotate-layer STRING)
+   (tp-lower-layer STRING IDX/LAYER-NAME N)
 
-Uses `tp-move-layer' internally to move layer at index 0 to index -1."
+IDX/LAYER-NAME identifies the layer: a layer name symbol or an
+integer index (0 = top, negative indices count from the bottom, so
+-1 = bottom).
+
+Positive N moves the layer down (toward bottom).
+Negative N moves the layer up (toward top/visible).
+N defaults to 1.  The resulting position is clamped to the stack.
+
+OBJECT defaults to current buffer for region form.
+
+Returns the number of property runs modified.  An IDX/LAYER-NAME
+matching no layer never signals: unmatched runs are silently left
+alone and a return value of 0 means nothing matched at all."
+  (pcase-let ((`(,start ,end ,obj ,layer-id ,n)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-idx idx-or-n n-or-object object) 2)))
+    (setq n (or n 1))
+    (tp-raise-layer start end layer-id (- n) obj)))
+
+(defun tp-rotate-layer (start-or-string &optional end-or-direction object-or-count direction count)
+  "Rotate layers, by default moving the top layer to the bottom.
+
+Calling conventions:
+1. Buffer/string region:
+   (tp-rotate-layer START END OBJECT DIRECTION COUNT)
+
+2. Entire string:
+   (tp-rotate-layer STRING DIRECTION COUNT)
+
+DIRECTION is `down' or nil to move the top layer to the bottom (the
+historical behavior), or `up' to move the bottom layer to the top;
+any other value signals an error.  COUNT is the number of rotation
+steps and defaults to 1; a COUNT below 1 rotates nothing.  Layers
+keep their relative order; hidden layers rotate with the rest of the
+stack.
+
+OBJECT defaults to current buffer for region form.
+
+Returns the number of property runs modified; 0 means no run in the
+region had layers to rotate (or COUNT was below 1)."
   (pcase-let ((`(,start ,end ,obj)
                (tp--parse-layer-args
-                start-or-string (list end-or-object object) 0)))
-    (tp-move-layer start end 0 -1 obj)))
+                start-or-string
+                (list end-or-direction object-or-count) 0)))
+    (let* ((string-form (stringp start-or-string))
+           (dir (or (if string-form end-or-direction direction) 'down))
+           (cnt (or (if string-form object-or-count count) 1))
+           (applied 0))
+      (unless (memq dir '(up down))
+        (error "Invalid rotate direction: %S" dir))
+      (when (>= cnt 1)
+        (tp--stack-map-region
+         start end obj
+         (lambda (abs-start abs-end stack)
+           (when stack
+             (let* ((len (length stack))
+                    (k (mod (if (eq dir 'up) (- cnt) cnt) len))
+                    (new-stack (append (seq-drop stack k)
+                                       (seq-take stack k))))
+               (set-text-properties abs-start abs-end
+                                    (tp--stack-build-props new-stack)
+                                    obj)
+               (setq applied (1+ applied)))))))
+      applied)))
 
 (defun tp-pin-layer (start-or-string &optional end-or-idx idx-or-object object)
   "Pin a layer to the top (make it visible).
@@ -467,7 +641,11 @@ Calling conventions:
 2. Entire string:
    (tp-pin-layer STRING IDX/LAYER-NAME)
 
-Uses `tp-move-layer' internally to move the specified layer to index 0 (top)."
+Uses `tp-move-layer' internally to move the specified layer to index 0 (top).
+
+Returns the number of property runs modified.  An IDX/LAYER-NAME
+matching no layer never signals: unmatched runs are silently left
+alone and a return value of 0 means nothing matched at all."
   (pcase-let ((`(,start ,end ,obj ,layer-id)
                (tp--parse-layer-args
                 start-or-string
@@ -484,19 +662,119 @@ Calling conventions:
 2. Entire string:
    (tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
 
-Uses `tp--switch-layers-in-stack' internally."
+Uses `tp--switch-layers-in-stack' internally.
+
+Returns the number of property runs modified.  When either layer is
+missing from a run's stack nothing signals: such runs are silently
+left alone and a return value of 0 means nothing matched at all."
   (pcase-let ((`(,start ,end ,obj ,id1 ,id2)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-id1 id1-or-id2 id2-or-object object) 2)))
-    (tp--stack-map-region
-     start end obj
-     (lambda (abs-start abs-end stack)
-       (when-let ((new-stack (tp--switch-layers-in-stack stack id1 id2)))
-         (set-text-properties abs-start abs-end
-                              (tp--stack-build-props new-stack)
-                              obj))))
-    nil))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when-let ((new-stack (tp--switch-layers-in-stack stack id1 id2)))
+           (set-text-properties abs-start abs-end
+                                (tp--stack-build-props new-stack)
+                                obj)
+           (setq count (1+ count)))))
+      count)))
+
+(defun tp-hide-layer (start-or-string &optional end-or-name name-or-object object)
+  "Hide layer NAME in region from START to END without removing it.
+
+Calling conventions:
+1. Buffer/string region:
+   (tp-hide-layer START END NAME OBJECT)
+
+2. Entire string:
+   (tp-hide-layer STRING NAME)
+
+NAME identifies the layer: a layer name symbol or an integer index
+into the full stack, hidden layers included (0 = top, -1 = bottom).
+
+A hidden layer stays in the stack -- it still counts for
+`tp-layer-count', appears in `tp-layer-list' and `tp-layer-stack-at'
+and can be moved, raised or lowered -- but it no longer renders: the
+text shows the properties of the topmost non-hidden layer instead.
+Hiding the currently visible top layer therefore reveals the next
+visible layer below it.  When every layer of a run is hidden the text
+keeps only the `tp-layers' bookkeeping property (so not even
+`tp-name' renders) while all layers stay queryable.  Use
+`tp-show-layer' to make a hidden layer render again.
+
+Hiddenness is stored as a `tp-hidden' flag entry inside the layer's
+plist in the `tp-layers' stack storage, so `tp-hidden' is a reserved
+property name inside layers, like `tp-name'.
+
+OBJECT defaults to current buffer for region form.
+
+Returns the number of property runs modified.  A NAME matching no
+layer never signals; runs whose match is already hidden are left
+alone as well, so a return value of 0 means nothing changed."
+  (pcase-let ((`(,start ,end ,obj ,name)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-name name-or-object object) 1)))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when-let ((found (tp--get-layer-by-idx-or-name stack name)))
+           (unless (tp--stack-hidden-p (cdr found))
+             (let ((new-stack (-replace-at (car found)
+                                           (append (list 'tp-hidden t)
+                                                   (cdr found))
+                                           stack)))
+               (set-text-properties abs-start abs-end
+                                    (tp--stack-build-props new-stack)
+                                    obj)
+               (setq count (1+ count)))))))
+      count)))
+
+(defun tp-show-layer (start-or-string &optional end-or-name name-or-object object)
+  "Show layer NAME in region from START to END, undoing `tp-hide-layer'.
+
+Calling conventions:
+1. Buffer/string region:
+   (tp-show-layer START END NAME OBJECT)
+
+2. Entire string:
+   (tp-show-layer STRING NAME)
+
+NAME identifies the layer: a layer name symbol or an integer index
+into the full stack, hidden layers included (0 = top, -1 = bottom).
+
+The layer's `tp-hidden' flag is removed.  When the shown layer sits
+above the currently visible top layer it becomes the rendered layer
+again, restoring its properties onto the text.
+
+OBJECT defaults to current buffer for region form.
+
+Returns the number of property runs modified.  A NAME matching no
+layer never signals; runs whose match is not hidden are left alone
+as well, so a return value of 0 means nothing changed."
+  (pcase-let ((`(,start ,end ,obj ,name)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-name name-or-object object) 1)))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when-let ((found (tp--get-layer-by-idx-or-name stack name)))
+           (when (tp--stack-hidden-p (cdr found))
+             (let ((new-stack (-replace-at (car found)
+                                           (tp--plist-remove (cdr found)
+                                                             'tp-hidden)
+                                           stack)))
+               (set-text-properties abs-start abs-end
+                                    (tp--stack-build-props new-stack)
+                                    obj)
+               (setq count (1+ count)))))))
+      count)))
 
 (defun tp--merge-layer-props (layers initial)
   "Merge the plists of LAYERS into the INITIAL plist and return it.
@@ -505,10 +783,11 @@ LAYERS is a list of (INDEX . PROPS) conses as returned by
 already present in the accumulator is never overwritten, and presence
 is tested with `plist-member' so an explicit nil value in a higher
 layer shadows lower layers' values.  `tp-name' keys of the merged
-layers are dropped (INITIAL may seed its own)."
+layers are dropped (INITIAL may seed its own), as are `tp-hidden'
+bookkeeping flags (see `tp-hide-layer')."
   (cl-reduce (lambda (acc layer)
                (cl-loop for (key val) on (cdr layer) by #'cddr
-                        unless (eq key 'tp-name)
+                        unless (memq key '(tp-name tp-hidden))
                         do (unless (plist-member acc key)
                              (setq acc (plist-put acc key val))))
                acc)

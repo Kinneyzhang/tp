@@ -101,9 +101,13 @@ For non-layer symbols, returns a list containing just that symbol."
                ((eq existing-tp-name layer-name)
                 (cond
                  ;; Parameterized layer - get property keys it would produce
-                 ;; We pass a dummy arg (t) since we only need the key names, not values
+                 ;; We pass dummy args (t) since we only need the key
+                 ;; names, not values
                  ((tp-layer-parameterized-p layer-name)
-                  (tp-layer-props-with-arg layer-name t nil)) ; arg=t, include-tp-name=nil
+                  (tp-layer-props-with-args
+                   layer-name
+                   (make-list (length (tp-layer-arglist layer-name)) t)
+                   nil)) ; include-tp-name=nil
                  ;; Non-parameterized layer
                  ((assoc layer-name tp-layer-alist)
                   (tp-layer-props layer-name nil)) ; include-tp-name=nil
@@ -116,7 +120,7 @@ For non-layer symbols, returns a list containing just that symbol."
                (layer-prop-value
                 (cond
                  ((tp-layer-parameterized-p layer-name)
-                  (tp-layer-props-with-arg layer-name layer-prop-value nil))
+                  (tp--layer-props-for-arg-value layer-name layer-prop-value nil))
                  ((assoc layer-name tp-layer-alist)
                   (tp-layer-props layer-name nil))
                  ((assoc layer-name tp-layer-groups)
@@ -155,7 +159,7 @@ Returns the face value that the layer adds, or nil if no face contribution."
     (let ((layer-props
            (cond
             ((tp-layer-parameterized-p layer-name)
-             (tp-layer-props-with-arg layer-name layer-prop-value nil))
+             (tp--layer-props-for-arg-value layer-name layer-prop-value nil))
             ((assoc layer-name tp-layer-alist)
              (tp-layer-props layer-name nil))
             ((assoc layer-name tp-layer-groups)
@@ -320,9 +324,11 @@ Format 1 - Non-parameterized simple (empty arglist, simple body):
   (define-tp tp-bold ()
     \\='(face bold))
 
-Format 2 - Parameterized simple (single argument, simple body):
+Format 2 - Parameterized simple (one or more arguments, simple body):
   (define-tp tp-space (pixel)
     \\=`(display (space :width (,pixel))))
+  (define-tp tp-colors (fg bg)
+    \\=`(face (:foreground ,fg :background ,bg)))
 
 Format 3 - Non-parameterized with reactive features
 \(requires $-prefixed variables):
@@ -340,7 +346,7 @@ Usage:
 
 ARGLIST must be either:
 - An empty list () for non-parameterized layers
-- A list containing exactly one symbol for parameterized layers
+- A list of one or more parameter symbols for parameterized layers
 
 BODY is either:
 - A single property list expression (simple format)
@@ -356,7 +362,7 @@ $-prefixed reactive symbols appearing in a PARAMETERIZED body do not
 create reactive dependencies (parameterized layers cannot be
 reactive); they are resolved to the current value of the corresponding
 variable each time the layer is evaluated via
-`tp-layer-props-with-arg'.
+`tp-layer-props-with-arg' or `tp-layer-props-with-args'.
 
 Note: NAME cannot be a built-in Emacs text property name like `face',
 `display', `invisible', etc. See `tp--builtin-text-properties' for the
@@ -386,18 +392,18 @@ complete list of reserved names."
            ;; Non-parameterized: empty arglist - store as (LAYER-NAME nil BODY-FORM)
            ((null arglist)
             `(tp--define-layer-unified ',name nil ,simple-body))
-           ;; Parameterized: single argument - store as (LAYER-NAME ARGLIST BODY-FORM)
-           ((and (= (length arglist) 1)
-                 (symbolp (car arglist)))
+           ;; Parameterized: one or more argument symbols - store as
+           ;; (LAYER-NAME ARGLIST BODY-FORM)
+           ((cl-every #'symbolp arglist)
             `(tp--define-layer-unified ',name ',arglist ',simple-body))
            (t
-            (error "define-tp ARGLIST must be empty or contain exactly one symbol"))))))))
+            (error "define-tp ARGLIST must be empty or a list of symbols"))))))))
 
 (defun tp--define-layer-unified (name arglist body)
   "Define a layer NAME with ARGLIST and BODY using unified structure.
 For non-parameterized layers, ARGLIST is nil and BODY is the evaluated plist.
-For parameterized layers, ARGLIST contains one symbol and BODY is the
-unevaluated form.
+For parameterized layers, ARGLIST is a list of one or more parameter
+symbols and BODY is the unevaluated form.
 Stores the layer in `tp-layer-alist' with format:
 \(LAYER-NAME ARGLIST BODY-FORM).
 
@@ -670,7 +676,7 @@ It follows the same format as `define-tp' for consistency.
 
 ARGLIST must be either:
 - An empty list () for non-parameterized groups
-- A list containing exactly one symbol for parameterized groups
+- A list of one or more parameter symbols for parameterized groups
 
 BODY contains the layer definitions, which should be quoted lists.
 
@@ -679,7 +685,7 @@ Format 1 - Non-parameterized (empty arglist):
     \\='(display \"🌑\")
     \\='(display \"🌕\"))
 
-Format 2 - Parameterized (with argument):
+Format 2 - Parameterized (with one or more arguments):
   (define-tps my-status (color)
     \\=`((face (:foreground ,color)))
     \\='(face (:weight bold)))
@@ -717,12 +723,11 @@ complete list of reserved names."
    ;; Non-parameterized: empty arglist
    ((null arglist)
     `(tp--define-layer-group-internal ',name nil (list ,@body)))
-   ;; Parameterized: single argument
-   ((and (= (length arglist) 1)
-         (symbolp (car arglist)))
+   ;; Parameterized: one or more argument symbols
+   ((cl-every #'symbolp arglist)
     `(tp--define-layer-group-unified ',name ',arglist '(list ,@body)))
    (t
-    (error "define-tps ARGLIST must be empty or contain exactly one symbol"))))
+    (error "define-tps ARGLIST must be empty or a list of symbols"))))
 
 ;; For backward compatibility, keep define-tp-group as an alias
 (defalias 'define-tp-group 'define-tps
@@ -812,9 +817,60 @@ where ARGLIST is a non-nil list of argument symbols."
          (not (null (car entry)))
          (cl-every #'symbolp (car entry)))))
 
+(defun tp-layer-arglist (layer-name)
+  "Return the parameter list of parameterized layer LAYER-NAME.
+Returns nil when LAYER-NAME is not a parameterized layer (including
+non-parameterized and undefined layers).  The returned list is a copy
+of the ARGLIST given to `define-tp', e.g. (fg bg) for a
+two-parameter layer."
+  (when (tp-layer-parameterized-p layer-name)
+    (copy-sequence (car (cdr (assoc layer-name tp-layer-alist))))))
+
+(defun tp-layer-props-with-args (layer-name args &optional include-tp-name)
+  "Return properties for parameterized layer LAYER-NAME with ARGS.
+ARGS is a list of argument values bound positionally (via `cl-progv',
+so dynamically) to the layer's parameters while the stored body form
+is evaluated.  Extra values are ignored; missing ones leave their
+parameter unbound, which signals an error if the body refers to it.
+If INCLUDE-TP-NAME is non-nil, appends `tp-name' property to identify
+the layer.
+Recursively expands any nested layer names in the returned plist.
+$-prefixed reactive symbols in the body are resolved to the current
+values of their variables at evaluation time; they do not create
+reactive dependencies (parameterized layers cannot be reactive).
+Signals an error naming the cycle if layer references are cyclic.
+The returned plist is a fresh copy: mutating it does not affect the
+stored layer definition.
+Returns nil when LAYER-NAME is not a parameterized layer."
+  (when (tp-layer-parameterized-p layer-name)
+    (let* ((entry (cdr (assoc layer-name tp-layer-alist)))
+           (arglist (car entry))
+           (body (cadr entry)))
+      (tp--check-layer-cycle layer-name)
+      (let* ((tp--layer-expansion-stack
+              (cons layer-name tp--layer-expansion-stack))
+             ;; Evaluate the body with all parameters bound.  `eval'
+             ;; without a lexical environment sees the dynamic
+             ;; bindings established by `cl-progv'.
+             (plist (cl-progv arglist args (eval body))))
+        (when plist
+          ;; Recursively expand nested layer names
+          (when (tp--plist-has-layer-key-p plist)
+            (setq plist (tp--expand-layer-in-plist plist)))
+          ;; Resolve $-prefixed reactive symbols to their current values
+          ;; so they never leak literally into the returned props.
+          (when (tp--collect-reactive-symbols plist)
+            (setq plist (tp--resolve-reactive-symbols plist)))
+          (copy-tree
+           (if include-tp-name
+               (append plist (list 'tp-name layer-name))
+             plist)))))))
+
 (defun tp-layer-props-with-arg (layer-name arg &optional include-tp-name)
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
+This is the single-argument convenience over
+`tp-layer-props-with-args', equivalent to calling it with (list ARG).
 If INCLUDE-TP-NAME is non-nil, appends `tp-name' property to identify
 the layer.
 Recursively expands any nested layer names in the returned plist.
@@ -824,29 +880,19 @@ reactive dependencies (parameterized layers cannot be reactive).
 Signals an error naming the cycle if layer references are cyclic.
 The returned plist is a fresh copy: mutating it does not affect the
 stored layer definition."
-  (when-let ((entry (cdr (assoc layer-name tp-layer-alist))))
-    ;; entry is (ARGLIST BODY-FORM)
-    (let ((arglist (car entry))
-          (body (cadr entry)))
-      (when arglist  ; Only for parameterized layers
-        (tp--check-layer-cycle layer-name)
-        (let* ((tp--layer-expansion-stack
-                (cons layer-name tp--layer-expansion-stack))
-               (arg-sym (car arglist))
-               ;; Evaluate the body with the argument bound
-               (plist (eval `(let ((,arg-sym ',arg)) ,body))))
-          (when plist
-            ;; Recursively expand nested layer names
-            (when (tp--plist-has-layer-key-p plist)
-              (setq plist (tp--expand-layer-in-plist plist)))
-            ;; Resolve $-prefixed reactive symbols to their current values
-            ;; so they never leak literally into the returned props.
-            (when (tp--collect-reactive-symbols plist)
-              (setq plist (tp--resolve-reactive-symbols plist)))
-            (copy-tree
-             (if include-tp-name
-                 (append plist (list 'tp-name layer-name))
-               plist))))))))
+  (tp-layer-props-with-args layer-name (list arg) include-tp-name))
+
+(defun tp--layer-props-for-arg-value (layer-name value &optional include-tp-name)
+  "Return props for parameterized LAYER-NAME given a stored VALUE.
+When LAYER-NAME takes more than one parameter and VALUE is a proper
+list, VALUE is treated as the full argument list (as stored by the
+plist-style spec (LAYER-NAME (ARG1 ARG2 ...))); otherwise VALUE is
+the single argument (the single-parameter behavior).
+INCLUDE-TP-NAME is passed through."
+  (if (and (proper-list-p value)
+           (> (length (tp-layer-arglist layer-name)) 1))
+      (tp-layer-props-with-args layer-name value include-tp-name)
+    (tp-layer-props-with-arg layer-name value include-tp-name)))
 
 (defun tp-group-props (group-name &optional include-tp-name)
   "Return list of properties for all layers in GROUP-NAME.
@@ -882,6 +928,13 @@ where ARGLIST is a non-nil list of argument symbols."
          (not (null (car entry)))
          (cl-every #'symbolp (car entry)))))
 
+(defun tp--group-arglist (group-name)
+  "Return the parameter list of parameterized group GROUP-NAME.
+Returns nil when GROUP-NAME is not a parameterized group.  The
+returned list is a copy of the ARGLIST given to `define-tps'."
+  (when (tp-group-parameterized-p group-name)
+    (copy-sequence (car (cdr (assoc group-name tp-layer-groups))))))
+
 (defun tp--group-anonymous-props (plist)
   "Normalize anonymous-layer PLIST from a parameterized group element.
 Expands nested layer names, resolves $-prefixed reactive symbols to
@@ -913,10 +966,13 @@ Returns nil if SPEC cannot be interpreted."
    ((not (consp spec)) nil)
    ;; (LAYER-NAME ARG ...) - defined layer at the head
    ((and (symbolp (car spec)) (tp--is-layer-name-p (car spec)))
-    (let ((layer-name (car spec))
-          (layer-arg (cadr spec)))
+    (let ((layer-name (car spec)))
       (if (tp-layer-parameterized-p layer-name)
-          (tp-layer-props-with-arg layer-name layer-arg include-tp-name)
+          ;; Bind as many arguments as the layer has parameters.
+          (tp-layer-props-with-args
+           layer-name
+           (-take (length (tp-layer-arglist layer-name)) (cdr spec))
+           include-tp-name)
         ;; Non-parameterized layer - arg should be t or ignored
         (tp-layer-props layer-name include-tp-name))))
    ;; ("NAME" :props PLIST) or ("NAME" . PLIST) - use the props part
@@ -933,26 +989,49 @@ Returns nil if SPEC cannot be interpreted."
     (tp--group-anonymous-props spec))
    (t nil)))
 
+(defun tp--group-props-with-args (group-name args &optional include-tp-name)
+  "Return list of properties for parameterized group GROUP-NAME with ARGS.
+ARGS is a list of argument values bound positionally (via `cl-progv',
+so dynamically) to the group's parameters while the stored body form
+is evaluated.  Each evaluated element is converted like
+`tp-group-props-with-arg' documents.  If INCLUDE-TP-NAME is non-nil,
+named layer references include tp-name.
+Returns nil when GROUP-NAME is not a parameterized group."
+  (when (tp-group-parameterized-p group-name)
+    (let* ((entry (cdr (assoc group-name tp-layer-groups)))
+           (arglist (car entry))
+           (body-form (cadr entry))
+           ;; Evaluate the body with all parameters bound - returns
+           ;; list of layer specs.
+           (layer-specs (cl-progv arglist args (eval body-form))))
+      ;; Convert layer specs to property lists
+      (mapcar (lambda (spec)
+                (tp--group-spec-to-props spec include-tp-name))
+              layer-specs))))
+
 (defun tp-group-props-with-arg (group-name arg &optional include-tp-name)
   "Return list of properties for parameterized group GROUP-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
+This is the single-argument convenience over the multi-argument path
+\(`tp--group-props-with-args'), equivalent to passing (list ARG).
 Each evaluated element may be a layer name symbol, a (LAYER-NAME ARG)
 reference, a named element (\"NAME\" . PLIST) / (\"NAME\" :props PLIST),
 or a raw property list (anonymous layer) as documented in `define-tps'.
 If INCLUDE-TP-NAME is non-nil, named layer references include tp-name.
 Returns a list of property lists for each layer in the group."
-  (when-let ((entry (cdr (assoc group-name tp-layer-groups))))
-    ;; entry is (ARGLIST BODY-FORM)
-    (let ((arglist (car entry))
-          (body-form (cadr entry)))
-      (when arglist  ; Only for parameterized groups
-        (let* ((arg-sym (car arglist))
-               ;; Evaluate the body with the argument bound - returns list of layer specs
-               (layer-specs (eval `(let ((,arg-sym ',arg)) ,body-form))))
-          ;; Convert layer specs to property lists
-          (mapcar (lambda (spec)
-                    (tp--group-spec-to-props spec include-tp-name))
-                  layer-specs))))))
+  (tp--group-props-with-args group-name (list arg) include-tp-name))
+
+(defun tp--group-props-for-arg-value (group-name value &optional include-tp-name)
+  "Return props list for parameterized GROUP-NAME given a stored VALUE.
+When GROUP-NAME takes more than one parameter and VALUE is a proper
+list, VALUE is treated as the full argument list (as stored by the
+plist-style spec (GROUP-NAME (ARG1 ARG2 ...))); otherwise VALUE is
+the single argument (the single-parameter behavior).
+INCLUDE-TP-NAME is passed through."
+  (if (and (proper-list-p value)
+           (> (length (tp--group-arglist group-name)) 1))
+      (tp--group-props-with-args group-name value include-tp-name)
+    (tp-group-props-with-arg group-name value include-tp-name)))
 
 (defun tp--is-layer-name-p (sym)
   "Return non-nil if SYM is a defined layer, parameterized layer, or group name."
@@ -982,15 +1061,18 @@ Returns the expanded plist."
          ((tp--is-layer-name-p key)
           (let ((layer-props
                  (cond
-                  ;; Parameterized layer - evaluate with the argument (val)
+                  ;; Parameterized layer - evaluate with the argument (val);
+                  ;; for multi-parameter layers a list VAL carries all args
                   ((tp-layer-parameterized-p key)
-                   (tp-layer-props-with-arg key val nil))  ; no tp-name
+                   (tp--layer-props-for-arg-value key val nil))  ; no tp-name
                   ;; Non-parameterized layer - val should be t
                   ((assoc key tp-layer-alist)
                    (tp-layer-props key nil))  ; no tp-name
-                  ;; Parameterized layer group - evaluate with the argument (val)
+                  ;; Parameterized layer group - evaluate with the argument (val);
+                  ;; for multi-parameter groups a list VAL carries all args
                   ((tp-group-parameterized-p key)
-                   (when-let ((layer-props-list (tp-group-props-with-arg key val t)))
+                   (when-let ((layer-props-list
+                               (tp--group-props-for-arg-value key val t)))
                      ;; Build layered structure: first layer at top, rest in tp-layers
                      (tp--build-layer-props layer-props-list)))
                   ;; Non-parameterized layer group - build layered structure
@@ -1013,6 +1095,18 @@ Returns the expanded plist."
         (tp--merge-duplicate-keys result)
       result)))
 
+(defun tp--strip-trailing-plist-nil (plist)
+  "Remove a lone trailing nil from odd-length PLIST.
+`tp--merge-duplicate-keys' pads an odd-length property spec (a flat
+\(LAYER ARG1 ARG2 EXTRA-PROP VAL) call for a multi-parameter layer)
+with a trailing nil value; strip it so the extra properties form a
+proper plist again."
+  (if (and plist
+           (cl-oddp (length plist))
+           (null (car (last plist))))
+      (butlast plist)
+    plist))
+
 (defun tp--resolve-props (props)
   "Resolve PROPS to a property list with layer metadata.
 PROPS can be:
@@ -1023,6 +1117,12 @@ PROPS can be:
   for parameterized layers
 - A list starting with (LAYER-NAME ARG EXTRA-PROPS...) where extra properties
   are merged with the layer properties
+- For multi-parameter layers/groups, (LAYER-NAME ARG1 ARG2 ...
+  EXTRA-PROPS...) binds as many leading elements as the layer has
+  parameters; alternatively (LAYER-NAME (ARG1 ARG2 ...) EXTRA-PROPS...)
+  passes all arguments as one list (recognized when the list's length
+  equals the layer's parameter count and the remaining elements form
+  an even-length plist)
 - A plist with layer names at any position - they will be expanded inline
 - A plist (handles anonymous layers with reactive variables)
 
@@ -1032,8 +1132,10 @@ If PROPS is a symbol:
 
 If PROPS is (LAYER-NAME ARG) or (LAYER-NAME ARG EXTRA-PROPS...):
 - For non-parameterized layers: if ARG is t, returns the layer properties
-- For parameterized layers: evaluates the body with ARG and returns the result
-- Extra properties after ARG are appended to the layer properties
+- For parameterized layers: evaluates the body with the argument(s)
+  and returns the result
+- Extra properties after the argument(s) are appended to the layer
+  properties
 
 If PROPS is a plist with layer names at any position:
 - Layer names are expanded inline with their properties
@@ -1055,32 +1157,54 @@ For group names, includes `tp-layers' property with the full layer stack."
    ;; Already a plist - check for reactive variables and add tp-name
    ((listp props)
     (let ((first-elem (car-safe props))
-          (second-elem (cadr props))
-          (extra-props (cddr props)))
+          (second-elem (cadr props)))
       (cond
        ;; Handle (layer-name arg ...) format for defined layers at the START
        ;; This includes both (layer-name arg) and (layer-name arg extra-prop val ...)
        ((and (>= (length props) 2)
              (tp--is-layer-name-p first-elem))
-        (let ((layer-props
-               (cond
-                ;; Parameterized layer - evaluate with the argument
-                ((tp-layer-parameterized-p first-elem)
-                 (tp-layer-props-with-arg first-elem second-elem nil))  ; no tp-name
-                ;; Non-parameterized layer - arg should be t, return the layer props
-                ;; (silently ignore non-t values for flexibility)
-                ((assoc first-elem tp-layer-alist)
-                 (tp-layer-props first-elem nil))  ; no tp-name
-                ;; Parameterized layer group - evaluate with the argument
-                ((tp-group-parameterized-p first-elem)
-                 (when-let ((layer-props-list (tp-group-props-with-arg first-elem second-elem t)))
-                   ;; Build layered structure: first layer at top, rest in tp-layers
-                   (tp--build-layer-props layer-props-list)))
-                ;; Non-parameterized layer group - build layered structure
-                ((assoc first-elem tp-layer-groups)
-                 (when-let ((layer-props-list (tp-group-props first-elem t)))
-                   ;; Build layered structure: first layer at top, rest in tp-layers
-                   (tp--build-layer-props layer-props-list))))))
+        (let* ((arity (cond ((tp-layer-parameterized-p first-elem)
+                             (length (tp-layer-arglist first-elem)))
+                            ((tp-group-parameterized-p first-elem)
+                             (length (tp--group-arglist first-elem)))
+                            ;; Non-parameterized: one slot is consumed
+                            ;; by the conventional `t' argument.
+                            (t 1)))
+               ;; Plist-style multi-arg spec (LAYER (ARG1 ... ARGN)
+               ;; EXTRA...): the element after the name carries all
+               ;; arguments when it is a list of exactly ARITY values
+               ;; and the remaining elements form an even-length plist.
+               (wrapped-args (and (> arity 1)
+                                  (proper-list-p second-elem)
+                                  (= (length second-elem) arity)
+                                  (cl-evenp (length (cddr props)))))
+               (args (if wrapped-args
+                         second-elem
+                       (-take arity (cdr props))))
+               (extra-props (if wrapped-args
+                                (cddr props)
+                              (tp--strip-trailing-plist-nil
+                               (-drop arity (cdr props)))))
+               (layer-props
+                (cond
+                 ;; Parameterized layer - evaluate with the argument(s)
+                 ((tp-layer-parameterized-p first-elem)
+                  (tp-layer-props-with-args first-elem args nil))  ; no tp-name
+                 ;; Non-parameterized layer - arg should be t, return the layer props
+                 ;; (silently ignore non-t values for flexibility)
+                 ((assoc first-elem tp-layer-alist)
+                  (tp-layer-props first-elem nil))  ; no tp-name
+                 ;; Parameterized layer group - evaluate with the argument(s)
+                 ((tp-group-parameterized-p first-elem)
+                  (when-let ((layer-props-list
+                              (tp--group-props-with-args first-elem args t)))
+                    ;; Build layered structure: first layer at top, rest in tp-layers
+                    (tp--build-layer-props layer-props-list)))
+                 ;; Non-parameterized layer group - build layered structure
+                 ((assoc first-elem tp-layer-groups)
+                  (when-let ((layer-props-list (tp-group-props first-elem t)))
+                    ;; Build layered structure: first layer at top, rest in tp-layers
+                    (tp--build-layer-props layer-props-list))))))
           ;; Recursively resolve extra properties (they may also contain layer names)
           (let ((expanded-props
                  (if (and layer-props extra-props)
@@ -1233,7 +1357,9 @@ Used by layer stack functions that need tp-name for identification.
 LAYER-SPEC can be:
 - A symbol (non-parameterized layer name from define-tp or
   tp--define-layer-internal)
-- A list (LAYER-NAME ARG) for parameterized layers from define-tp
+- A list (LAYER-NAME ARG ...) for parameterized layers from
+  define-tp, with exactly as many arguments as the layer has
+  parameters
 - A plist for inline layer definition
 - A list (NAME &rest PLIST) for named inline layer"
   (cond
@@ -1257,12 +1383,13 @@ LAYER-SPEC can be:
     (let ((name (car layer-spec))
           (rest (cdr layer-spec)))
       (cond
-       ;; Parameterized layer: (LAYER-NAME ARG)
+       ;; Parameterized layer: (LAYER-NAME ARG ...) with exactly as
+       ;; many arguments as the layer has parameters
        ((and (tp-layer-parameterized-p name)
-             (= (length rest) 1))
-        (or (tp-layer-props-with-arg name (car rest) t)  ; include tp-name
-            (error "Failed to resolve parameterized layer %S with arg %S" 
-                   name (car rest))))
+             (= (length rest) (length (tp-layer-arglist name))))
+        (or (tp-layer-props-with-args name rest t)  ; include tp-name
+            (error "Failed to resolve parameterized layer %S with args %S"
+                   name rest)))
        ;; Named inline layer: (NAME &rest PLIST)
        (rest
         (append rest (list 'tp-name name)))
@@ -1301,6 +1428,101 @@ First element is top layer, rest are in tp-layers."
   (if top
       (cons top belows)
     belows))
+
+(defun tp--describe-layer-data (name)
+  "Collect description data for layer NAME as a plist.
+Returns nil when NAME is not registered in `tp-layer-alist'.
+The returned plist has these keys:
+:name           NAME itself.
+:format         Storage format: `parameterized' (unified storage with
+                a non-empty arglist), `reactive' (flat storage with
+                reactive dependencies registered), `unified' (from
+                `define-tp' with an empty arglist) or `flat' (old
+                direct plist storage).
+:arglist        The parameter list for parameterized layers, else nil.
+:body           The raw stored body: the unevaluated BODY-FORM for
+                unified/parameterized layers, the stored plist for
+                flat/reactive layers.
+:props          The expanded properties from `tp-layer-props' (with
+                tp-name), or a placeholder string for parameterized
+                layers, which need arguments
+                \(see `tp-layer-props-with-args').
+:reactive-deps  List of reactive variable symbols NAME depends on,
+                from tp-reactive's `tp-reactive-deps' registry.
+:transform      Non-nil when a transform is registered for NAME in
+                `tp-layer-transforms'.
+:group          The group that generated NAME (from
+                `tp--group-generated-layers'), or nil."
+  (when-let ((entry (cdr (assoc name tp-layer-alist))))
+    (let* ((parameterized (tp-layer-parameterized-p name))
+           (reactive (tp--layer-has-reactive-deps-p name))
+           (unified (and (= (length entry) 2)
+                         (or (null (car entry))
+                             (and (listp (car entry))
+                                  (cl-every #'symbolp (car entry))))))
+           (format (cond (parameterized 'parameterized)
+                         (reactive 'reactive)
+                         (unified 'unified)
+                         (t 'flat)))
+           (arglist (when parameterized (tp-layer-arglist name)))
+           (body (if unified (cadr entry) entry))
+           (props (if parameterized
+                      "parameterized layer: expand with `tp-layer-props-with-args'"
+                    (tp-layer-props name t)))
+           (deps (cl-loop for dep in tp-reactive-deps
+                          when (assoc name (cdr dep))
+                          collect (car dep)))
+           (transform (and (assoc name tp-layer-transforms) t))
+           (group (cl-loop for (group-name . layers)
+                           in tp--group-generated-layers
+                           when (memq name layers)
+                           return group-name)))
+      (list :name name
+            :format format
+            :arglist arglist
+            :body body
+            :props props
+            :reactive-deps deps
+            :transform transform
+            :group group))))
+
+;;;###autoload
+(defun tp-describe-layer (name)
+  "Display a help buffer describing the tp layer NAME.
+NAME is a layer registered in `tp-layer-alist'.  Interactively,
+prompt with completion over the registered layers.
+The buffer shows the storage format (flat, unified, parameterized or
+reactive), the raw stored body, the expanded properties (or a
+placeholder for parameterized layers, which need arguments), the
+parameter list, the reactive variables the layer depends on, whether
+a transform is registered, and the group that generated the layer,
+if any."
+  (interactive
+   (list (intern (completing-read "Describe tp layer: "
+                                  (mapcar #'car tp-layer-alist)
+                                  nil t))))
+  (let ((data (tp--describe-layer-data name)))
+    (unless data
+      (user-error "No tp layer named `%s'" name))
+    (with-help-window (help-buffer)
+      (princ (format "%s is a tp layer.\n\n" name))
+      (princ (format "Storage format: %s\n" (plist-get data :format)))
+      (when (plist-get data :arglist)
+        (princ (format "Arguments:      %S\n" (plist-get data :arglist))))
+      (princ (format "Stored body:    %S\n" (plist-get data :body)))
+      (let ((props (plist-get data :props)))
+        (princ (format "Expanded props: %s\n"
+                       (if (stringp props) props (format "%S" props)))))
+      (princ (format "Reactive deps:  %s\n"
+                     (if (plist-get data :reactive-deps)
+                         (mapconcat #'symbol-name
+                                    (plist-get data :reactive-deps) ", ")
+                       "none")))
+      (princ (format "Transform:      %s\n"
+                     (if (plist-get data :transform) "yes" "no")))
+      (when (plist-get data :group)
+        (princ (format "Generated by:   group %s\n"
+                       (plist-get data :group)))))))
 
 (defun tp--get-layer-by-idx-or-name (layers idx-or-name)
   "Find layer in LAYERS by IDX-OR-NAME.

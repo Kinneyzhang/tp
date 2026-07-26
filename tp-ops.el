@@ -22,6 +22,7 @@
 (require 'cl-lib)
 (require 'dash)
 (require 'tp-core)
+(require 'tp-reactive)
 (require 'tp-layer)
 
 (defvar tp--tp-text-handler-function nil
@@ -110,6 +111,18 @@ Supports multiple calling conventions:
     (when props
       (setq props (or (tp--resolve-props props) props)))
     (list object start finish props)))
+
+(defun tp--ops-register-layer-buffer (props object)
+  "Record OBJECT in the reactive buffer registry for PROPS's layer.
+When PROPS carries a `tp-name' (a resolved layer application) and
+OBJECT is a buffer or nil (the current buffer), register that buffer
+under the layer's name so reactive updates can walk only registered
+buffers instead of scanning `buffer-list'.  String OBJECTs are not
+registered; see `tp-reactive-layer-buffers' for that gap."
+  (when-let ((layer-name (plist-get props 'tp-name)))
+    (when (or (null object) (bufferp object))
+      (tp-reactive--register-layer-buffer
+       layer-name (or object (current-buffer))))))
 
 (defun tp--apply-props-to-string (str start end props &optional merge-mode)
   "Apply PROPS to string STR from START to END, returning a NEW string.
@@ -215,6 +228,7 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
               (set-text-properties start finish props object)
             (cl-loop for (key val) on props by #'cddr
                      do (put-text-property start finish key val object))))
+        (tp--ops-register-layer-buffer props object)
         (cons start finish))))))
 
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
@@ -252,6 +266,7 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
        ;; Buffer: modify in place
        (t
         (set-text-properties start finish props object)
+        (tp--ops-register-layer-buffer props object)
         (cons start finish))))))
 
 (defun tp-add (start-or-string &optional end-or-prop props-or-val &rest rest)
@@ -331,6 +346,7 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
                                    (t val))))
                     (put-text-property pos next-pos key new-val object)))
               (setq pos next-pos))))
+        (tp--ops-register-layer-buffer props object)
         (cons start finish))))))
 
 (defun tp-get (start-or-string &optional end-or-property &rest args)

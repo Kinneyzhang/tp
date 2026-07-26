@@ -379,5 +379,417 @@ definitions cannot leak between tests."
     (should-error (tp-push-layer nil 'layer1))
     (should-error (tp-delete-layer 'not-a-position 5 'layer1))))
 
+;;; 0.3.0 S1: layer visibility (tp-hide-layer / tp-show-layer)
+
+(ert-deftest tp-stack-test-hide-top-reveals-next-visible ()
+  "Hiding the top layer renders the next visible layer's properties."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp lower () '(face bold))
+    (define-tp upper () '(face italic))
+    (tp-push-layer 1 6 'lower)
+    (tp-push-layer 1 6 'upper)
+    (should (= (tp-hide-layer 1 6 'upper) 1))
+    ;; The text now renders the lower layer.
+    (should (eq (get-text-property 1 'face) 'bold))
+    (should (eq (get-text-property 1 'tp-name) 'lower))
+    ;; The hidden layer is still in the stack for the queries.
+    (should (= (tp-layer-count 1 6) 2))
+    (should (equal (tp-layer-list 1 6) '(upper lower)))
+    (should (tp-layer-exists-p 1 6 'upper))))
+
+(ert-deftest tp-stack-test-show-restores-hidden-top ()
+  "Showing a hidden top layer restores its properties onto the text."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp lower () '(face bold))
+    (define-tp upper () '(face italic))
+    (tp-push-layer 1 6 'lower)
+    (tp-push-layer 1 6 'upper)
+    (tp-hide-layer 1 6 'upper)
+    (should (= (tp-show-layer 1 6 'upper) 1))
+    (should (eq (get-text-property 1 'face) 'italic))
+    (should (eq (get-text-property 1 'tp-name) 'upper))
+    ;; No bookkeeping flag leaks into the rendered properties.
+    (should-not (tp-stack-tests--has-prop-p 1 'tp-hidden))))
+
+(ert-deftest tp-stack-test-hide-all-layers-contract ()
+  "With every layer hidden only the tp-layers bookkeeping remains."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp lower () '(face bold))
+    (define-tp upper () '(face italic))
+    (tp-push-layer 1 6 'lower)
+    (tp-push-layer 1 6 'upper)
+    (should (= (tp-hide-layer 1 6 'upper) 1))
+    (should (= (tp-hide-layer 1 6 'lower) 1))
+    ;; No layer props render, not even tp-name.
+    (should (null (get-text-property 1 'face)))
+    (should (null (get-text-property 1 'tp-name)))
+    (should (tp-stack-tests--has-prop-p 1 'tp-layers))
+    ;; The whole stack stays queryable.
+    (should (= (tp-layer-count 1 6) 2))
+    (should (equal (tp-layer-list 1 6) '(upper lower)))
+    ;; Showing one layer again renders it.
+    (should (= (tp-show-layer 1 6 'lower) 1))
+    (should (eq (get-text-property 1 'face) 'bold))
+    (should (eq (get-text-property 1 'tp-name) 'lower))))
+
+(ert-deftest tp-stack-test-hide-missing-name-is-silent-noop ()
+  "Hiding or showing a non-existent layer returns 0 without signaling."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp layer1 () '(face bold))
+    (tp-push-layer 1 6 'layer1)
+    (let ((before (text-properties-at 1)))
+      (should (= (tp-hide-layer 1 6 'nope) 0))
+      (should (= (tp-show-layer 1 6 'nope) 0))
+      (should (equal (text-properties-at 1) before)))))
+
+(ert-deftest tp-stack-test-hide-already-hidden-returns-zero ()
+  "Hiding an already-hidden layer (or showing a visible one) counts 0."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp lower () '(face bold))
+    (define-tp upper () '(face italic))
+    (tp-push-layer 1 6 'lower)
+    (tp-push-layer 1 6 'upper)
+    (should (= (tp-show-layer 1 6 'upper) 0))   ; visible already
+    (should (= (tp-hide-layer 1 6 'upper) 1))
+    (should (= (tp-hide-layer 1 6 'upper) 0))   ; hidden already
+    (should (eq (get-text-property 1 'face) 'bold))))
+
+(ert-deftest tp-stack-test-hide-string-forms ()
+  "Whole-string and region-on-string forms of hide/show work 0-based."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp lower () '(face bold))
+      (define-tp upper () '(face italic))
+      (tp-push-layer str 'lower)
+      (tp-push-layer str 'upper)
+      (should (= (tp-hide-layer str 'upper) 1))
+      (should (eq (get-text-property 0 'tp-name str) 'lower))
+      (should (= (tp-show-layer 0 6 'upper str) 1))
+      (should (eq (get-text-property 0 'tp-name str) 'upper))
+      ;; Region form only touches [2, 5).
+      (should (= (tp-hide-layer 2 5 'upper str) 1))
+      (should (eq (get-text-property 0 'tp-name str) 'upper))
+      (should (eq (get-text-property 2 'tp-name str) 'lower))
+      (should (eq (get-text-property 5 'tp-name str) 'upper)))))
+
+(ert-deftest tp-stack-test-show-layer-above-visible-top ()
+  "Showing a hidden layer above the visible top makes it render again."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)
+    (tp-hide-layer 1 6 'lc)
+    (tp-hide-layer 1 6 'lb)
+    (should (eq (get-text-property 1 'tp-name) 'la))
+    ;; lc sits above the visible top (la); showing it wins again.
+    (should (= (tp-show-layer 1 6 'lc) 1))
+    (should (eq (get-text-property 1 'tp-name) 'lc))
+    (should (eq (get-text-property 1 'face) 'underline))))
+
+(ert-deftest tp-stack-test-hidden-layer-can-be-raised ()
+  "A hidden layer can be moved in the stack and shown later."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-hide-layer 1 6 'la)               ; hide the bottom layer
+    (should (= (tp-raise-layer 1 6 'la 1) 1))
+    ;; la is now on top but hidden, so lb still renders.
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lb)))
+    (should (eq (get-text-property 1 'tp-name) 'lb))
+    (should (= (tp-show-layer 1 6 'la) 1))
+    (should (eq (get-text-property 1 'tp-name) 'la))
+    (should (eq (get-text-property 1 'face) 'bold))))
+
+(ert-deftest tp-stack-test-hide-show-roundtrip-restores-storage ()
+  "A hide/show roundtrip restores the exact original properties."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp layer1 () '(face bold))
+    (tp-push-layer 1 6 'layer1)
+    (let ((before (text-properties-at 1)))
+      (tp-hide-layer 1 6 'layer1)
+      ;; All layers hidden: only bookkeeping remains.
+      (should (null (get-text-property 1 'tp-name)))
+      (tp-show-layer 1 6 'layer1)
+      (should (equal (text-properties-at 1) before))
+      (should-not (tp-stack-tests--has-prop-p 1 'tp-layers)))))
+
+(ert-deftest tp-stack-test-flatten-drops-tp-hidden-flag ()
+  "Flattening a stack with a hidden layer never leaks the tp-hidden flag."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp lower () '(face bold))
+    (define-tp upper () '(face italic))
+    (tp-push-layer 1 6 'lower)
+    (tp-push-layer 1 6 'upper)
+    (tp-hide-layer 1 6 'upper)
+    (tp-flatten-layers 1 6 'flat)
+    (should (eq (get-text-property 1 'tp-name) 'flat))
+    (should-not (tp-stack-tests--has-prop-p 1 'tp-hidden))
+    (should-not (tp-stack-tests--has-prop-p 1 'tp-layers))))
+
+;;; 0.3.0 S2: tp-lower-layer and extended tp-rotate-layer
+
+(ert-deftest tp-stack-test-lower-layer-moves-down ()
+  "Lowering by 1 swaps the layer with the one below it."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)               ; top->bottom: lc lb la
+    (should (= (tp-lower-layer 1 6 'lc 1) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lb lc la)))
+    (should (eq (get-text-property 1 'tp-name) 'lb))))
+
+(ert-deftest tp-stack-test-lower-layer-mirrors-raise ()
+  "Lowering then raising by the same N restores the stack order."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)
+    (let ((before (mapcar #'car (tp-layer-stack-at 1))))
+      (tp-lower-layer 1 6 'lc 2)
+      (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lb la lc)))
+      (tp-raise-layer 1 6 'lc 2)
+      (should (equal (mapcar #'car (tp-layer-stack-at 1)) before)))))
+
+(ert-deftest tp-stack-test-lower-layer-clamps-and-negates ()
+  "Lowering clamps at the bottom; a negative N raises instead."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)
+    (should (= (tp-lower-layer 1 6 'lc 99) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lb la lc)))
+    (should (= (tp-lower-layer 1 6 'lc -2) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lc lb la)))))
+
+(ert-deftest tp-stack-test-lower-layer-defaults-and-index ()
+  "N defaults to 1 and integer indexes address the stack (0 = top)."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp la () '(face bold))
+      (define-tp lb () '(face italic))
+      (tp-push-layer str 'la)
+      (tp-push-layer str 'lb)             ; top->bottom: lb la
+      (should (= (tp-lower-layer str 0) 1))
+      (should (equal (mapcar #'car (tp-layer-stack-at 0 str)) '(la lb)))
+      (should (eq (get-text-property 0 'tp-name str) 'la)))))
+
+(ert-deftest tp-stack-test-lower-layer-missing-returns-zero ()
+  "Lowering a non-existent layer is a silent no-op returning 0."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (tp-push-layer 1 6 'la)
+    (let ((before (text-properties-at 1)))
+      (should (= (tp-lower-layer 1 6 'nope 1) 0))
+      (should (equal (text-properties-at 1) before)))))
+
+(ert-deftest tp-stack-test-rotate-layer-default-unchanged ()
+  "With no new arguments rotate still moves the top layer to bottom."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)               ; top->bottom: lc lb la
+    (should (= (tp-rotate-layer 1 6) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lb la lc)))
+    (should (eq (get-text-property 1 'tp-name) 'lb))))
+
+(ert-deftest tp-stack-test-rotate-layer-up-inverts-down ()
+  "Rotating up moves the bottom layer to the top; up undoes down."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)
+    (should (= (tp-rotate-layer 1 6 nil 'up) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lc lb)))
+    (should (= (tp-rotate-layer 1 6 nil 'down) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lc lb la)))))
+
+(ert-deftest tp-stack-test-rotate-layer-count-and-wraparound ()
+  "COUNT rotates several steps; a full cycle restores the order."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (define-tp lc () '(face underline))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-push-layer 1 6 'lc)
+    (should (= (tp-rotate-layer 1 6 nil 'down 2) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(la lc lb)))
+    (should (= (tp-rotate-layer 1 6 nil 'up 2) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lc lb la)))
+    (should (= (tp-rotate-layer 1 6 nil 'down 3) 1))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1)) '(lc lb la)))))
+
+(ert-deftest tp-stack-test-rotate-layer-string-form-direction ()
+  "String form accepts DIRECTION and COUNT right after the string."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp la () '(face bold))
+      (define-tp lb () '(face italic))
+      (tp-push-layer str 'la)
+      (tp-push-layer str 'lb)             ; top->bottom: lb la
+      (should (= (tp-rotate-layer str 'up) 1))
+      (should (equal (mapcar #'car (tp-layer-stack-at 0 str)) '(la lb)))
+      (should (= (tp-rotate-layer str 'down 1) 1))
+      (should (equal (mapcar #'car (tp-layer-stack-at 0 str)) '(lb la))))))
+
+(ert-deftest tp-stack-test-rotate-layer-edge-arguments ()
+  "Invalid DIRECTION signals; COUNT below 1 and bare text return 0."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (tp-push-layer 1 4 'la)
+    (should-error (tp-rotate-layer 1 4 nil 'sideways))
+    (should (= (tp-rotate-layer 1 4 nil 'down 0) 0))
+    (should (= (tp-rotate-layer 4 6) 0))
+    (should (eq (get-text-property 1 'tp-name) 'la))))
+
+;;; 0.3.0 S3: tp-layer-stack-at
+
+(ert-deftest tp-stack-test-layer-stack-at-shape ()
+  "The stack at a position is (NAME . PROPS) conses, top first."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (should (equal (tp-layer-stack-at 1)
+                   '((lb . (face italic))
+                     (la . (face bold)))))))
+
+(ert-deftest tp-stack-test-layer-stack-at-hidden-marker ()
+  "Hidden layers carry a tp-hidden t entry in their PROPS."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (tp-hide-layer 1 6 'lb)
+    (let ((stack (tp-layer-stack-at 1)))
+      (should (equal (mapcar #'car stack) '(lb la)))
+      (should (eq (plist-get (cdr (nth 0 stack)) 'tp-hidden) t))
+      (should-not (plist-member (cdr (nth 1 stack)) 'tp-hidden)))))
+
+(ert-deftest tp-stack-test-layer-stack-at-string-positions ()
+  "String positions are 0-based; outside the layer the stack is nil."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp la () '(face bold))
+      (tp-put-layer 2 5 'la 0 str)
+      (should (null (tp-layer-stack-at 0 str)))
+      (should (equal (tp-layer-stack-at 2 str) '((la . (face bold)))))
+      (should (null (tp-layer-stack-at 5 str))))))
+
+(ert-deftest tp-stack-test-layer-stack-at-unnamed-and-bare ()
+  "Unnamed layers report a nil NAME; bare text reports nil."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (tp-push-layer 1 4 '(face bold))
+    (should (equal (tp-layer-stack-at 1) '((nil . (face bold)))))
+    (should (null (tp-layer-stack-at 5)))))
+
+;;; 0.3.0 S4: modified-interval counts and NOERROR
+
+(ert-deftest tp-stack-test-delete-layer-returns-run-count ()
+  "Delete returns how many property runs matched; 0 when none did."
+  (tp-stack-tests--with-env
+    (insert "abcdefghij")
+    (define-tp la () '(face bold))
+    (tp-push-layer 1 4 'la)
+    (tp-push-layer 6 9 'la)
+    (should (= (tp-delete-layer 1 9 'nope) 0))
+    (should (= (tp-delete-layer 1 9 'la) 2))
+    (should-not (tp-layer-exists-p 1 9 'la))))
+
+(ert-deftest tp-stack-test-pop-layer-returns-run-count ()
+  "Pop returns the number of runs that had a layer to pop."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp la () '(face bold))
+      (tp-put-layer 0 3 'la 0 str)
+      (should (= (tp-pop-layer 0 6 str) 1))
+      (should (= (tp-pop-layer 0 6 str) 0)))))
+
+(ert-deftest tp-stack-test-movement-ops-return-run-counts ()
+  "Move, raise, pin and switch return matched-run counts."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (define-tp lb () '(face italic))
+    (tp-push-layer 1 6 'la)
+    (tp-push-layer 1 6 'lb)
+    (should (= (tp-raise-layer 1 6 'nope 1) 0))
+    (should (= (tp-raise-layer 1 6 'la 1) 1))
+    (should (= (tp-pin-layer 1 6 'lb) 1))
+    (should (= (tp-move-layer 1 6 'la 0) 1))
+    (should (= (tp-move-layer 1 6 'nope 0) 0))
+    (should (= (tp-switch-layer 1 6 'la 'lb) 1))
+    (should (= (tp-switch-layer 1 6 'la 'nope) 0))))
+
+(ert-deftest tp-stack-test-put-layer-noerror ()
+  "With NOERROR an unresolvable LAYER returns nil and writes nothing."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp la () '(face bold))
+    (should-error (tp-put-layer 1 6 'undefined-x 0))
+    (should (null (tp-put-layer 1 6 'undefined-x 0 nil t)))
+    (should (null (text-properties-at 1)))
+    ;; A resolvable layer with NOERROR still applies normally.
+    (should (tp-put-layer 1 6 'la 0 nil t))
+    (should (eq (get-text-property 1 'tp-name) 'la))))
+
+(ert-deftest tp-stack-test-push-layer-noerror-both-forms ()
+  "NOERROR works for push in region and string forms."
+  (tp-stack-tests--with-env
+    (let ((str (copy-sequence "abcdef")))
+      (define-tp la () '(face bold))
+      (should-error (tp-push-layer str 'undefined-x))
+      (should (null (tp-push-layer str 'undefined-x t)))
+      (should (null (tp-put-layer str 'undefined-x 0 t)))
+      (should (null (text-properties-at 0 str)))
+      ;; The string form still returns the string on success.
+      (should (eq (tp-push-layer str 'la t) str))
+      (should (eq (get-text-property 0 'tp-name str) 'la)))
+    (insert "abcdef")
+    (should (null (tp-push-layer 1 6 'undefined-x nil t)))
+    (should (null (text-properties-at 1)))))
+
 (provide 'tp-stack-tests)
 ;;; tp-stack-tests.el ends here

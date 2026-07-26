@@ -40,6 +40,99 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
 Each entry is a list (LAYER-NAME CHANGED-SYMBOLS WHERE TP-TEXT-AFFECTED).
 Entries are created and widened by `tp--queue-batch-update'.")
 
+(defvar tp--layer-buffers (make-hash-table :test 'equal)
+  "Hash table mapping layer names to buffers showing their regions.
+Keys are layer names; values are lists of buffers registered via
+`tp-reactive--register-layer-buffer'.  Reactive updates walk only
+these buffers instead of scanning `buffer-list' (see
+`tp-reactive-layer-buffers').  A key holding an empty list means
+\"known: no buffer shows this layer\", which is distinct from an
+absent key (`unknown').")
+
+(defvar tp--layer-buffers-hook-installed nil
+  "Non-nil once the registry's `kill-buffer-hook' pruner is installed.")
+
+(defun tp-reactive--install-kill-buffer-hook ()
+  "Install the global `kill-buffer-hook' pruning the buffer registry.
+Idempotent; guarded by `tp--layer-buffers-hook-installed'."
+  (unless tp--layer-buffers-hook-installed
+    (add-hook 'kill-buffer-hook #'tp-reactive--prune-killed-buffer)
+    (setq tp--layer-buffers-hook-installed t)))
+
+(defun tp-reactive--prune-killed-buffer ()
+  "Drop the buffer being killed from `tp--layer-buffers'.
+Runs on `kill-buffer-hook' with the dying buffer current.  The layer
+entries themselves are kept: an entry left with an empty list means
+\"known: no buffer shows this layer\", not `unknown'."
+  (let ((buf (current-buffer)))
+    (maphash (lambda (layer bufs)
+               (when (memq buf bufs)
+                 (puthash layer (delq buf bufs) tp--layer-buffers)))
+             tp--layer-buffers)))
+
+(defun tp-reactive--register-layer-buffer (layer-name buffer)
+  "Register BUFFER as showing regions of layer LAYER-NAME.
+Idempotent: registering the same live BUFFER again keeps a single
+entry.  Dead buffers and a nil LAYER-NAME are ignored.  Installs the
+`kill-buffer-hook' pruner on first use.  See
+`tp-reactive-layer-buffers' for the consumer side of the registry."
+  (when (and layer-name (buffer-live-p buffer))
+    (tp-reactive--install-kill-buffer-hook)
+    (let ((bufs (gethash layer-name tp--layer-buffers)))
+      (unless (memq buffer bufs)
+        (puthash layer-name (cons buffer bufs) tp--layer-buffers)))))
+
+(defun tp-reactive-layer-buffers (layer-name)
+  "Return the live buffers registered as showing layer LAYER-NAME.
+Return a list of live buffers - possibly empty, meaning \"known: no
+buffer shows this layer\" - or the symbol `unknown' when LAYER-NAME
+has no registry entry at all.  Killed buffers still recorded in the
+registry are dropped lazily by this accessor.
+
+KNOWN GAP: inserting an already-propertized STRING into a buffer
+bypasses the buffer operations that register buffers, so such a
+buffer is missing here until a reactive update's full-scan fallback
+finds it or `tp-reactive-track-buffer' is called on it."
+  (let ((bufs (gethash layer-name tp--layer-buffers 'unknown)))
+    (if (eq bufs 'unknown)
+        'unknown
+      (let ((live (cl-remove-if-not #'buffer-live-p bufs)))
+        (unless (= (length live) (length bufs))
+          (puthash layer-name live tp--layer-buffers))
+        live))))
+
+;;;###autoload
+(defun tp-reactive-track-buffer (&optional buffer)
+  "Scan BUFFER for layer regions and register it in the buffer registry.
+BUFFER defaults to the current buffer.  Walk BUFFER's `tp-name' text
+property intervals and register BUFFER for every layer name found, so
+reactive updates visit it without a full `buffer-list' scan.
+
+Call this after inserting an already-propertized string into a
+buffer: string application bypasses the buffer operations that
+register buffers (see `tp-reactive-layer-buffers'), and this command
+closes that gap.  Return the list of layer names registered, in
+buffer order."
+  (interactive)
+  (let ((buf (or buffer (current-buffer)))
+        (found nil))
+    (with-current-buffer buf
+      (save-excursion
+        (let ((pos (point-min))
+              (max (point-max)))
+          (while (< pos max)
+            (let ((name (get-text-property pos 'tp-name))
+                  (next (or (next-single-property-change pos 'tp-name nil max)
+                            max)))
+              (when (and name (not (member name found)))
+                (tp-reactive--register-layer-buffer name buf)
+                (push name found))
+              (setq pos next))))))
+    (when (called-interactively-p 'interactive)
+      (message "tp: tracking %d layer(s) in %s"
+               (length found) (buffer-name buf)))
+    (nreverse found)))
+
 (defvar tp--batch-update-active nil
   "When non-nil, we are inside a `tp-with-batch-updates' form.")
 
@@ -122,7 +215,11 @@ Only the reactive portions of the properties are stored for each variable."
   ;; Also clean up layer watchers, computed properties, and data
   (tp--unregister-layer-watchers layer-name)
   (tp--unregister-layer-computed layer-name)
-  (tp--unregister-layer-data layer-name))
+  (tp--unregister-layer-data layer-name)
+  ;; Drop the layer's buffer-registry entry: an undefined (or about to
+  ;; be redefined) layer must not linger as stale "known" state; the
+  ;; next update or refresh falls back to a learning full scan.
+  (remhash layer-name tp--layer-buffers))
 
 (defun tp--layer-has-reactive-deps-p (layer-name)
   "Return non-nil if LAYER-NAME has reactive dependencies registered.
@@ -366,7 +463,8 @@ it to allow re-definition to change initial values."
   (setq tp-reactive-deps nil)
   (setq tp-layer-watchers nil)
   (setq tp-layer-computed nil)
-  (setq tp-layer-data nil))
+  (setq tp-layer-data nil)
+  (clrhash tp--layer-buffers))
 
 (provide 'tp-reactive)
 ;;; tp-reactive.el ends here
