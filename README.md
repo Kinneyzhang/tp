@@ -1376,7 +1376,7 @@ Search forward/backward for text with PROPERTY and apply FUNCTION **only to the 
 - **PROPERTY** is the text property to search for.
 - **VALUE** is the optional value to match; nil means search for PROPERTY without matching value.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
-- **TIMES** is the number of searches, defaulting to 1. The function searches TIMES times but only applies FUNCTION to the last (Nth) match found.
+- **TIMES** is the number of searches, defaulting to 1. The function searches TIMES times but only applies FUNCTION to the TIMES-th match. All-or-nothing: if fewer than TIMES matches exist, FUNCTION is not applied at all and the number of available matches is returned.
 - **START** and **END** define the search range; defaults are object start and end.
 - Returns the number of successful matches.
 

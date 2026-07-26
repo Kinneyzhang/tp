@@ -1363,7 +1363,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - **PROPERTY** 是要搜索的文本属性。
 - **VALUE** 为 nil 时，表示搜索 PROPERTY 属性，不用匹配值。
 - **OBJECT** 默认是当前 buffer 或指定的字符串或指定的 buffer。
-- **TIMES** 表示向前/向后搜索几次，默认搜索一次。该函数会搜索 TIMES 次，但仅对找到的最后（第 N 次）匹配应用 FUNCTION。
+- **TIMES** 表示向前/向后搜索几次，默认搜索一次。该函数会搜索 TIMES 次，但仅对第 TIMES 个匹配应用 FUNCTION。要么全有要么全无：当匹配数量不足 TIMES 时，完全不应用 FUNCTION，仅返回实际找到的匹配数量。
 - **START** 和 **END** 默认为 OBJECT 的起始和结束位置。
 - 返回成功匹配的数量。
 

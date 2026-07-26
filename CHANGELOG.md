@@ -140,6 +140,13 @@ Search and navigation (tp-search):
   were previously skipped).
 - The triplicated ~38-line replacement lambda was extracted into one
   shared helper.
+- `tp-forward-do` / `tp-backward-do` shortfall is now all-or-nothing on
+  both paths: TIMES targets the TIMES-th match specifically, so when
+  fewer matches exist nothing is applied and the available count is
+  returned. String paths previously acted on the last available match —
+  the wrong target; the two legacy tests codifying that
+  (`tp-test-forward-do-on-string-with-range` and its backward twin)
+  were updated.
 
 Reactive rendering (tp-reactive / tp-render):
 
@@ -171,15 +178,6 @@ Test infrastructure:
   registries including `tp-layer-transforms` (previously leaked across
   tests); the suite passes in randomized order.
 - `tp-tests.el` header and `provide` renamed to match its file name.
-
-### Known divergences
-
-- On shortfall (fewer than TIMES matches in the range),
-  `tp-forward-do` / `tp-backward-do` string paths still apply the
-  function to the last available match while buffer paths apply
-  nothing. Two legacy tests codify the string behavior
-  (`tp-test-forward-do-on-string-with-range` and its backward twin), so
-  it was left unchanged; unifying it is a pending semantics decision.
 
 ### Added
 

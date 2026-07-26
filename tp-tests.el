@@ -718,7 +718,10 @@ leak between tests regardless of how BODY exits."
       (should (equal (substring str 12 17) "HELLO")))))
 
 (ert-deftest tp-test-forward-do-on-string-with-range ()
-  "Test tp-forward-do on string with start/end range."
+  "Test tp-forward-do on string with start/end range.
+TIMES targets the TIMES-th match specifically; with only one match in
+range, asking for the 2nd applies nothing (all-or-nothing, matching
+the buffer path) and returns the available count."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
@@ -727,8 +730,8 @@ leak between tests regardless of how BODY exits."
       (should (= count 1))  ; Only one match in range 6-17
       ;; First match should NOT be upcased
       (should (equal (substring str 0 5) "hello"))
-      ;; Second match should be upcased
-      (should (equal (substring str 12 17) "HELLO")))))
+      ;; The requested 2nd match does not exist: nothing is applied
+      (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-forward-do-function-receives-start-end ()
   "Test tp-forward-do passes start and end to function."
@@ -776,16 +779,17 @@ leak between tests regardless of how BODY exits."
       (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-backward-do-on-string-with-range ()
-  "Test tp-backward-do on string with start/end range."
+  "Test tp-backward-do on string with start/end range.
+All-or-nothing: with one match in range, requesting the 2nd applies
+nothing and returns the available count."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
     ;; Search only in range 0-10 (before second match)
     (let ((count (tp-backward-do #'upcase 'marker nil str 2 0 10)))
       (should (= count 1))  ; Only one match in range 0-10
-      ;; First match should be upcased
-      (should (equal (substring str 0 5) "HELLO"))
-      ;; Second match should NOT be upcased
+      ;; The requested 2nd match does not exist: nothing is applied
+      (should (equal (substring str 0 5) "hello"))
       (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-backward-do-function-receives-start-end ()

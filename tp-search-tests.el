@@ -170,6 +170,40 @@ Old code silently wrote 10 chars, yielding \"hellohellod\"."
     (should (= (tp-search-map #'upcase 'marker nil str) 2))
     (should (equal (substring-no-properties str) "HELLO world HELLO"))))
 
+;;; B43: -do shortfall is all-or-nothing on strings and buffers alike
+
+(ert-deftest tp-search-test-forward-do-shortfall-string ()
+  "Requesting the Nth match when fewer exist applies nothing (string).
+The count of available matches is still returned."
+  (let ((str (copy-sequence "hello world")))
+    (tp-set 0 5 '(marker t) str)
+    (should (= (tp-forward-do #'upcase 'marker nil str 3) 1))
+    (should (equal (substring-no-properties str) "hello world"))))
+
+(ert-deftest tp-search-test-forward-do-shortfall-buffer ()
+  "Requesting the Nth match when fewer exist applies nothing (buffer)."
+  (with-temp-buffer
+    (insert "hello world")
+    (put-text-property 1 6 'marker t)
+    (should (= (tp-forward-do #'upcase 'marker t nil 3) 1))
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "hello world"))))
+
+(ert-deftest tp-search-test-backward-do-shortfall-string ()
+  "tp-backward-do shortfall applies nothing on strings."
+  (let ((str (copy-sequence "hello world")))
+    (tp-set 6 11 '(marker t) str)
+    (should (= (tp-backward-do #'upcase 'marker nil str 2) 1))
+    (should (equal (substring-no-properties str) "hello world"))))
+
+(ert-deftest tp-search-test-forward-do-exact-count-applies ()
+  "With exactly TIMES matches, FUNCTION is applied to the TIMES-th."
+  (let ((str (copy-sequence "aaa bbb aaa")))
+    (tp-set 0 3 '(marker t) str)
+    (tp-set 8 11 '(marker t) str)
+    (should (= (tp-forward-do #'upcase 'marker nil str 2) 2))
+    (should (equal (substring-no-properties str) "aaa bbb AAA"))))
+
 (ert-deftest tp-search-test-forward-do-buffer-longer-replacement-grows ()
   "Buffers may grow on longer replacements (delete-region + insert).
 Uses an explicit VALUE: the buffer paths of the -do functions match

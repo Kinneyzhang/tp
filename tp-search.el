@@ -377,7 +377,9 @@ VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
 START and END define the search range; defaults are object start and end.
 
-Returns the number of successful matches."
+FUNCTION is called only when the TIMES-th match exists; if fewer
+matches are available, nothing is applied.
+Returns the number of matches found (at most TIMES)."
   (let ((count (or times 1)))
     (cond
      ;; String object
@@ -390,7 +392,10 @@ Returns the number of successful matches."
                                                   (<= (cadr m) end-pos)))
                                            all-matches))
              (matches (seq-take filtered-matches count)))
-        (when matches
+        ;; All-or-nothing, mirroring the buffer path: FUNCTION targets
+        ;; the TIMES-th match specifically, so when fewer matches exist
+        ;; acting on a different one would hit the wrong target.
+        (when (= (length matches) count)
           (funcall function (car (last matches)) object))
         (length matches)))
      ;; Buffer or nil
@@ -530,7 +535,9 @@ VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
 START and END define the search range; defaults are object start and end.
 
-Returns the number of successful matches."
+FUNCTION is called only when the TIMES-th match exists; if fewer
+matches are available, nothing is applied.
+Returns the number of matches found (at most TIMES)."
   (let ((count (or times 1)))
     (cond
      ;; String object - reverse the matches
@@ -544,7 +551,8 @@ Returns the number of successful matches."
                                  (<= (cadr m) end-pos)))
                           all-matches))
              (matches (seq-take (nreverse filtered-matches) count)))
-        (when matches
+        ;; All-or-nothing; see tp--forward-do.
+        (when (= (length matches) count)
           (funcall function (car (last matches)) object))
         (length matches)))
      ;; Buffer or nil
