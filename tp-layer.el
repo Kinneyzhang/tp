@@ -879,8 +879,10 @@ two-parameter layer."
   "Return properties for parameterized layer LAYER-NAME with ARGS.
 ARGS is a list of argument values bound positionally (via `cl-progv',
 so dynamically) to the layer's parameters while the stored body form
-is evaluated.  Extra values are ignored; missing ones leave their
-parameter unbound, which signals an error if the body refers to it.
+is evaluated.  Extra values are ignored; passing fewer values than
+the layer has parameters signals a wrong-arity error (since Emacs 27
+`cl-progv' silently binds missing parameters to nil, so the arity is
+checked explicitly here).
 If INCLUDE-TP-NAME is non-nil, appends `tp-name' property to identify
 the layer.
 Recursively expands any nested layer names in the returned plist.
@@ -895,6 +897,9 @@ Returns nil when LAYER-NAME is not a parameterized layer."
     (let* ((entry (cdr (assoc layer-name tp-layer-alist)))
            (arglist (car entry))
            (body (cadr entry)))
+      (when (< (length args) (length arglist))
+        (error "tp layer %s takes %d argument(s), got %d"
+               layer-name (length arglist) (length args)))
       (tp--check-layer-cycle layer-name)
       (let* ((tp--layer-expansion-stack
               (cons layer-name tp--layer-expansion-stack))
@@ -1234,6 +1239,22 @@ For group names, includes `tp-layers' property with the full layer stack."
                                 (cddr props)
                               (tp--strip-trailing-plist-nil
                                (-drop arity (cdr props)))))
+               ;; ARG-1: wrong-arity parameterized calls must signal
+               ;; clearly instead of nil-binding missing parameters or
+               ;; applying excess positional args as garbage property
+               ;; keys.
+               (kind (cond ((tp-layer-parameterized-p first-elem) "layer")
+                           ((tp-group-parameterized-p first-elem) "group")))
+               (_arity-check
+                (when kind
+                  (when (< (length args) arity)
+                    (error "tp %s %s takes %d argument(s), got %d"
+                           kind first-elem arity (length args)))
+                  (when (and (not wrapped-args)
+                             extra-props
+                             (not (symbolp (car extra-props))))
+                    (error "tp %s %s takes %d argument(s); excess argument %S is not a property key"
+                           kind first-elem arity (car extra-props)))))
                (layer-props
                 (cond
                  ;; Parameterized layer - evaluate with the argument(s)
@@ -1439,6 +1460,13 @@ LAYER-SPEC can be:
         (or (tp-layer-props-with-args name rest t)  ; include tp-name
             (error "Failed to resolve parameterized layer %S with args %S"
                    name rest)))
+       ;; ARG-1: a parameterized layer with the wrong number of
+       ;; arguments must not fall through to the named-inline branch,
+       ;; which would build an odd-length plist and die with the
+       ;; cryptic "Odd length text property list".
+       ((tp-layer-parameterized-p name)
+        (error "tp layer %s expects %d args, got %d"
+               name (length (tp-layer-arglist name)) (length rest)))
        ;; Named inline layer: (NAME &rest PLIST)
        (rest
         (append rest (list 'tp-name name)))

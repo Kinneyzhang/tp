@@ -573,5 +573,89 @@
     (should-error (tp-describe-layer 'tp-layer-test-missing)
                   :type 'user-error)))
 
+;;; ARG-1: wrong-arity parameterized-layer calls signal clear errors
+
+(defmacro tp-layer-tests--with-colors (&rest body)
+  "Run BODY with the two-parameter test layer tp-lt-colors defined."
+  (declare (indent 0))
+  `(tp-layer-tests--with-clean
+     (define-tp tp-lt-colors (fg bg)
+       `(face (:foreground ,fg :background ,bg)))
+     ,@body))
+
+(ert-deftest tp-layer-test-props-with-args-missing-arg-errors ()
+  "tp-layer-props-with-args signals on fewer args than parameters.
+Since Emacs 27 `cl-progv' silently binds missing parameters to nil,
+so the old docstring's promised unbound-variable error could never
+fire; the arity is now checked explicitly (ARG-1)."
+  (tp-layer-tests--with-colors
+    (let ((err (should-error
+                (tp-layer-props-with-args 'tp-lt-colors '("red")))))
+      ;; Parens are literal in Emacs regexps.
+      (should (string-match-p "takes 2 argument(s), got 1" (cadr err))))
+    ;; Correct arity still works.
+    (should (equal (tp-layer-props-with-args 'tp-lt-colors
+                                             '("red" "blue"))
+                   '(face (:foreground "red" :background "blue"))))
+    ;; Extra values are still ignored, per the documented contract.
+    (should (equal (tp-layer-props-with-args 'tp-lt-colors
+                                             '("red" "blue" "green"))
+                   '(face (:foreground "red" :background "blue"))))))
+
+(ert-deftest tp-layer-test-tp-set-flat-missing-arg-errors ()
+  "The flat tp-set form with too few layer args signals, not nil-binds.
+Before ARG-1, (tp-set \"s\" \\='(layer \"red\")) on a two-parameter
+layer silently produced (:foreground \"red\" :background nil)."
+  (tp-layer-tests--with-colors
+    (should-error (tp-set "s" '(tp-lt-colors "red")))))
+
+(ert-deftest tp-layer-test-tp-set-flat-excess-arg-errors ()
+  "Flat-form excess positional args signal instead of corrupting props.
+Before ARG-1, the excess string fell into extra-props and was applied
+as a text-property KEY with value nil."
+  (tp-layer-tests--with-colors
+    (let ((err (should-error
+                (tp-set "gg" '(tp-lt-colors "red" "blue" "green")))))
+      (should (string-match-p "excess argument" (cadr err))))
+    ;; Correct-arity flat form is unchanged.
+    (should (equal (text-properties-at
+                    0 (tp-set "ok" '(tp-lt-colors "red" "blue")))
+                   '(face (:foreground "red" :background "blue"))))
+    ;; Legitimate extra PROPS after the args still work.
+    (should (equal (plist-get
+                    (text-properties-at
+                     0 (tp-set "ok" '(tp-lt-colors "red" "blue"
+                                                   help-echo "tip")))
+                    'help-echo)
+                   "tip"))
+    ;; The wrapped-args form with extra props is untouched as well.
+    (should (equal (plist-get
+                    (text-properties-at
+                     0 (tp-set "ok" '(tp-lt-colors ("red" "blue")
+                                                   help-echo "tip")))
+                    'help-echo)
+                   "tip"))))
+
+(ert-deftest tp-layer-test-stack-path-wrong-arity-clear-error ()
+  "The stack path signals a clear arity error, not \"Odd length ...\".
+Before ARG-1, (tp-push-layer s \\='(layer \"red\")) fell through
+tp--normalize-layer-spec's named-inline branch, producing the odd
+plist (\"red\" tp-name layer) and the cryptic error \"Odd length
+text property list\"."
+  (tp-layer-tests--with-colors
+    (let ((err (should-error
+                (tp-push-layer (copy-sequence "st")
+                               '(tp-lt-colors "red")))))
+      (should (string-match-p "expects 2 args, got 1" (cadr err))))
+    (let ((err (should-error
+                (tp--normalize-layer-spec '(tp-lt-colors "red")))))
+      (should (string-match-p "expects 2 args, got 1" (cadr err))))
+    ;; Correct arity through the stack path is unchanged.
+    (let ((s (copy-sequence "st")))
+      (tp-push-layer s '(tp-lt-colors "red" "blue"))
+      (should (equal (text-properties-at 0 s)
+                     '(face (:foreground "red" :background "blue")
+                       tp-name tp-lt-colors))))))
+
 (provide 'tp-layer-tests)
 ;;; tp-layer-tests.el ends here
