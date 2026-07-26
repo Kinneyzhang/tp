@@ -36,11 +36,47 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
   "Alist of data variables: (LAYER-NAME . (VAR-SYMBOL ...)).")
 
 (defvar tp--batch-update-pending nil
-  "When non-nil, reactive updates are being batched.
-This is a list of (LAYER-NAME . CHANGED-VARS) pairs pending update.")
+  "Queue of deferred reactive buffer re-renders.
+Each entry is a list (LAYER-NAME CHANGED-SYMBOLS WHERE TP-TEXT-AFFECTED).
+Entries are created and widened by `tp--queue-batch-update'.")
 
 (defvar tp--batch-update-active nil
   "When non-nil, we are inside a `tp-with-batch-updates' form.")
+
+(defvar tp--reactive-updating nil
+  "Non-nil while a reactive update is being applied.
+Used as a reentrancy guard: when a variable is set from within an
+update (a computed variable being written, or the tp-text two-way
+sync), the nested change still updates the variable, but its
+re-render is queued in `tp--batch-update-pending' and flushed after
+the outermost update completes instead of recursing.")
+
+(defconst tp--compute-error (make-symbol "tp--compute-error")
+  "Sentinel distinguishing a failed compute from a legitimate nil result.
+Compute functions may legitimately return nil (e.g. a boolean feeding
+`invisible'), so error paths return this uninterned sentinel instead
+of nil.")
+
+(defun tp--queue-batch-update (layer-name symbol where tp-text-affected)
+  "Queue a deferred re-render of LAYER-NAME in `tp--batch-update-pending'.
+SYMBOL is the changed variable, WHERE the buffer for buffer-local
+changes (nil for global ones), TP-TEXT-AFFECTED non-nil when the
+change touches the layer's `tp-text'.  When the layer already has a
+pending entry, the entry is widened to the union of both changes:
+SYMBOL is added, TP-TEXT-AFFECTED is sticky (once set it stays set)
+and WHERE widens to nil (all buffers) as soon as two changes disagree
+on it."
+  (let ((existing (assoc layer-name tp--batch-update-pending)))
+    (if existing
+        (progn
+          (unless (memq symbol (nth 1 existing))
+            (setf (nth 1 existing) (cons symbol (nth 1 existing))))
+          (unless (eq (nth 2 existing) where)
+            (setf (nth 2 existing) nil))
+          (when tp-text-affected
+            (setf (nth 3 existing) t)))
+      (push (list layer-name (list symbol) where (and tp-text-affected t))
+            tp--batch-update-pending))))
 
 (defun tp--register-reactive-deps (layer-name reactive-symbols props)
   "Register REACTIVE-SYMBOLS as dependencies for LAYER-NAME.
@@ -246,7 +282,10 @@ COMPUTED is a list of (VAR-SYMBOL COMPUTE-FN) pairs."
 (defun tp--apply-initial-computed (compute)
   "Apply initial computed values using COMPUTE definitions.
 COMPUTE is a list of (VAR-SYMBOL COMPUTE-FN) pairs.
-Sets the global variables to their computed values."
+Sets the global variables to their computed values.
+A compute function returning nil is a legitimate result and is
+applied; only computes that signal an error are skipped (see
+`tp--compute-error')."
   (dolist (comp compute)
     (let* ((var-sym (car comp))
            (compute-fn (cadr comp))
@@ -254,8 +293,8 @@ Sets the global variables to their computed values."
                     (funcall compute-fn)
                   (error
                    (message "tp: initial compute error for %s: %s" var-sym err)
-                   nil))))
-      (when val
+                   tp--compute-error))))
+      (unless (eq val tp--compute-error)
         (set var-sym val)))))
 
 (defun tp--data-var-symbol (data-entry)

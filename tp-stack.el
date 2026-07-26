@@ -23,34 +23,194 @@
 (require 'tp-layer)
 (require 'tp-ops)
 
+;;; Shared argument parsing and region iteration
+
+(defun tp--parse-layer-args (start-or-string rest n)
+  "Normalize a layer operation's positional arguments.
+
+START-OR-STRING is the caller's first positional argument and REST the
+list of its remaining positional arguments, in order.  N is the number
+of operation-specific arguments the caller takes (for example 2 for
+`tp-put-layer's LAYER and IDX).
+
+Two calling conventions are supported:
+- (STRING ARG1 ... ARGN): operate on the whole STRING.
+- (START END ARG1 ... ARGN OBJECT): operate on a region of OBJECT,
+  where nil means the current buffer.
+
+Returns the list (START END OBJECT ARG1 ... ARGN) with START/END in
+OBJECT's native coordinates (0-based for strings, 1-based for
+buffers)."
+  (cond
+   ((stringp start-or-string)
+    (append (list 0 (length start-or-string) start-or-string)
+            (seq-take rest n)))
+   ((numberp start-or-string)
+    (append (list start-or-string (car rest) (nth (1+ n) rest))
+            (seq-take (cdr rest) n)))
+   (t (error "Invalid layer arguments: %S" (cons start-or-string rest)))))
+
+(defun tp--stack-map-region (start end object function)
+  "Call FUNCTION over each property run of [START, END) in OBJECT.
+
+OBJECT is a string, a buffer, or nil for the current buffer.
+FUNCTION receives (ABS-START ABS-END STACK): the run's bounds, clipped
+to [START, END) and expressed in OBJECT's native coordinates (0-based
+for strings, 1-based for buffers), and the run's layer stack as a list
+of layer plists, top layer first (empty for bare text).
+
+Returns the list of FUNCTION's non-nil results, in order.
+
+Unlike `tp-intervals-map', runs never extend beyond the requested
+region, positions are absolute for strings as well as buffers, and
+bare text is visited (with an empty STACK) so layers can be applied to
+previously property-less text."
+  (delq nil
+        (tp--map-intervals
+         object start end
+         (lambda (i-start i-end props)
+           (let* ((idx (-elem-index 'tp-layers props))
+                  (top (if idx
+                           (-remove-at-indices (list idx (1+ idx)) props)
+                         props))
+                  (belows (plist-get props 'tp-layers)))
+             (funcall function i-start i-end
+                      (tp--layer-stack-to-list top belows)))))))
+
+(defun tp--stack-build-props (layer-list)
+  "Build text properties from LAYER-LIST (top layer first).
+Like `tp--build-layer-props', but the `tp-layers' entry is only added
+when there are below-layers, so single-layer stacks do not carry a
+garbage (tp-layers nil) property.  Consumers must therefore tolerate
+an absent `tp-layers' property (both `plist-get' and
+`tp--stack-map-region' do)."
+  (cond
+   ((null layer-list) nil)
+   ((null (cdr layer-list)) (copy-sequence (car layer-list)))
+   (t (append (car layer-list)
+              (list 'tp-layers (cdr layer-list))))))
+
+;;; Queries
+
 (defun tp-region-layer-props (start end layer-name &optional object)
   "Return layer properties for LAYER-NAME in region from START to END.
 OBJECT defaults to current buffer.
-Returns a list of (START END PROPERTIES) for matching intervals."
-  (tp-intervals-map
-   (lambda (i-start i-end top belows)
+Returns a list of (START END PROPERTIES) for matching intervals, with
+positions in OBJECT's native coordinates (0-based for strings, 1-based
+for buffers) and clipped to the requested region."
+  (tp--stack-map-region
+   start end object
+   (lambda (abs-start abs-end stack)
      (when-let ((props (seq-find
                         (lambda (props)
                           (equal layer-name
                                  (plist-get props 'tp-name)))
-                        (append (list top) belows))))
-       (list (+ start i-start) (+ start i-end) props)))
-   start end object))
+                        stack)))
+       (list abs-start abs-end props)))))
 
-(defun tp--parse-layer-args (args)
-  "Parse flexible layer function arguments.
-Returns (START END LAYER-SPEC IDX OBJECT) for buffer/string range,
-or (STRING LAYER-SPEC IDX nil nil) for entire string."
+(defun tp-layer-list (start end &optional object)
+  "Return list of all layer names in region from START to END."
+  (let ((layers nil))
+    (tp--stack-map-region
+     start end object
+     (lambda (_abs-start _abs-end stack)
+       (dolist (layer stack)
+         (when-let ((name (plist-get layer 'tp-name)))
+           (cl-pushnew name layers :test #'equal)))))
+    (nreverse layers)))
+
+(defun tp-layer-count (start end &optional object)
+  "Return number of layers in region from START to END.
+OBJECT defaults to current buffer."
+  (let ((max-count 0))
+    (tp--stack-map-region
+     start end object
+     (lambda (_abs-start _abs-end stack)
+       (setq max-count (max max-count (length stack)))))
+    max-count))
+
+(defun tp-layer-exists-p (start end name &optional object)
+  "Return t if layer NAME exists in region from START to END.
+OBJECT defaults to current buffer."
+  (not (null (tp-region-layer-props start end name object))))
+
+(defun tp-layer-top (start end &optional object)
+  "Return the name of the topmost named layer in START..END of OBJECT.
+Scans the region's property runs in order and returns the `tp-name'
+of the first top layer that has one, so bare or unnamed runs (for
+example before a layer that starts mid-region) do not hide layers
+later in the region.  Returns nil when no run in the region has a
+named top layer.  OBJECT defaults to current buffer."
+  (car (tp--stack-map-region
+        start end object
+        (lambda (_abs-start _abs-end stack)
+          (plist-get (car stack) 'tp-name)))))
+
+;;; Layer spec normalization for tp-put-layer
+
+(defun tp--put-layer-specs (layer-spec)
+  "Normalize LAYER-SPEC into a list of layer plists for `tp-put-layer'.
+
+LAYER-SPEC can be:
+- a layer name or group name (symbol);
+- (LAYER-NAME ARG) or (GROUP-NAME ARG) for parameterized layers/groups;
+- an inline plist, e.g. (face bold) or (:foreground \"red\");
+- (NAME PROP VAL ...) for a named inline layer;
+- a list of any of the above.
+
+An inline plist is recognized by its even length together with a head
+that is a keyword or an ordinary property symbol (one that is not a
+defined layer or group name); a named inline layer has odd length
+\(NAME plus prop/value pairs)."
   (cond
-   ;; First arg is a string - apply to entire string
-   ;; (tp-put-layer string layer idx)
-   ((stringp (car args))
-    (list (car args) (cadr args) (caddr args) nil nil))
-   ;; First arg is a number - buffer/string region
-   ;; (tp-put-layer start end layer idx object)
-   ((numberp (car args))
-    (list (car args) (cadr args) (caddr args) (cadddr args) (nth 4 args)))
-   (t (error "Invalid arguments: %S" args))))
+   ;; Group name symbol.
+   ((and (symbolp layer-spec)
+         (assoc layer-spec tp-layer-groups))
+    (if (tp-group-parameterized-p layer-spec)
+        (error "Parameterized group %S requires an argument, use '(%S ARG)"
+               layer-spec layer-spec)
+      (tp-group-props layer-spec t)))   ; include tp-name for layer stack
+   ;; Any other symbol: a single layer name.
+   ((symbolp layer-spec)
+    (list (tp--normalize-layer-spec layer-spec)))
+   ;; (GROUP-NAME ARG): parameterized group.
+   ((and (consp layer-spec)
+         (symbolp (car layer-spec))
+         (= (safe-length layer-spec) 2)
+         (tp-group-parameterized-p (car layer-spec)))
+    (tp-group-props-with-arg (car layer-spec) (cadr layer-spec) t))
+   ;; (LAYER-NAME ARG): parameterized layer.
+   ((and (consp layer-spec)
+         (symbolp (car layer-spec))
+         (= (safe-length layer-spec) 2)
+         (tp-layer-parameterized-p (car layer-spec)))
+    (list (tp--normalize-layer-spec layer-spec)))
+   ;; Keyword-headed plist: a single inline layer.
+   ((and (consp layer-spec) (keywordp (car layer-spec)))
+    (list (tp--normalize-layer-spec layer-spec)))
+   ;; Even-length plist headed by an ordinary (non-layer) property
+   ;; symbol, e.g. (face bold): a single inline layer.
+   ((and (consp layer-spec)
+         (car layer-spec)
+         (symbolp (car layer-spec))
+         (not (tp--is-layer-name-p (car layer-spec)))
+         (proper-list-p layer-spec)
+         (cl-evenp (length layer-spec)))
+    (list layer-spec))
+   ;; List whose every element is itself a spec (a layer/group name or
+   ;; a list): multiple layers.
+   ((and (consp layer-spec)
+         (proper-list-p layer-spec)
+         (cl-every (lambda (el)
+                     (or (consp el) (tp--is-layer-name-p el)))
+                   layer-spec))
+    (apply #'append (mapcar #'tp--put-layer-specs layer-spec)))
+   ;; Anything else, including (NAME PROP VAL ...) named inline
+   ;; layers; tp--normalize-layer-spec signals on invalid specs.
+   (t
+    (list (tp--normalize-layer-spec layer-spec)))))
+
+;;; Mutators
 
 (defun tp-put-layer (start-or-string &optional end-or-layer layer-or-idx idx-or-object object)
   "Set layer(s) at a specific index position.
@@ -58,13 +218,15 @@ or (STRING LAYER-SPEC IDX nil nil) for entire string."
 Calling conventions:
 1. Buffer/string region:
    (tp-put-layer START END LAYER IDX OBJECT)
-   
+
 2. Entire string:
    (tp-put-layer STRING LAYER IDX)
 
 LAYER can be:
-- A symbol (layer name from tp-layer-alist or tp-layer-groups)
-- A plist (inline layer definition)
+- A symbol (layer name from `tp-layer-alist' or `tp-layer-groups')
+- A list (LAYER-NAME ARG) or (GROUP-NAME ARG) for parameterized
+  layers or groups
+- A plist (inline layer definition), e.g. (face bold)
 - A list (NAME &rest PLIST) for named inline layer
 - A list of the above for multiple layers
 
@@ -73,68 +235,26 @@ IDX specifies where to insert:
 - -1 means bottom
 - Other values insert at that position
 
-OBJECT defaults to current buffer for region form."
-  (let (start end layer-spec idx obj)
-    (cond
-     ;; Entire string form: (tp-put-layer string layer idx)
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            layer-spec end-or-layer
-            idx (or layer-or-idx 0)))
-     ;; Region form: (tp-put-layer start end layer idx object)
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-layer
-            layer-spec layer-or-idx
-            idx (or idx-or-object 0)
-            obj object)))
-    
-    ;; Normalize layer-spec to a list of layer property lists
-    (let ((layers-to-add
-           (cond
-            ;; Check if it's a group name
-            ((and (symbolp layer-spec)
-                  (assoc layer-spec tp-layer-groups))
-             (tp-group-props layer-spec t))  ; include tp-name for layer stack
-            ;; Single layer spec
-            ((or (symbolp layer-spec)
-                 (and (listp layer-spec)
-                      (or (keywordp (car layer-spec))
-                          (and (symbolp (car layer-spec))
-                               (cdr layer-spec)
-                               (not (listp (cadr layer-spec)))))))
-             (list (tp--normalize-layer-spec layer-spec)))
-            ;; List of layer specs (multiple layers)
-            ((and (listp layer-spec)
-                  (listp (car layer-spec)))
-             (mapcar #'tp--normalize-layer-spec layer-spec))
-            (t (list (tp--normalize-layer-spec layer-spec))))))
-      
-      ;; Apply layers at specified index
-      (if (tp-empty-p (or obj (current-buffer)))
-          ;; No existing properties
-          (set-text-properties start end
-                               (tp--build-layer-props layers-to-add)
-                               obj)
-        ;; Has existing properties
-        (tp-intervals-map
-         (lambda (i-start i-end top belows)
-           (let* ((current-stack (tp--layer-stack-to-list top belows))
-                  (actual-idx (cond
-                               ((= idx 0) 0)
-                               ((< idx 0) (max 0 (+ (length current-stack) 1 idx)))
-                               (t (min idx (length current-stack)))))
-                  ;; Insert new layers at the specified position
-                  (new-stack (append (seq-take current-stack actual-idx)
-                                     layers-to-add
-                                     (seq-drop current-stack actual-idx))))
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))
-         start end obj)))
+OBJECT defaults to current buffer for region form.  Only text inside
+\[START, END) is modified."
+  (pcase-let ((`(,start ,end ,obj ,layer-spec ,idx)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-layer layer-or-idx idx-or-object object) 2)))
+    (setq idx (or idx 0))
+    (let ((layers-to-add (tp--put-layer-specs layer-spec)))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (let* ((actual-idx (if (< idx 0)
+                                (max 0 (+ (length stack) 1 idx))
+                              (min idx (length stack))))
+                (new-stack (append (seq-take stack actual-idx)
+                                   layers-to-add
+                                   (seq-drop stack actual-idx))))
+           (set-text-properties abs-start abs-end
+                                (tp--stack-build-props new-stack)
+                                obj)))))
     (or obj (cons start end))))
 
 (defun tp-push-layer (start-or-string &optional end-or-layer layer-or-object object)
@@ -145,14 +265,14 @@ This is equivalent to (tp-put-layer ... LAYER 0 ...).
 Calling conventions:
 1. Buffer/string region:
    (tp-push-layer START END LAYER OBJECT)
-   
+
 2. Entire string:
    (tp-push-layer STRING LAYER)"
-  (cond
-   ((stringp start-or-string)
-    (tp-put-layer start-or-string end-or-layer 0))
-   ((numberp start-or-string)
-    (tp-put-layer start-or-string end-or-layer layer-or-object 0 object))))
+  (pcase-let ((`(,start ,end ,obj ,layer)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-layer layer-or-object object) 1)))
+    (tp-put-layer start end layer 0 obj)))
 
 (defun tp-delete-layer (start-or-string &optional end-or-idx idx-or-object object)
   "Delete layer by name or index.
@@ -160,37 +280,27 @@ Calling conventions:
 Calling conventions:
 1. Buffer/string region:
    (tp-delete-layer START END LAYER-NAME/IDX OBJECT)
-   
+
 2. Entire string:
    (tp-delete-layer STRING LAYER-NAME/IDX)
 
 LAYER-NAME/IDX can be:
 - A symbol (layer name)
-- An integer (layer index, 0=top, -1=bottom)"
-  (let (start end layer-id obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            layer-id end-or-idx))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-idx
-            layer-id idx-or-object
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (found (tp--get-layer-by-idx-or-name current-stack layer-id)))
-         (when found
-           (let ((new-stack (-remove-at (car found) current-stack)))
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))))
-     start end obj)
+- An integer (layer index, 0=top, -1=bottom)
+
+Only text inside [START, END) is modified."
+  (pcase-let ((`(,start ,end ,obj ,layer-id)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-idx idx-or-object object) 1)))
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (when-let ((found (tp--get-layer-by-idx-or-name stack layer-id)))
+         (set-text-properties
+          abs-start abs-end
+          (tp--stack-build-props (-remove-at (car found) stack))
+          obj))))
     nil))
 
 (defun tp-pop-layer (start-or-string &optional end-or-object object)
@@ -201,20 +311,20 @@ This is equivalent to (tp-delete-layer ... 0 ...).
 Calling conventions:
 1. Buffer/string region:
    (tp-pop-layer START END OBJECT)
-   
+
 2. Entire string:
    (tp-pop-layer STRING)"
-  (cond
-   ((stringp start-or-string)
-    (tp-delete-layer start-or-string 0))
-   ((numberp start-or-string)
-    (tp-delete-layer start-or-string end-or-object 0 object))))
+  (pcase-let ((`(,start ,end ,obj)
+               (tp--parse-layer-args
+                start-or-string (list end-or-object object) 0)))
+    (tp-delete-layer start end 0 obj)))
 
 (defun tp--move-layer-in-stack (stack from-id to-idx)
   "Move layer at FROM-ID to TO-IDX position in STACK.
 FROM-ID can be an integer index or a layer name symbol.
 TO-IDX must be an integer index.
-Both indices refer to positions before the move and can be negative (counting from end).
+Both indices refer to positions before the move and can be negative
+\(counting from end).
 TO-IDX is clamped to valid range (0 to stack length - 1) if out of bounds.
 Returns the new stack, or nil if FROM-ID is invalid."
   (let* ((len (length stack))
@@ -289,33 +399,17 @@ TO-IDX is the target position (integer index):
 Both indices refer to positions before the move.
 The layer at FROM-ID is removed and inserted at TO-IDX position.
 OBJECT defaults to current buffer for region form."
-  (let (start end from-id to-idx obj)
-    (cond
-     ;; Entire string form: (tp-move-layer string from-id to-idx)
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            from-id end-or-from
-            to-idx from-or-to))
-     ;; Region form: (tp-move-layer start end from-id to-idx object)
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-from
-            from-id from-or-to
-            to-idx to-or-object
-            obj object)))
-
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (new-stack (tp--move-layer-in-stack current-stack from-id to-idx)))
-         (when new-stack
-           (set-text-properties
-            (+ start i-start) (+ start i-end)
-            (tp--build-layer-props new-stack)
-            obj))))
-     start end obj)
+  (pcase-let ((`(,start ,end ,obj ,from-id ,to-idx)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-from from-or-to to-or-object object) 2)))
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (when-let ((new-stack (tp--move-layer-in-stack stack from-id to-idx)))
+         (set-text-properties abs-start abs-end
+                              (tp--stack-build-props new-stack)
+                              obj))))
     nil))
 
 (defun tp-raise-layer (start-or-string &optional end-or-idx idx-or-n n-or-object object)
@@ -324,39 +418,27 @@ OBJECT defaults to current buffer for region form."
 Calling conventions:
 1. Buffer/string region:
    (tp-raise-layer START END IDX/LAYER-NAME N OBJECT)
-   
+
 2. Entire string:
    (tp-raise-layer STRING IDX/LAYER-NAME N)
 
 Positive N moves the layer up (toward top/visible).
 Negative N moves the layer down (toward bottom).
 
-Uses `tp--raise-layer-in-stack' internally, which is built on `tp--move-layer-in-stack'."
-  (let (start end layer-id n obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            layer-id end-or-idx
-            n (or idx-or-n 1)))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-idx
-            layer-id idx-or-n
-            n (or n-or-object 1)
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (new-stack (tp--raise-layer-in-stack current-stack layer-id n)))
-         (when new-stack
-           (set-text-properties
-            (+ start i-start) (+ start i-end)
-            (tp--build-layer-props new-stack)
-            obj))))
-     start end obj)
+Uses `tp--raise-layer-in-stack' internally, which is built on
+`tp--move-layer-in-stack'."
+  (pcase-let ((`(,start ,end ,obj ,layer-id ,n)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-idx idx-or-n n-or-object object) 2)))
+    (setq n (or n 1))
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (when-let ((new-stack (tp--raise-layer-in-stack stack layer-id n)))
+         (set-text-properties abs-start abs-end
+                              (tp--stack-build-props new-stack)
+                              obj))))
     nil))
 
 (defun tp-rotate-layer (start-or-string &optional end-or-object object)
@@ -365,16 +447,15 @@ Uses `tp--raise-layer-in-stack' internally, which is built on `tp--move-layer-in
 Calling conventions:
 1. Buffer/string region:
    (tp-rotate-layer START END OBJECT)
-   
+
 2. Entire string:
    (tp-rotate-layer STRING)
 
 Uses `tp-move-layer' internally to move layer at index 0 to index -1."
-  (cond
-   ((stringp start-or-string)
-    (tp-move-layer start-or-string 0 -1))
-   ((numberp start-or-string)
-    (tp-move-layer start-or-string end-or-object 0 -1 object))))
+  (pcase-let ((`(,start ,end ,obj)
+               (tp--parse-layer-args
+                start-or-string (list end-or-object object) 0)))
+    (tp-move-layer start end 0 -1 obj)))
 
 (defun tp-pin-layer (start-or-string &optional end-or-idx idx-or-object object)
   "Pin a layer to the top (make it visible).
@@ -382,16 +463,16 @@ Uses `tp-move-layer' internally to move layer at index 0 to index -1."
 Calling conventions:
 1. Buffer/string region:
    (tp-pin-layer START END IDX/LAYER-NAME OBJECT)
-   
+
 2. Entire string:
    (tp-pin-layer STRING IDX/LAYER-NAME)
 
 Uses `tp-move-layer' internally to move the specified layer to index 0 (top)."
-  (cond
-   ((stringp start-or-string)
-    (tp-move-layer start-or-string end-or-idx 0))
-   ((numberp start-or-string)
-    (tp-move-layer start-or-string end-or-idx idx-or-object 0 object))))
+  (pcase-let ((`(,start ,end ,obj ,layer-id)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-idx idx-or-object object) 1)))
+    (tp-move-layer start end layer-id 0 obj)))
 
 (defun tp-switch-layer (start-or-string &optional end-or-id1 id1-or-id2 id2-or-object object)
   "Switch between two layers by name or index.
@@ -399,96 +480,81 @@ Uses `tp-move-layer' internally to move the specified layer to index 0 (top)."
 Calling conventions:
 1. Buffer/string region:
    (tp-switch-layer START END IDX1/NAME1 IDX2/NAME2 OBJECT)
-   
+
 2. Entire string:
    (tp-switch-layer STRING IDX1/NAME1 IDX2/NAME2)
 
 Uses `tp--switch-layers-in-stack' internally."
-  (let (start end id1 id2 obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            id1 end-or-id1
-            id2 id1-or-id2))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-id1
-            id1 id1-or-id2
-            id2 id2-or-object
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (new-stack (tp--switch-layers-in-stack current-stack id1 id2)))
-         (when new-stack
-           (set-text-properties
-            (+ start i-start) (+ start i-end)
-            (tp--build-layer-props new-stack)
-            obj))))
-     start end obj)
+  (pcase-let ((`(,start ,end ,obj ,id1 ,id2)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-id1 id1-or-id2 id2-or-object object) 2)))
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (when-let ((new-stack (tp--switch-layers-in-stack stack id1 id2)))
+         (set-text-properties abs-start abs-end
+                              (tp--stack-build-props new-stack)
+                              obj))))
     nil))
+
+(defun tp--merge-layer-props (layers initial)
+  "Merge the plists of LAYERS into the INITIAL plist and return it.
+LAYERS is a list of (INDEX . PROPS) conses as returned by
+`tp--get-layer-by-idx-or-name'.  Earlier layers take precedence: a key
+already present in the accumulator is never overwritten, and presence
+is tested with `plist-member' so an explicit nil value in a higher
+layer shadows lower layers' values.  `tp-name' keys of the merged
+layers are dropped (INITIAL may seed its own)."
+  (cl-reduce (lambda (acc layer)
+               (cl-loop for (key val) on (cdr layer) by #'cddr
+                        unless (eq key 'tp-name)
+                        do (unless (plist-member acc key)
+                             (setq acc (plist-put acc key val))))
+               acc)
+             layers
+             :initial-value initial))
 
 (defun tp-merge-layers (start-or-string &optional end-or-name name-or-ids ids-or-object object)
   "Merge specified layers into a new layer.
 
 Calling conventions:
 1. Buffer/string region:
-   (tp-merge-layers START END NEW-LAYER-NAME \\='(IDX1 LAYER-NAME1 IDX2 ...) OBJECT)
-   
+   (tp-merge-layers START END NEW-LAYER-NAME
+                    \\='(IDX1 LAYER-NAME1 IDX2 ...) OBJECT)
+
 2. Entire string:
-   (tp-merge-layers STRING NEW-LAYER-NAME \\='(IDX1 LAYER-NAME1 IDX2 ...))"
-  (let (start end new-name layer-ids obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            new-name end-or-name
-            layer-ids name-or-ids))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-name
-            new-name name-or-ids
-            layer-ids ids-or-object
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              ;; Find all layers to merge
-              (layers-to-merge
+   (tp-merge-layers STRING NEW-LAYER-NAME \\='(IDX1 LAYER-NAME1 IDX2 ...))
+
+Earlier layers in the list take precedence; a property explicitly set
+to nil in a higher-precedence layer stays nil in the merged layer."
+  (pcase-let ((`(,start ,end ,obj ,new-name ,layer-ids)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-name name-or-ids ids-or-object object) 2)))
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (let* ((layers-to-merge
                (cl-loop for id in layer-ids
-                        for found = (tp--get-layer-by-idx-or-name current-stack id)
+                        for found = (tp--get-layer-by-idx-or-name stack id)
                         when found collect found))
               ;; Sort by index (descending) to remove from end first
               (sorted-layers (sort (copy-sequence layers-to-merge)
                                    (lambda (a b) (> (car a) (car b))))))
          (when layers-to-merge
            ;; Merge properties (earlier in list takes precedence)
-           (let* ((merged-props
-                   (cl-reduce (lambda (acc layer)
-                                (let ((props (cdr layer)))
-                                  (cl-loop for (key val) on props by #'cddr
-                                           do (unless (plist-get acc key)
-                                                (setq acc (plist-put acc key val))))
-                                  acc))
-                              layers-to-merge
-                              :initial-value (list 'tp-name new-name)))
-                  ;; Remove old layers from stack
-                  (indices-to-remove (mapcar #'car sorted-layers))
-                  (new-stack current-stack))
-             (dolist (idx indices-to-remove)
+           (let ((merged-props (tp--merge-layer-props
+                                layers-to-merge (list 'tp-name new-name)))
+                 (new-stack stack))
+             ;; Remove old layers from stack
+             (dolist (idx (mapcar #'car sorted-layers))
                (setq new-stack (-remove-at idx new-stack)))
              ;; Add merged layer at top
              (setq new-stack (cons merged-props new-stack))
-             (set-text-properties
-              (+ start i-start) (+ start i-end)
-              (tp--build-layer-props new-stack)
-              obj)))))
-     start end obj)
+             (set-text-properties abs-start abs-end
+                                  (tp--stack-build-props new-stack)
+                                  obj))))))
     nil))
 
 (defun tp-flatten-layers (start-or-string &optional end-or-name name-or-object object)
@@ -497,89 +563,28 @@ Calling conventions:
 Calling conventions:
 1. Buffer/string region:
    (tp-flatten-layers START END NAME OBJECT)
-   
+
 2. Entire string:
    (tp-flatten-layers STRING NAME)
 
-NAME can be nil for an unnamed layer."
-  (let (start end name obj)
-    (cond
-     ((stringp start-or-string)
-      (setq obj start-or-string
-            start 0
-            end (length start-or-string)
-            name end-or-name))
-     ((numberp start-or-string)
-      (setq start start-or-string
-            end end-or-name
-            name name-or-object
-            obj object)))
-    
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (layer-count (length current-stack)))
-         (when (> layer-count 0)
-           ;; Create list of all indices
-           (let ((all-ids (cl-loop for i from 0 below layer-count collect i)))
-             ;; Use merge with all layers
-             (let* ((layers-to-merge
-                     (cl-loop for id in all-ids
-                              for found = (tp--get-layer-by-idx-or-name
-                                           current-stack id)
-                              when found collect found))
-                    (merged-props
-                     (cl-reduce (lambda (acc layer)
-                                  (let ((props (cdr layer)))
-                                    (cl-loop for (key val) on props by #'cddr
-                                             unless (eq key 'tp-name)
-                                             do (unless (plist-get acc key)
-                                                  (setq acc (plist-put acc key val))))
-                                    acc))
-                                layers-to-merge
-                                :initial-value (if name (list 'tp-name name) nil))))
-               (set-text-properties
-                (+ start i-start) (+ start i-end)
-                merged-props
-                obj))))))
-     start end obj)
+NAME can be nil for an unnamed layer.  Higher layers take precedence;
+a property explicitly set to nil in a higher layer stays nil in the
+flattened result."
+  (pcase-let ((`(,start ,end ,obj ,name)
+               (tp--parse-layer-args
+                start-or-string
+                (list end-or-name name-or-object object) 1)))
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (when stack
+         (let ((merged-props (tp--merge-layer-props
+                              (cl-loop for layer in stack
+                                       for i from 0
+                                       collect (cons i layer))
+                              (when name (list 'tp-name name)))))
+           (set-text-properties abs-start abs-end merged-props obj)))))
     nil))
-
-(defun tp-layer-list (start end &optional object)
-  "Return list of all layer names in region from START to END."
-  (let ((layers nil))
-    (tp-intervals-map
-     (lambda (_i-start _i-end top belows)
-       (when-let ((name (plist-get top 'tp-name)))
-         (cl-pushnew name layers :test #'equal))
-       (dolist (below belows)
-         (when-let ((name (plist-get below 'tp-name)))
-           (cl-pushnew name layers :test #'equal))))
-     start end object)
-    (nreverse layers)))
-
-(defun tp-layer-count (start end &optional object)
-  "Return number of layers in region from START to END.
-OBJECT defaults to current buffer."
-  (let ((max-count 0))
-    (tp-intervals-map
-     (lambda (_i-start _i-end top belows)
-       (let ((count (+ (if top 1 0) (length belows))))
-         (when (> count max-count)
-           (setq max-count count))))
-     start end object)
-    max-count))
-
-(defun tp-layer-exists-p (start end name &optional object)
-  "Return t if layer NAME exists in region from START to END.
-OBJECT defaults to current buffer."
-  (not (null (tp-region-layer-props start end name object))))
-
-(defun tp-layer-top (start end &optional object)
-  "Return the name of the top layer at START in OBJECT.
-OBJECT defaults to current buffer."
-  (when-let ((intervals (tp-intervals start end object)))
-    (plist-get (nth 2 (car intervals)) 'tp-name)))
 
 (defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object &rest rest)
   "Add/merge properties to specified layers.
@@ -612,7 +617,9 @@ Returns the modified object (string) or nil for buffer operations."
       (setq start start-or-string
             end end-or-plist
             plist plist-or-object
-            obj (car rest))))
+            obj (car rest)))
+     (t (error "Invalid layer arguments: %S"
+               (cons start-or-string (list end-or-plist plist-or-object)))))
 
     ;; Handle plist wrapped in a list (from region form)
     (when (and (listp plist)
@@ -621,28 +628,27 @@ Returns the modified object (string) or nil for buffer operations."
       (setq plist (car plist)))
 
     ;; Process each interval
-    (tp-intervals-map
-     (lambda (i-start i-end top belows)
-       (let* ((current-stack (tp--layer-stack-to-list top belows))
-              (modified-stack
-               (cl-loop for layer in current-stack
-                        for i from 0
-                        collect
-                        (if (cl-some
-                             (lambda (id)
-                               (let ((found (tp--get-layer-by-idx-or-name
-                                             current-stack id)))
-                                 (and found (= (car found) i))))
-                             layer-ids)
-                            ;; Merge plist into this layer
-                            (tp--deep-merge-plist layer plist)
-                          ;; Keep layer unchanged
-                          layer))))
-         (set-text-properties
-          (+ start i-start) (+ start i-end)
-          (tp--build-layer-props modified-stack)
-          obj)))
-     start end obj)
+    (tp--stack-map-region
+     start end obj
+     (lambda (abs-start abs-end stack)
+       (let ((modified-stack
+              (cl-loop for layer in stack
+                       for i from 0
+                       collect
+                       (if (cl-some
+                            (lambda (id)
+                              (let ((found (tp--get-layer-by-idx-or-name
+                                            stack id)))
+                                (and found (= (car found) i))))
+                            layer-ids)
+                           ;; Merge plist into this layer
+                           (tp--deep-merge-plist layer plist)
+                         ;; Keep layer unchanged
+                         layer))))
+         (when stack
+           (set-text-properties abs-start abs-end
+                                (tp--stack-build-props modified-stack)
+                                obj)))))
     (if (stringp obj) obj nil)))
 
 (defun tp-add-to-all-layers (start-or-string &optional end-or-plist plist-or-object &rest rest)
@@ -682,7 +688,9 @@ Returns the modified object (string) or nil for buffer operations."
       (setq start start-or-string
             end end-or-plist
             plist plist-or-object
-            obj (car rest))))
+            obj (car rest)))
+     (t (error "Invalid layer arguments: %S"
+               (cons start-or-string (list end-or-plist plist-or-object)))))
 
     ;; Handle plist wrapped in a list (from region form)
     (when (and (listp plist)

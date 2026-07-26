@@ -680,9 +680,16 @@ leak between tests regardless of how BODY exits."
     (insert "Hello World")
     (tp-set 1 6 '(face bold))
     (goto-char 12)
+    ;; Explicit VALUE finds the previous region carrying that value.
+    (let ((match (tp-backward 'face 'bold)))
+      (should match)
+      (should (= (prop-match-beginning match) 1)))
+    ;; VALUE nil equal-matches the property-absent region, mirroring
+    ;; tp-forward (see tp-test-forward).
+    (goto-char 12)
     (let ((match (tp-backward 'face)))
       (should match)
-      (should (= (prop-match-beginning match) 1)))))
+      (should (= (prop-match-beginning match) 6)))))
 
 (ert-deftest tp-test-backward-on-string ()
   "Test tp-backward works on string objects."
