@@ -353,7 +353,8 @@ the reactive variable and the `tp-text' property - keeps the raw text.
 If tp-text is a string different from current text, replace the text.
 When PRESERVE-PROPS is non-nil, existing text properties are preserved
 on the replaced text (used by tp-set and tp-add).
-MERGE-MODE is retained for backward compatibility but no longer affects behavior.
+MERGE-MODE is retained for backward compatibility but no longer
+affects behavior.
 All modes now preserve embedded text properties from tp-text, with props taking
 precedence over embedded props when there's a conflict.
 Returns (PROPS NEW-END NEW-OBJECT) where PROPS is the updated props,

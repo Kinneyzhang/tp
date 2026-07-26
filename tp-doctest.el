@@ -23,16 +23,17 @@
 (require 'tp)
 (tp-layer-reset)
 
-(defvar fails 0)
-(defvar total 0)
+(defvar tp-doctest--fails 0)
+(defvar tp-doctest--total 0)
 (defmacro chk (label expected &rest body)
   `(let* ((exp ,expected)
           (got (condition-case err (progn ,@body) (error (list :ERROR err)))))
-     (setq total (1+ total))
+     (setq tp-doctest--total (1+ tp-doctest--total))
      (if (equal got exp)
          (princ (format "PASS %s\n" ,label))
-       (setq fails (1+ fails))
-       (princ (format "FAIL %s\n  expected: %S\n  got:      %S\n" ,label exp got)))))
+       (setq tp-doctest--fails (1+ tp-doctest--fails))
+       (princ (format "FAIL %s\n  expected: %S\n  got:      %S\n"
+                      ,label exp got)))))
 (defmacro chk-str (label expected &rest body)
   "Compare prin1 form (covers propertized strings)."
   `(chk ,label ,expected (prin1-to-string (progn ,@body))))
@@ -195,6 +196,7 @@
        (list (substring-no-properties my-string) (nreverse positions))))
 
 ;; ---- Layer definitions ----
+(defvar my-color)
 (chk "L-format3" '((:foreground "blue") "status: active")
      (progn
        (tp-layer-reset)
@@ -456,6 +458,8 @@
          '("error"   :props (face (:foreground $error-color))
            :data ((error-color . "red"))))
        (tp-layer-props 'status-indicators-success)))
+(defvar fg-color)
+(defvar bg-color)
 (chk "RC-batch" '(:foreground "red" :background "blue")
      (progn
        (tp-layer-reset)
@@ -484,6 +488,7 @@
            (list before (tp-at 1 'face))))))
 
 ;; ---- Theme example (as in the docs) ----
+(declare-function switch-to-light-theme "tp-doctest")
 (defvar theme-fg "white")
 (defvar theme-bg "black")
 (defvar theme-accent "cyan")
@@ -548,7 +553,7 @@
        (list (tp-forward-do #'upcase 'marker nil str 3)
              (substring-no-properties str))))
 
-(princ (format "\nTOTAL: %d  FAILS: %d\n" total fails))
-(when (> fails 0) (kill-emacs 1))
+(princ (format "\nTOTAL: %d  FAILS: %d\n" tp-doctest--total tp-doctest--fails))
+(when (> tp-doctest--fails 0) (kill-emacs 1))
 
 ;;; tp-doctest.el ends here

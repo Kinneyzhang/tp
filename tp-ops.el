@@ -48,7 +48,8 @@ Supports multiple calling conventions:
 3. String region: (START END PROPS STRING)
 4. Entire string with plist: (STRING PROP VAL ...)
 5. Entire string with layer: (STRING LAYER-NAME ARG)
-6. Entire string with layer and extra props: (STRING LAYER-NAME ARG PROP VAL ...)"
+6. Entire string with layer and extra props:
+   (STRING LAYER-NAME ARG PROP VAL ...)"
   (let (object start finish props)
     (cond
      ;; First arg is a string - apply to entire string
@@ -219,7 +220,8 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
 Like `tp-set' but replaces ALL existing properties.
-For tp-text, embedded text properties are preserved (props override if there's a conflict).
+For tp-text, embedded text properties are preserved (props override
+if there's a conflict).
 
 **String Modification Behavior:**
 - Entire string form (tp-reset STRING ...): Returns a NEW propertized string

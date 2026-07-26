@@ -153,10 +153,10 @@ WHERE indicates where the variable was set:
   - a buffer for `setq-local'
 Updates all layers that depend on this variable.
 
-Only 'set' operations trigger updates because:
-- 'let'/'unlet': Temporary bindings that will be restored, no need to update UI
-- 'makunbound': Variable is being undefined, not a value change
-- 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'
+Only `set' operations trigger updates because:
+- `let'/`unlet': Temporary bindings that will be restored, no need to update UI
+- `makunbound': Variable is being undefined, not a value change
+- `defvaralias': Aliasing, the actual value change will trigger a separate `set'
 
 When `tp--batch-update-active' is non-nil, buffer updates are deferred until
 the batch completes. Layer definitions are still updated immediately.
@@ -335,9 +335,10 @@ Also adds variable watchers so changes to data vars trigger computed updates."
 (defun tp--ensure-reactive-variables (var-symbols)
   "Ensure all VAR-SYMBOLS are defined as global variables.
 VAR-SYMBOLS can be a list of symbols or cons cells (SYMBOL . INITIAL-VALUE).
-If a variable is not bound, define it with the initial value (nil if not specified).
-If a variable has an explicit initial value (cons cell), always update it to allow
-re-definition to change initial values."
+If a variable is not bound, define it with the initial value (nil if
+not specified).
+If a variable has an explicit initial value (cons cell), always update
+it to allow re-definition to change initial values."
   (dolist (sym var-symbols)
     (let* ((is-cons (and (consp sym) (not (tp--reactive-symbol-p sym))))
            (var-sym (cond
@@ -353,6 +354,7 @@ re-definition to change initial values."
         (unless (boundp var-sym)
           (set var-sym initial-val))))))
 
+;;;###autoload
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."
   (interactive)

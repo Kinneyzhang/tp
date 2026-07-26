@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'dev/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs_version: ['28.1', '29.4', '30.1']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs_version }}
+
+      - name: Install dash from GNU ELPA
+        run: |
+          emacs -Q --batch --eval "(progn \
+            (require 'package) \
+            (setq package-user-dir (expand-file-name \".elpa\")) \
+            (add-to-list 'package-archives '(\"gnu\" . \"https://elpa.gnu.org/packages/\")) \
+            (package-initialize) \
+            (package-refresh-contents) \
+            (package-install 'dash))"
+          echo "LOAD_EXTRA=-L $(ls -d "$PWD"/.elpa/dash-*)" >> "$GITHUB_ENV"
+
+      - name: Byte-compile (warnings are errors)
+        run: make compile-all WERROR=t LOAD_EXTRA="$LOAD_EXTRA"
+
+      - name: ERT suite
+        run: make test LOAD_EXTRA="$LOAD_EXTRA"
+
+      - name: ERT suite (shuffled order)
+        run: make test-shuffled LOAD_EXTRA="$LOAD_EXTRA"
+
+      - name: README doctests
+        run: make doctest LOAD_EXTRA="$LOAD_EXTRA"

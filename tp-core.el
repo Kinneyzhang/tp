@@ -68,7 +68,8 @@ If nil, debug messages are only logged to the *tp-debug* buffer."
     ;; Misc
     yank-handler auto-composed evaporate face-alias)
   "List of built-in Emacs text property names.
-These property names are reserved and cannot be used as layer names in `define-tp'.
+These property names are reserved and cannot be used as layer names
+in `define-tp'.
 An error is signaled at macro expansion time (when the `define-tp' form is
 evaluated) if a reserved name is used, preventing the layer definition from
 being created.")
@@ -95,6 +96,7 @@ FORMAT-STRING and ARGS are passed to `format'."
       (when tp-debug-echo
         (message "[tp] %s" msg)))))
 
+;;;###autoload
 (defun tp-debug-clear ()
   "Clear the *tp-debug* buffer."
   (interactive)
@@ -102,6 +104,7 @@ FORMAT-STRING and ARGS are passed to `format'."
     (with-current-buffer buf
       (erase-buffer))))
 
+;;;###autoload
 (defun tp-debug-show ()
   "Show the *tp-debug* buffer."
   (interactive)
@@ -455,7 +458,8 @@ Example:
   (tp--merge-duplicate-keys \\='(face bold face (:foreground \"red\")))
   => (face ((:foreground \"red\") bold))
 
-  (tp--merge-duplicate-keys \\='(face (:background \"blue\") face (:foreground \"red\")))
+  (tp--merge-duplicate-keys
+   \\='(face (:background \"blue\") face (:foreground \"red\")))
   => (face (:background \"blue\" :foreground \"red\"))
 
   (tp--merge-duplicate-keys \\='(prop1 a prop2 b prop1 c))
@@ -555,7 +559,8 @@ Returns a list of reactive symbols found."
 
 (defun tp--extract-reactive-value (val reactive-var)
   "Extract only the parts of VAL that use REACTIVE-VAR.
-If VAL is a plist, recursively extract only the key-value pairs containing REACTIVE-VAR.
+If VAL is a plist, recursively extract only the key-value pairs
+containing REACTIVE-VAR.
 If VAL directly contains REACTIVE-VAR, return VAL as-is.
 REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
   (cond
