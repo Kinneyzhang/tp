@@ -527,7 +527,10 @@ definitions cannot leak between tests."
       (should-not (tp-stack-tests--has-prop-p 1 'tp-layers)))))
 
 (ert-deftest tp-stack-test-flatten-drops-tp-hidden-flag ()
-  "Flattening a stack with a hidden layer never leaks the tp-hidden flag."
+  "Flattening a stack with a hidden layer never leaks the tp-hidden flag.
+HID-2: the hidden layer's props are discarded entirely, so the
+flattened result renders the visible layer's face, not the hidden
+one's."
   (tp-stack-tests--with-env
     (insert "abcdef")
     (define-tp lower () '(face bold))
@@ -535,10 +538,124 @@ definitions cannot leak between tests."
     (tp-push-layer 1 6 'lower)
     (tp-push-layer 1 6 'upper)
     (tp-hide-layer 1 6 'upper)
-    (tp-flatten-layers 1 6 'flat)
+    (should (= (tp-flatten-layers 1 6 'flat) 1))
     (should (eq (get-text-property 1 'tp-name) 'flat))
     (should-not (tp-stack-tests--has-prop-p 1 'tp-hidden))
-    (should-not (tp-stack-tests--has-prop-p 1 'tp-layers))))
+    (should-not (tp-stack-tests--has-prop-p 1 'tp-layers))
+    ;; The visible layer's face renders; the hidden italic is gone.
+    (should (eq (get-text-property 1 'face) 'bold))))
+
+;;; HID-2: flatten/merge must not render hidden layers' properties
+
+(ert-deftest tp-stack-test-flatten-discards-hidden-layer-props ()
+  "Flatten discards a hidden layer's props instead of rendering them.
+Probe scenario A: red (hidden, with help-echo) over green over blue
+\(with mouse-face); the flattened result must show green and keep
+blue's mouse-face, with no trace of the hidden red layer."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp tp-st-h2-red () '(face (:foreground "red") help-echo "red"))
+    (define-tp tp-st-h2-green () '(face (:foreground "green")))
+    (define-tp tp-st-h2-blue () '(face (:foreground "blue")
+                                  mouse-face highlight))
+    (tp-push-layer 1 6 'tp-st-h2-blue)
+    (tp-push-layer 1 6 'tp-st-h2-green)
+    (tp-push-layer 1 6 'tp-st-h2-red)   ; top->bottom: red green blue
+    (tp-hide-layer 1 6 'tp-st-h2-red)
+    (should (equal (get-text-property 1 'face) '(:foreground "green")))
+    (should (= (tp-flatten-layers 1 6 'flat) 1))
+    (should (equal (get-text-property 1 'face) '(:foreground "green")))
+    (should-not (tp-stack-tests--has-prop-p 1 'help-echo))
+    (should (eq (get-text-property 1 'mouse-face) 'highlight))))
+
+(ert-deftest tp-stack-test-flatten-all-hidden-yields-bare-text ()
+  "Flattening a run whose every layer is hidden clears all properties.
+Consistent with the all-hidden rendering of `tp-hide-layer'; the run
+still counts as modified in the returned count."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp tp-st-h2a-one () '(face bold))
+    (define-tp tp-st-h2a-two () '(face italic))
+    (tp-push-layer 1 6 'tp-st-h2a-one)
+    (tp-push-layer 1 6 'tp-st-h2a-two)
+    (tp-hide-layer 1 6 'tp-st-h2a-one)
+    (tp-hide-layer 1 6 'tp-st-h2a-two)
+    (should (= (tp-flatten-layers 1 6 'flat) 1))
+    (should (null (text-properties-at 1)))))
+
+(ert-deftest tp-stack-test-merge-excludes-hidden-layer-props ()
+  "Merging a hidden layer with a visible one excludes the hidden props.
+Probe scenario B: merging hidden red with visible green removes both
+from the stack but the merged layer renders green - a merge must
+never un-hide what `tp-hide-layer' hid."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp tp-st-h2b-red () '(face (:foreground "red")))
+    (define-tp tp-st-h2b-green () '(face (:foreground "green")))
+    (define-tp tp-st-h2b-blue () '(face (:foreground "blue")))
+    (tp-push-layer 1 6 'tp-st-h2b-blue)
+    (tp-push-layer 1 6 'tp-st-h2b-green)
+    (tp-push-layer 1 6 'tp-st-h2b-red)
+    (tp-hide-layer 1 6 'tp-st-h2b-red)
+    (should (= (tp-merge-layers 1 6 'merged '(tp-st-h2b-red tp-st-h2b-green))
+               1))
+    (should (equal (get-text-property 1 'face) '(:foreground "green")))
+    (should (eq (get-text-property 1 'tp-name) 'merged))
+    (should (equal (mapcar #'car (tp-layer-stack-at 1))
+                   '(merged tp-st-h2b-blue)))))
+
+(ert-deftest tp-stack-test-merge-all-hidden-stays-hidden ()
+  "Merging only hidden layers produces a hidden merged layer.
+The merged layer keeps the hidden layers' merged props (data is
+preserved) but carries tp-hidden itself, so nothing starts rendering;
+`tp-show-layer' can reveal it later."
+  (tp-stack-tests--with-env
+    (insert "abcdef")
+    (define-tp tp-st-h2c-red () '(face (:foreground "red")))
+    (define-tp tp-st-h2c-green () '(face (:foreground "green")))
+    (define-tp tp-st-h2c-blue () '(face (:foreground "blue")))
+    (tp-push-layer 1 6 'tp-st-h2c-blue)
+    (tp-push-layer 1 6 'tp-st-h2c-green)
+    (tp-push-layer 1 6 'tp-st-h2c-red)
+    (tp-hide-layer 1 6 'tp-st-h2c-red)
+    (tp-hide-layer 1 6 'tp-st-h2c-green)
+    (should (= (tp-merge-layers 1 6 'merged
+                                '(tp-st-h2c-red tp-st-h2c-green))
+               1))
+    ;; The merged layer does not render: blue stays visible.
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))
+    ;; It is present, hidden, and carries the merged (red-wins) props.
+    (let ((entry (assq 'merged (tp-layer-stack-at 1))))
+      (should entry)
+      (should (eq (plist-get (cdr entry) 'tp-hidden) t))
+      (should (equal (plist-get (cdr entry) 'face) '(:foreground "red"))))
+    ;; Showing the merged layer renders it.
+    (tp-show-layer 1 6 'merged)
+    (should (equal (get-text-property 1 'face) '(:foreground "red")))))
+
+;;; HID2-RET: merge/flatten return modified-run counts
+
+(ert-deftest tp-stack-test-merge-and-flatten-return-counts ()
+  "tp-merge-layers / tp-flatten-layers return modified-run counts.
+Counting matches `tp-delete-layer': one per rewritten run, 0 when
+nothing matched."
+  (tp-stack-tests--with-env
+    (insert "abcdefghij")
+    (define-tp tp-st-ret-a () '(face bold))
+    (define-tp tp-st-ret-b () '(face italic))
+    ;; Two separate runs with different stacks.
+    (tp-push-layer 1 4 'tp-st-ret-a)
+    (tp-push-layer 1 4 'tp-st-ret-b)
+    (tp-push-layer 5 8 'tp-st-ret-a)
+    ;; Merge matches both layers in run 1, only one in run 2: both
+    ;; runs are rewritten.
+    (should (= (tp-merge-layers 1 8 'm '(tp-st-ret-a tp-st-ret-b)) 2))
+    ;; Nothing matches on bare text.
+    (should (= (tp-merge-layers 8 11 'm2 '(tp-st-ret-a)) 0))
+    ;; Flatten counts every run that had layers ([1,4) and [5,8) are
+    ;; separated by bare text); bare text does not count.
+    (should (= (tp-flatten-layers 1 8 'flat) 2))
+    (should (= (tp-flatten-layers 8 11 'flat2) 0))))
 
 ;;; 0.3.0 S2: tp-lower-layer and extended tp-rotate-layer
 

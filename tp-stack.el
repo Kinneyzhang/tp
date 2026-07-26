@@ -812,36 +812,61 @@ Calling conventions:
    (tp-merge-layers STRING NEW-LAYER-NAME \\='(IDX1 LAYER-NAME1 IDX2 ...))
 
 Earlier layers in the list take precedence; a property explicitly set
-to nil in a higher-precedence layer stays nil in the merged layer."
+to nil in a higher-precedence layer stays nil in the merged layer.
+
+Hidden matched layers (see `tp-hide-layer') are merged away with the
+rest but contribute NO properties to the merged layer, so a merge can
+never render what was hidden.  When EVERY matched layer of a run is
+hidden, the merged layer keeps their merged properties but carries
+the `tp-hidden' flag itself: the data is preserved without un-hiding
+anything, and `tp-show-layer' on the merged layer renders it.
+
+Returns the number of property runs modified, counting like
+`tp-delete-layer': a run counts when at least one listed layer
+matched and the merge rewrote it, and 0 means nothing matched at
+all."
   (pcase-let ((`(,start ,end ,obj ,new-name ,layer-ids)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-name name-or-ids ids-or-object object) 2)))
-    (tp--stack-map-region
-     start end obj
-     (lambda (abs-start abs-end stack)
-       (let* ((layers-to-merge
-               (cl-loop for id in layer-ids
-                        for found = (tp--get-layer-by-idx-or-name stack id)
-                        when found collect found))
-              ;; Sort by index (descending) to remove from end first
-              (sorted-layers (sort (copy-sequence layers-to-merge)
-                                   (lambda (a b) (> (car a) (car b))))))
-         (when layers-to-merge
-           ;; Merge properties (earlier in list takes precedence)
-           (let ((merged-props (tp--merge-layer-props
-                                layers-to-merge (list 'tp-name new-name)))
-                 (new-stack stack))
-             ;; Remove old layers from stack
-             (dolist (idx (mapcar #'car sorted-layers))
-               (setq new-stack (-remove-at idx new-stack)))
-             ;; Add merged layer at top
-             (setq new-stack (cons merged-props new-stack))
-             (set-text-properties abs-start abs-end
-                                  (tp--stack-build-props new-stack)
-                                  obj)
-             (tp--stack-register-layers new-stack obj))))))
-    nil))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (let* ((layers-to-merge
+                 (cl-loop for id in layer-ids
+                          for found = (tp--get-layer-by-idx-or-name stack id)
+                          when found collect found))
+                ;; Sort by index (descending) to remove from end first
+                (sorted-layers (sort (copy-sequence layers-to-merge)
+                                     (lambda (a b) (> (car a) (car b))))))
+           (when layers-to-merge
+             ;; Merge properties (earlier in list takes precedence).
+             ;; Hidden layers contribute no props unless ALL matched
+             ;; layers are hidden, in which case the merged layer
+             ;; keeps their props but stays hidden itself.
+             (let* ((visible (seq-remove (lambda (found)
+                                           (tp--stack-hidden-p (cdr found)))
+                                         layers-to-merge))
+                    (merged-props
+                     (if visible
+                         (tp--merge-layer-props
+                          visible (list 'tp-name new-name))
+                       (tp--merge-layer-props
+                        layers-to-merge
+                        (list 'tp-name new-name 'tp-hidden t))))
+                    (new-stack stack))
+               ;; Remove old layers from stack
+               (dolist (idx (mapcar #'car sorted-layers))
+                 (setq new-stack (-remove-at idx new-stack)))
+               ;; Add merged layer at top
+               (setq new-stack (cons merged-props new-stack))
+               (set-text-properties abs-start abs-end
+                                    (tp--stack-build-props new-stack)
+                                    obj)
+               (tp--stack-register-layers new-stack obj)
+               (setq count (1+ count)))))))
+      count)))
 
 (defun tp-flatten-layers (start-or-string &optional end-or-name name-or-object object)
   "Flatten all layers into a single layer.
@@ -855,23 +880,42 @@ Calling conventions:
 
 NAME can be nil for an unnamed layer.  Higher layers take precedence;
 a property explicitly set to nil in a higher layer stays nil in the
-flattened result."
+flattened result.
+
+Hidden layers (see `tp-hide-layer') are DISCARDED, mirroring
+image-editor flatten semantics: only the visible layers' properties
+merge into the flattened result, so flattening can never render what
+was hidden.  When EVERY layer of a run is hidden, the run's
+properties are cleared entirely (bare text), consistent with the
+all-hidden rendering of `tp-hide-layer'.
+
+Returns the number of property runs modified, counting like
+`tp-delete-layer': every run that had layers to flatten counts, and
+0 means no run in the region had any layers."
   (pcase-let ((`(,start ,end ,obj ,name)
                (tp--parse-layer-args
                 start-or-string
                 (list end-or-name name-or-object object) 1)))
-    (tp--stack-map-region
-     start end obj
-     (lambda (abs-start abs-end stack)
-       (when stack
-         (let ((merged-props (tp--merge-layer-props
-                              (cl-loop for layer in stack
-                                       for i from 0
-                                       collect (cons i layer))
-                              (when name (list 'tp-name name)))))
-           (set-text-properties abs-start abs-end merged-props obj)
-           (tp--stack-register-layers (list merged-props) obj)))))
-    nil))
+    (let ((count 0))
+      (tp--stack-map-region
+       start end obj
+       (lambda (abs-start abs-end stack)
+         (when stack
+           ;; Hidden layers are discarded; an all-hidden run flattens
+           ;; to bare text.
+           (let* ((visible (seq-remove #'tp--stack-hidden-p stack))
+                  (merged-props
+                   (when visible
+                     (tp--merge-layer-props
+                      (cl-loop for layer in visible
+                               for i from 0
+                               collect (cons i layer))
+                      (when name (list 'tp-name name))))))
+             (set-text-properties abs-start abs-end merged-props obj)
+             (when merged-props
+               (tp--stack-register-layers (list merged-props) obj))
+             (setq count (1+ count))))))
+      count)))
 
 (defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object &rest rest)
   "Add/merge properties to specified layers.
