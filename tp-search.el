@@ -414,14 +414,36 @@ regions."
                     object start end subexp))
 
 (defun tp-search-forward (property &optional value predicate not-current)
-  "Search forward for text with PROPERTY.
-Wraps `text-property-search-forward'."
+  "Search forward from point for text whose PROPERTY matches VALUE.
+This is a raw wrapper: PROPERTY, VALUE, PREDICATE and NOT-CURRENT are
+passed unchanged to `text-property-search-forward', whose semantics
+apply in full - including the primitive's nil-PREDICATE default of
+matching values that are non-nil and NOT `equal' to VALUE.  On
+success point moves to the end of the matched region and a prop-match
+object is returned; otherwise nil.
+
+Obsolete since tp 0.3.0: call `tp-forward' for tp's `equal'-matching
+search (which also supports string OBJECTs and repeat counts), or
+call the Emacs primitive `text-property-search-forward' directly for
+raw use - this wrapper adds nothing to it."
   (text-property-search-forward property value predicate not-current))
+(make-obsolete 'tp-search-forward 'tp-forward "0.3.0")
 
 (defun tp-search-backward (property &optional value predicate not-current)
-  "Search backward for text with PROPERTY.
-Wraps `text-property-search-backward'."
+  "Search backward from point for text whose PROPERTY matches VALUE.
+This is a raw wrapper: PROPERTY, VALUE, PREDICATE and NOT-CURRENT are
+passed unchanged to `text-property-search-backward', whose semantics
+apply in full - including the primitive's nil-PREDICATE default of
+matching values that are non-nil and NOT `equal' to VALUE.  On
+success point moves to the beginning of the matched region and a
+prop-match object is returned; otherwise nil.
+
+Obsolete since tp 0.3.0: call `tp-backward' for tp's `equal'-matching
+search (which also supports string OBJECTs and repeat counts), or
+call the Emacs primitive `text-property-search-backward' directly for
+raw use - this wrapper adds nothing to it."
   (text-property-search-backward property value predicate not-current))
+(make-obsolete 'tp-search-backward 'tp-backward "0.3.0")
 
 (defun tp--property-match-p (value prop-value predicate)
   "Return non-nil when PROP-VALUE matches VALUE under PREDICATE.
@@ -498,7 +520,6 @@ matching region).  Otherwise return nil and leave point alone."
 
 (defun tp-forward (property &optional value object n predicate not-current)
   "Search forward N times for text with PROPERTY.
-Returns prop-match for buffers or list of (START END VALUE) for strings.
 
 VALUE is the optional value to match; N is the number of searches,
 defaulting to 1.
@@ -511,7 +532,18 @@ is passed to `text-property-search-forward'.
 NOT-CURRENT is passed to `text-property-search-forward' and, when
 non-nil, makes the search skip a matching region containing point.
 It only applies to the buffer path; strings have no point, so it is
-ignored there."
+ignored there.
+
+For buffers, each search starts from point and each successful one
+moves point to the end of its matched region; the return value is
+the prop-match object of the N-th search, or nil when that search
+found nothing.
+
+For strings, point is not involved at all: the return value is the
+list of the FIRST N matching regions counted from position 0 of the
+string, each a (START END VALUE) list with 0-based positions - not
+the N-th match alone.  Fewer than N matches return however many
+exist."
   (let ((count (or n 1)))
     (cond
      ;; String object - use tp-search (or the predicate-aware matcher)
@@ -527,7 +559,7 @@ ignored there."
             (buf (or object (current-buffer))))
         (tp-with-current-buffer buf
           (dotimes (_ count)
-            (setq result (tp-search-forward
+            (setq result (text-property-search-forward
                           property value
                           (if (functionp predicate) predicate t)
                           not-current))))
@@ -625,7 +657,7 @@ Returns the number of matches found (at most TIMES)."
             (save-excursion
               (goto-char search-start)
               (dotimes (i count)
-                (when-let ((match (tp-search-forward
+                (when-let ((match (text-property-search-forward
                                    property value
                                    (if (functionp predicate) predicate t)
                                    not-current)))
@@ -705,7 +737,12 @@ length-changing replacements" new-text (length new-text) len))
 
 (defun tp-forward-do (function property &optional value object times
                                start end predicate not-current)
-  "Search forward for text with PROPERTY and apply FUNCTION to the last match.
+  "Search forward TIMES times for PROPERTY; apply FUNCTION at the Nth match.
+
+Despite the -do suffix this is NOT a for-each: the search advances
+through TIMES matches and FUNCTION is applied only to the final
+\(TIMES-th) one.  Use `tp-search-map' to apply a function to EVERY
+match.
 
 FUNCTION receives (TEXT &optional START END) where TEXT is the matched text,
 START and END are the positions of the match.  The return value of FUNCTION
@@ -811,7 +848,12 @@ Returns the number of matches found (at most TIMES)."
 
 (defun tp-backward-do (function property &optional value object times
                                 start end predicate not-current)
-  "Search backward for text with PROPERTY and apply FUNCTION to the last match.
+  "Search backward TIMES times for PROPERTY; apply FUNCTION at the Nth match.
+
+Despite the -do suffix this is NOT a for-each: the search walks back
+through TIMES matches and FUNCTION is applied only to the final
+\(TIMES-th) one.  Use `tp-search-map' to apply a function to EVERY
+match.
 
 FUNCTION receives (TEXT &optional START END) where TEXT is the matched text,
 START and END are the positions of the match.  The return value of FUNCTION

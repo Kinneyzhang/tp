@@ -725,5 +725,65 @@ never registered the buffer (REG-1)."
                                  nil nil nil 1)))
     (should-not (get-text-property 1 'face))))
 
+;;; API-NAME-01: raw wrappers deprecated, behavior bit-identical
+
+(ert-deftest tp-search-test-raw-wrappers-marked-obsolete ()
+  "The raw wrappers carry obsolescence info pointing at tp-forward/backward."
+  (should (eq (car (get 'tp-search-forward 'byte-obsolete-info))
+              'tp-forward))
+  (should (eq (car (get 'tp-search-backward 'byte-obsolete-info))
+              'tp-backward)))
+
+(ert-deftest tp-search-test-raw-wrapper-forward-primitive-semantics ()
+  "tp-search-forward still behaves exactly like the Emacs primitive.
+The third argument stays PREDICATE (not tp-forward's OBJECT slot) and
+the nil-PREDICATE default keeps the primitive's not-`equal' matching."
+  (with-temp-buffer
+    (insert "aaabbb")
+    (put-text-property 4 7 'k 'v)
+    (dolist (args '((k) (k v t) (k v t t) (k other) (k missing t)))
+      (goto-char (point-min))
+      (let ((prim (apply #'text-property-search-forward args))
+            (prim-pt (point)))
+        (goto-char (point-min))
+        (let ((wrap (with-suppressed-warnings ((obsolete tp-search-forward))
+                      (apply #'tp-search-forward args))))
+          (should (equal wrap prim))
+          (should (= (point) prim-pt)))))
+    ;; One concrete anchor: nil PREDICATE with nil VALUE finds the
+    ;; non-nil run and moves point to its end.
+    (goto-char (point-min))
+    (let ((m (with-suppressed-warnings ((obsolete tp-search-forward))
+               (tp-search-forward 'k))))
+      (should m)
+      (should (= (prop-match-beginning m) 4))
+      (should (= (prop-match-end m) 7))
+      (should (= (point) 7)))))
+
+(ert-deftest tp-search-test-raw-wrapper-backward-primitive-semantics ()
+  "tp-search-backward still behaves exactly like the Emacs primitive."
+  (with-temp-buffer
+    (insert "aaabbb")
+    (put-text-property 1 4 'k 'v)
+    (dolist (args '((k) (k v t) (k v t t) (k other) (k missing t)))
+      (goto-char (point-max))
+      (let ((prim (apply #'text-property-search-backward args))
+            (prim-pt (point)))
+        (goto-char (point-max))
+        (let ((wrap (with-suppressed-warnings ((obsolete tp-search-backward))
+                      (apply #'tp-search-backward args))))
+          (should (equal wrap prim))
+          (should (= (point) prim-pt)))))))
+
+(ert-deftest tp-search-test-forward-string-path-first-n-contract ()
+  "tp-forward's string path returns the FIRST N matches from position 0."
+  (let ((s (copy-sequence "aabbaabb")))
+    (put-text-property 0 2 'k 'v s)
+    (put-text-property 4 6 'k 'v s)
+    (should (equal (tp-forward 'k 'v s) '((0 2 v))))
+    (should (equal (tp-forward 'k 'v s 2) '((0 2 v) (4 6 v))))
+    ;; Fewer matches than N: return what exists, not nil.
+    (should (equal (tp-forward 'k 'v s 5) '((0 2 v) (4 6 v))))))
+
 (provide 'tp-search-tests)
 ;;; tp-search-tests.el ends here
