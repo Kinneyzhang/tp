@@ -240,6 +240,40 @@ defined layer or group name); a named inline layer has odd length
    ;; Any other symbol: a single layer name.
    ((symbolp layer-spec)
     (list (tp--normalize-layer-spec layer-spec)))
+   ;; (GROUP-NAME ARG1 ... ARGN) or (GROUP-NAME (ARG1 ... ARGN)):
+   ;; multi-argument parameterized group (arity >= 2).  Checked before
+   ;; the single-arg forms so the wrapped variant is not mistaken for
+   ;; one list-valued argument.
+   ((and (consp layer-spec)
+         (symbolp (car layer-spec))
+         (proper-list-p layer-spec)
+         (let ((arity (length (tp--group-arglist (car layer-spec)))))
+           (and (>= arity 2)
+                (or (= (length (cdr layer-spec)) arity)
+                    (and (= (length (cdr layer-spec)) 1)
+                         (proper-list-p (cadr layer-spec))
+                         (= (length (cadr layer-spec)) arity))))))
+    (let* ((arity (length (tp--group-arglist (car layer-spec))))
+           (args (if (= (length (cdr layer-spec)) arity)
+                     (cdr layer-spec)
+                   (cadr layer-spec))))
+      (tp--group-props-with-args (car layer-spec) args t)))
+   ;; (LAYER-NAME ARG1 ... ARGN) or (LAYER-NAME (ARG1 ... ARGN)):
+   ;; multi-argument parameterized layer (arity >= 2).
+   ((and (consp layer-spec)
+         (symbolp (car layer-spec))
+         (proper-list-p layer-spec)
+         (let ((arity (length (tp-layer-arglist (car layer-spec)))))
+           (and (>= arity 2)
+                (or (= (length (cdr layer-spec)) arity)
+                    (and (= (length (cdr layer-spec)) 1)
+                         (proper-list-p (cadr layer-spec))
+                         (= (length (cadr layer-spec)) arity))))))
+    (let* ((arity (length (tp-layer-arglist (car layer-spec))))
+           (args (if (= (length (cdr layer-spec)) arity)
+                     (cdr layer-spec)
+                   (cadr layer-spec))))
+      (list (tp--normalize-layer-spec (cons (car layer-spec) args)))))
    ;; (GROUP-NAME ARG): parameterized group.
    ((and (consp layer-spec)
          (symbolp (car layer-spec))

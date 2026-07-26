@@ -791,5 +791,76 @@ definitions cannot leak between tests."
     (should (null (tp-push-layer 1 6 'undefined-x nil t)))
     (should (null (text-properties-at 1)))))
 
+;;; Multi-argument parameterized specs through tp-put-layer
+
+(ert-deftest tp-stack-test-put-layer-multiarg-layer-flat ()
+  "tp-put-layer accepts flat (LAYER ARG1 ARG2) for a 2-arity layer."
+  (tp-layer-reset)
+  (define-tp tp-st-colors (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (with-temp-buffer
+    (insert "Hello")
+    (tp-put-layer 1 5 '(tp-st-colors "red" "blue") 0)
+    (should (equal (tp-at 1 'face)
+                   '(:foreground "red" :background "blue")))))
+
+(ert-deftest tp-stack-test-put-layer-multiarg-layer-wrapped ()
+  "tp-put-layer accepts wrapped (LAYER (ARG1 ARG2)) for a 2-arity layer."
+  (tp-layer-reset)
+  (define-tp tp-st-colors2 (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (with-temp-buffer
+    (insert "Hello")
+    (tp-put-layer 1 5 '(tp-st-colors2 ("green" "black")) 0)
+    (should (equal (tp-at 1 'face)
+                   '(:foreground "green" :background "black")))))
+
+(ert-deftest tp-stack-test-put-layer-multiarg-layer-symbol-args ()
+  "Multi-arg specs are not misread as a list of layer names.
+Arguments that are themselves defined layer names used to be
+intercepted by the list-of-specs branch."
+  (tp-layer-reset)
+  (define-tp tp-st-a () '(help-echo "a"))
+  (define-tp tp-st-b () '(help-echo "b"))
+  (define-tp tp-st-pair (x y)
+    `(display (,x . ,y)))
+  (with-temp-buffer
+    (insert "Hello")
+    (tp-put-layer 1 5 '(tp-st-pair tp-st-a tp-st-b) 0)
+    (should (equal (tp-at 1 'display) '(tp-st-a . tp-st-b)))
+    (should (null (tp-at 1 'help-echo)))))
+
+(ert-deftest tp-stack-test-put-layer-multiarg-group ()
+  "tp-put-layer accepts (GROUP ARG1 ARG2) for a 2-arity group."
+  (tp-layer-reset)
+  (define-tps tp-st-duo (fg bg)
+    `(face (:foreground ,fg))
+    `(face (:background ,bg)))
+  (with-temp-buffer
+    (insert "Hello")
+    (tp-put-layer 1 5 '(tp-st-duo "red" "blue") 0)
+    (should (equal (tp-at 1 'face) '(:foreground "red")))
+    (should (= (tp-layer-count 1 5) 2))))
+
+(ert-deftest tp-stack-test-remove-multiarg-layer-by-name ()
+  "tp-remove removes a multi-arg parameterized layer's props by name.
+Applied via `tp-put-layer' so the region carries the layer's
+`tp-name' (the `tp-set' plist forms do not stamp `tp-name' for
+parameterized layers, so name-based removal cannot see those).
+The key-extraction path must bind all parameters (dummy args),
+not just the first."
+  (tp-layer-reset)
+  (define-tp tp-st-colors3 (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (with-temp-buffer
+    (insert "Hello")
+    (tp-put-layer 1 5 '(tp-st-colors3 "red" "blue") 0)
+    (put-text-property 1 5 'help-echo "tip")
+    (should (tp-at 1 'face))
+    (should (eq (tp-at 1 'tp-name) 'tp-st-colors3))
+    (tp-remove 1 5 'tp-st-colors3)
+    (should (null (tp-at 1 'face)))
+    (should (equal (tp-at 1 'help-echo) "tip"))))
+
 (provide 'tp-stack-tests)
 ;;; tp-stack-tests.el ends here

@@ -618,11 +618,15 @@ If PROPERTY is a layer name, all properties added by that layer are removed."
                    (next-pos (or (next-single-property-change pos 'tp-name object end) end)))
               (when (eq tp-name-at-pos property)
                 ;; This region has the layer applied - get the layer's property keys
-                ;; For parameterized layers, we pass a dummy arg (t) since we only need key names
+                ;; For parameterized layers, we pass dummy args (t per
+                ;; parameter) since we only need key names
                 (let* ((layer-props
                         (cond
                          ((tp-layer-parameterized-p property)
-                          (tp-layer-props-with-arg property t nil)) ; arg=t, include-tp-name=nil
+                          (tp-layer-props-with-args
+                           property
+                           (make-list (length (tp-layer-arglist property)) t)
+                           nil))
                          ((assoc property tp-layer-alist)
                           (tp-layer-props property nil)) ; include-tp-name=nil
                          ((assoc property tp-layer-groups)
