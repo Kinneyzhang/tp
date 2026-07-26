@@ -125,10 +125,12 @@ Search and navigation (tp-search):
   (`tp-test-backward`) was updated to the symmetric contract.
 - Empty and zero-width patterns no longer loop forever in the
   match/regexp apply engines.
-- Length-changing replacements work in `tp-forward-do` /
+- Length-changing replacements work in buffers in `tp-forward-do` /
   `tp-backward-do` / `tp-search-map` (previously signaled
-  `args-out-of-range` via `store-substring`); buffers are edited via
-  markers, strings are rebuilt.
+  `args-out-of-range` via `store-substring`). On strings — which cannot
+  change length in place — a length-changing replacement signals a
+  clear error instead of silently truncating or leaving residue;
+  same-length string replacements are unchanged.
 - `tp-search-map` with a non-current buffer OBJECT operates on that
   buffer (previously read and mutated the current buffer) and no longer
   corrupts buffers on length-changing replacements.

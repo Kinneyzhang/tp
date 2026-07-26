@@ -117,48 +117,58 @@ the end of the string."
     (should (equal (substring-no-properties result) "axb"))
     (should (eq (get-text-property 1 'face result) 'bold))))
 
-;;; B39: longer replacements are truncated, not args-out-of-range
+;;; B39: length-changing replacements error on strings, work in buffers
 
-(ert-deftest tp-search-test-forward-do-longer-replacement-truncates ()
-  "A replacement longer than the match is truncated on strings.
-The old code passed the full replacement to `store-substring', which
-signals args-out-of-range when it extends past the string end."
+(ert-deftest tp-search-test-forward-do-longer-replacement-errors ()
+  "A replacement longer than the match signals a clear error on strings.
+Strings cannot change length in place; the old code silently truncated
+(or signaled args-out-of-range past the string end).  The string is
+left unchanged."
   (let ((str (copy-sequence "hello world")))
     (tp-set 6 11 '(marker t) str)
-    (tp-forward-do (lambda (txt) (concat (upcase txt) "XYZ"))
-                   'marker nil str)
-    (should (equal (substring-no-properties str) "hello WORLD"))))
-
-(ert-deftest tp-search-test-forward-do-longer-replacement-no-clobber ()
-  "A longer in-bounds replacement must not clobber text after the match."
-  (let ((str (copy-sequence "hello world")))
-    (tp-set 0 5 '(marker t) str)
-    (tp-forward-do (lambda (txt) (concat txt txt)) 'marker nil str)
-    ;; Old code silently wrote 10 chars, yielding "hellohellod".
+    (should-error (tp-forward-do (lambda (txt) (concat (upcase txt) "XYZ"))
+                                 'marker nil str))
     (should (equal (substring-no-properties str) "hello world"))))
 
-(ert-deftest tp-search-test-backward-do-longer-replacement-truncates ()
-  "tp-backward-do truncates longer replacements on strings."
-  (let ((str (copy-sequence "hello world")))
-    (tp-set 6 11 '(marker t) str)
-    (tp-backward-do (lambda (txt) (concat (upcase txt) "12345"))
-                    'marker nil str)
-    (should (equal (substring-no-properties str) "hello WORLD"))))
-
-(ert-deftest tp-search-test-search-map-longer-replacement-truncates ()
-  "tp-search-map truncates longer replacements on strings."
-  (let ((str (copy-sequence "hello world")))
-    (tp-set 6 11 '(marker t) str)
-    (tp-search-map (lambda (txt) (concat (upcase txt) "!!!"))
-                   'marker nil str)
-    (should (equal (substring-no-properties str) "hello WORLD"))))
-
-(ert-deftest tp-search-test-forward-do-shorter-replacement-partial ()
-  "A shorter replacement only replaces that portion (documented)."
+(ert-deftest tp-search-test-forward-do-longer-in-bounds-errors ()
+  "A longer in-bounds replacement errors instead of clobbering.
+Old code silently wrote 10 chars, yielding \"hellohellod\"."
   (let ((str (copy-sequence "hello world")))
     (tp-set 0 5 '(marker t) str)
-    (tp-forward-do (lambda (_txt) "AB") 'marker nil str)
-    (should (equal (substring-no-properties str) "ABllo world"))))
+    (should-error (tp-forward-do (lambda (txt) (concat txt txt))
+                                 'marker nil str))
+    (should (equal (substring-no-properties str) "hello world"))))
+
+(ert-deftest tp-search-test-backward-do-longer-replacement-errors ()
+  "tp-backward-do rejects length-changing replacements on strings."
+  (let ((str (copy-sequence "hello world")))
+    (tp-set 6 11 '(marker t) str)
+    (should-error (tp-backward-do (lambda (txt) (concat (upcase txt) "12345"))
+                                  'marker nil str))
+    (should (equal (substring-no-properties str) "hello world"))))
+
+(ert-deftest tp-search-test-search-map-longer-replacement-errors ()
+  "tp-search-map rejects length-changing replacements on strings."
+  (let ((str (copy-sequence "hello world")))
+    (tp-set 6 11 '(marker t) str)
+    (should-error (tp-search-map (lambda (txt) (concat (upcase txt) "!!!"))
+                                 'marker nil str))
+    (should (equal (substring-no-properties str) "hello world"))))
+
+(ert-deftest tp-search-test-forward-do-shorter-replacement-errors ()
+  "A shorter replacement errors instead of leaving residue (\"ABllo\")."
+  (let ((str (copy-sequence "hello world")))
+    (tp-set 0 5 '(marker t) str)
+    (should-error (tp-forward-do (lambda (_txt) "AB") 'marker nil str))
+    (should (equal (substring-no-properties str) "hello world"))))
+
+(ert-deftest tp-search-test-search-map-same-length-string-ok ()
+  "Same-length replacements still mutate the string in place."
+  (let ((str (copy-sequence "hello world hello")))
+    (tp-set 0 5 '(marker t) str)
+    (tp-set 12 17 '(marker t) str)
+    (should (= (tp-search-map #'upcase 'marker nil str) 2))
+    (should (equal (substring-no-properties str) "HELLO world HELLO"))))
 
 (ert-deftest tp-search-test-forward-do-buffer-longer-replacement-grows ()
   "Buffers may grow on longer replacements (delete-region + insert).

@@ -448,16 +448,16 @@ Any non-string return value leaves OBJ untouched."
                     (t (funcall function text)))))
     (when (stringp new-text)
       (if (stringp obj)
-          ;; For strings: copy text content and properties separately
-          (let ((len (min (length new-text) (- m-end m-start))))
-            ;; Copy text content, truncated to the available room so a
-            ;; longer replacement cannot overflow the string (which
-            ;; would clobber text after the match or signal
-            ;; args-out-of-range).
-            (store-substring obj m-start
-                             (if (> (length new-text) len)
-                                 (substring new-text 0 len)
-                               new-text))
+          ;; For strings: copy text content and properties separately.
+          ;; A string cannot change length in place, so a replacement
+          ;; of a different length would silently corrupt the text
+          ;; (truncation or residue); reject it clearly instead.
+          (let ((len (- m-end m-start)))
+            (unless (= (length new-text) len)
+              (error "tp: replacement %S is %d chars but the match is %d; \
+strings cannot change length in place -- use a buffer OBJECT for \
+length-changing replacements" new-text (length new-text) len))
+            (store-substring obj m-start new-text)
             ;; Copy properties from new-text to obj.  Ranges with nil
             ;; properties are copied too, so FUNCTION can REMOVE
             ;; properties by returning a stripped string.
