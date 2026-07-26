@@ -22,7 +22,6 @@
 (require 'tp-core)
 (require 'tp-reactive)
 (require 'tp-layer)
-(require 'tp-ops)
 
 ;;; Shared argument parsing and region iteration
 
