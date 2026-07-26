@@ -376,7 +376,8 @@
 | `tp-palette.el` | 亮色/暗色调色板数据 |
 | `tp-builtins.el` | 内置属性层、调色板画廊、display-buffer 辅助工具 |
 
-项目附带 `Makefile`：`make test` 运行所有 ERT 测试套件，`make compile`
+项目附带 `Makefile`：`make test` 运行所有 ERT 测试套件，`make doctest`
+将 README 示例作为可执行测试运行（`tp-doctest.el`），`make compile`
 字节编译各模块，`make clean` 清除编译产物。
 
 ---

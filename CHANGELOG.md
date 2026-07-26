@@ -183,7 +183,10 @@ Test infrastructure:
 
 - `tp-member`: like `tp-at`, but distinguishes "property present with
   value nil" from "property absent" (plist-member-style result).
-- `Makefile` with `test` / `compile` / `clean` targets.
+- `Makefile` with `test` / `doctest` / `compile` / `clean` targets.
+- `tp-doctest.el`: executable documentation tests — 63 assertions
+  reproducing README examples and comparing against their exact
+  documented outputs (`make doctest`).
 - Per-module regression test suites: `tp-core-tests.el`,
   `tp-ops-tests.el`, `tp-builtins-tests.el`, `tp-layer-tests.el`,
   `tp-stack-tests.el`, `tp-search-tests.el`, `tp-render-tests.el` —

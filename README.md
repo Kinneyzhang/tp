@@ -377,8 +377,10 @@ The modules and their roles:
 | `tp-palette.el` | Light/dark color palette data |
 | `tp-builtins.el` | Built-in layers, palette gallery, display-buffer helpers |
 
-A `Makefile` is included: `make test` runs all ERT suites, `make compile`
-byte-compiles the modules, and `make clean` removes compiled files.
+A `Makefile` is included: `make test` runs all ERT suites, `make doctest`
+executes the README examples against the code (`tp-doctest.el`),
+`make compile` byte-compiles the modules, and `make clean` removes
+compiled files.
 
 ---
 
