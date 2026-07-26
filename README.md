@@ -597,6 +597,8 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
   :data '((my-color . "blue")))
 (tp-set " " 'my-style)
 ;; => #(" " 0 1 (face (:foreground "blue") tp-name my-style))
+;;    (the printed ORDER of properties may differ across Emacs
+;;     versions; the values are identical)
 
 ;; Merge multiple faces in a single call (duplicate properties auto-merged)
 (tp-set "emacs"
@@ -1827,6 +1829,8 @@ The first layer in the definition is the top layer (visible by default).
 ;; => #("emacs" 0 5 (face (:foreground "orange") tp-name tp-test-l1
 ;;                        tp-layers ((face (:foreground "red") tp-name tp-test-l2)
 ;;                                   (face (:background "green") tp-name tp-test-l3))))
+;;    (top-level property print order may differ across Emacs versions;
+;;     the tp-layers stack order itself is stable)
 ```
 
 ---

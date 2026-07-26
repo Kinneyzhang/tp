@@ -587,6 +587,7 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
   :data '((my-color . "blue")))
 (tp-set " " 'my-style)
 ;; => #(" " 0 1 (face (:foreground "blue") tp-name my-style))
+;;    （属性的打印顺序在不同 Emacs 版本间可能不同，值本身一致）
 
 ;; 单次调用中合并多个 face（重复属性自动合并）
 (tp-set "emacs"
@@ -1813,6 +1814,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ;; => #("emacs" 0 5 (face (:foreground "orange") tp-name tp-test-l1
 ;;                        tp-layers ((face (:foreground "red") tp-name tp-test-l2)
 ;;                                   (face (:background "green") tp-name tp-test-l3))))
+;;    （顶层属性的打印顺序在不同 Emacs 版本间可能不同，
+;;      tp-layers 栈内顺序本身是稳定的）
 ```
 
 ---

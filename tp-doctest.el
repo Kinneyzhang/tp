@@ -98,12 +98,15 @@
        (tp-layer-props 'full-name-layer)))
 
 ;; ---- tp-set my-style ----
-(chk-str "S-mystyle" "#(\" \" 0 1 (face (:foreground \"blue\") tp-name my-style))"
-         (progn
-           (define-tp my-style ()
-             :props '(face (:foreground $my-color))
-             :data '((my-color . "blue")))
-           (tp-set " " 'my-style)))
+;; Compared per property: the ORDER properties print in varies across
+;; Emacs versions (28 vs 29+), the values do not.
+(chk "S-mystyle" '((:foreground "blue") my-style)
+     (progn
+       (define-tp my-style ()
+         :props '(face (:foreground $my-color))
+         :data '((my-color . "blue")))
+       (let ((r (tp-set " " 'my-style)))
+         (list (tp-at 0 'face r) (tp-at 0 'tp-name r)))))
 
 ;; ---- tp-member ----
 (chk "M-member-str" '((face nil) nil)
@@ -232,21 +235,29 @@
          '("first-quarter" . (display "🌓"))
          '("full" . (display "🌕")))
        (tp-layer-props 'moon-phases-full)))
-(chk-str "L-paramgroup"
-         "#(\"emacs\" 0 5 (face (:foreground \"orange\") tp-name tp-test-l1 tp-layers ((face (:foreground \"red\") tp-name tp-test-l2) (face (:background \"green\") tp-name tp-test-l3))))"
-         (progn
-           (tp-layer-reset)
-           (define-tp tp-test-l1 (color)
-             `(face (:foreground ,color)))
-           (define-tp tp-test-l2 (color)
-             `(face (:foreground ,color)))
-           (define-tp tp-test-l3 ()
-             '(face (:background "green")))
-           (define-tps tp-test-group1 (color)
-             `(tp-test-l1 ,color)
-             '(tp-test-l2 "red")
-             'tp-test-l3)
-           (tp-set "emacs" 'tp-test-group1 "orange")))
+;; Compared per property (print order of the top-level plist varies
+;; across Emacs versions; the tp-layers stack order itself is stable).
+(chk "L-paramgroup"
+     '((:foreground "orange")
+       tp-test-l1
+       ((face (:foreground "red") tp-name tp-test-l2)
+        (face (:background "green") tp-name tp-test-l3)))
+     (progn
+       (tp-layer-reset)
+       (define-tp tp-test-l1 (color)
+         `(face (:foreground ,color)))
+       (define-tp tp-test-l2 (color)
+         `(face (:foreground ,color)))
+       (define-tp tp-test-l3 ()
+         '(face (:background "green")))
+       (define-tps tp-test-group1 (color)
+         `(tp-test-l1 ,color)
+         '(tp-test-l2 "red")
+         'tp-test-l3)
+       (let ((r (tp-set "emacs" 'tp-test-group1 "orange")))
+         (list (tp-at 0 'face r)
+               (tp-at 0 'tp-name r)
+               (tp-at 0 'tp-layers r)))))
 (chk "L-props" '((face bold help-echo "tip")
                  (face bold help-echo "tip" tp-name my-layer))
      (progn
