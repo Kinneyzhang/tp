@@ -13,9 +13,10 @@
 
 ;; Reactive core of tp: storage for variable dependencies, watchers,
 ;; computed properties and data variables; registration/unregistration;
-;; the variable-watcher shell and the batching queue.  The actual
-;; re-rendering of buffers lives in tp-render.el, which installs
-;; itself via `tp--reactive-update-function' / `tp--reactive-flush-function'.
+;; the variable-watcher shell and the batching queue state.  The
+;; actual re-rendering of buffers - including the queue flush and the
+;; public `tp-with-batch-updates' macro - lives in tp-render.el, which
+;; installs itself via `tp--reactive-update-function'.
 
 ;;; Code:
 
@@ -254,11 +255,6 @@ SYMBOL NEWVAL WHERE OVERRIDE-ALIST) after the user watch callbacks
 have run.  When nil, variable changes only invoke watch callbacks and
 no re-rendering happens.")
 
-(defvar tp--reactive-flush-function nil
-  "Function flushing one pending batched update entry.
-Installed by tp-render.el.  Called with (LAYER-NAME WHERE
-TP-TEXT-AFFECTED).")
-
 (defun tp--reactive-variable-watcher (symbol newval operation where)
   "Watcher function called when a reactive variable changes.
 SYMBOL is the variable that changed.
@@ -320,48 +316,6 @@ NEWVAL is the new value, OLDVAL is the old value."
               (funcall callback newval oldval layer-name)
             (error (message "tp: watcher error for %s watching %s: %s"
                             layer-name watch-sym err))))))))
-
-(defun tp--flush-batch-updates ()
-  "Flush all pending batch updates.
-This processes all updates collected during a `tp-with-batch-updates' form."
-  (tp-debug-log "Flushing %d pending batch updates" (length tp--batch-update-pending))
-  (let ((processed-layers nil))
-    ;; Process each pending update, avoiding duplicate layer updates
-    (dolist (pending (nreverse tp--batch-update-pending))
-      (let ((layer-name (car pending))
-            (where (caddr pending))
-            (tp-text-affected (cadddr pending)))
-        (unless (memq layer-name processed-layers)
-          (push layer-name processed-layers)
-          (tp-debug-log "  Batch updating layer %s (tp-text: %s)"
-                        layer-name (if tp-text-affected "yes" "no"))
-          (when tp--reactive-flush-function
-            (funcall tp--reactive-flush-function
-                     layer-name where tp-text-affected))))))
-  (setq tp--batch-update-pending nil))
-
-(defmacro tp-with-batch-updates (&rest body)
-  "Execute BODY with reactive updates batched.
-Multiple variable changes within BODY are collected and applied
-together at the end, avoiding redundant buffer modifications.
-
-This is useful when changing multiple reactive variables simultaneously:
-
-  (tp-with-batch-updates
-    (setq my-color \"red\")
-    (setq my-size 14)
-    (setq my-text \"Hello\"))
-
-Without batching, each `setq' would trigger a separate buffer update.
-With batching, all updates are consolidated and applied once at the end."
-  (declare (indent 0) (debug t))
-  `(let ((tp--batch-update-active t)
-         (tp--batch-update-pending nil))
-     (tp-debug-log "Starting batch updates")
-     (unwind-protect
-         (progn ,@body)
-       (tp-debug-log "Ending batch updates")
-       (tp--flush-batch-updates))))
 
 (defun tp--register-layer-watchers (layer-name watchers)
   "Register WATCHERS for LAYER-NAME.

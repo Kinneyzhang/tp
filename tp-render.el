@@ -13,10 +13,12 @@
 
 ;; The reactive update engine: when a reactive variable changes, this
 ;; module recomputes layer definitions and re-renders every affected
-;; buffer region, including live `tp-text' text replacement.  It
-;; installs itself into tp-reactive.el (update/flush hooks) and
-;; tp-layer.el (layer refresh hook), and calls down into tp-ops.el
-;; for the `tp-text' helper chain.
+;; buffer region, including live `tp-text' text replacement.  It also
+;; owns the batching flush and the public `tp-with-batch-updates'
+;; macro (the queue state lives in tp-reactive.el).  It installs
+;; itself into tp-reactive.el (update hook) and tp-layer.el (layer
+;; refresh hook), and calls down into tp-ops.el for the `tp-text'
+;; helper chain.
 
 ;;; Code:
 
@@ -500,15 +502,54 @@ installed as `tp--reactive-update-function'."
 TP-TEXT-AFFECTED non-nil means the layer's `tp-text' changed and the
 text itself must be replaced.  Runs after the changed variables have
 actually been set, so layer props re-resolve against current
-\(buffer-local aware) values.  Installed as
-`tp--reactive-flush-function'."
+\(buffer-local aware) values.  This is the per-entry worker of
+`tp--flush-batch-updates'."
   (if tp-text-affected
       (tp--update-reactive-text layer-name where)
     (tp--update-layer-regions layer-name where)))
 
+(defun tp--flush-batch-updates ()
+  "Flush all pending batch updates.
+This processes all updates collected during a `tp-with-batch-updates' form."
+  (tp-debug-log "Flushing %d pending batch updates" (length tp--batch-update-pending))
+  (let ((processed-layers nil))
+    ;; Process each pending update, avoiding duplicate layer updates
+    (dolist (pending (nreverse tp--batch-update-pending))
+      (let ((layer-name (car pending))
+            (where (caddr pending))
+            (tp-text-affected (cadddr pending)))
+        (unless (memq layer-name processed-layers)
+          (push layer-name processed-layers)
+          (tp-debug-log "  Batch updating layer %s (tp-text: %s)"
+                        layer-name (if tp-text-affected "yes" "no"))
+          (tp--reactive-flush-entry layer-name where tp-text-affected)))))
+  (setq tp--batch-update-pending nil))
+
+(defmacro tp-with-batch-updates (&rest body)
+  "Execute BODY with reactive updates batched.
+Multiple variable changes within BODY are collected and applied
+together at the end, avoiding redundant buffer modifications.
+
+This is useful when changing multiple reactive variables simultaneously:
+
+  (tp-with-batch-updates
+    (setq my-color \"red\")
+    (setq my-size 14)
+    (setq my-text \"Hello\"))
+
+Without batching, each `setq' would trigger a separate buffer update.
+With batching, all updates are consolidated and applied once at the end."
+  (declare (indent 0) (debug t))
+  `(let ((tp--batch-update-active t)
+         (tp--batch-update-pending nil))
+     (tp-debug-log "Starting batch updates")
+     (unwind-protect
+         (progn ,@body)
+       (tp-debug-log "Ending batch updates")
+       (tp--flush-batch-updates))))
+
 ;; Install the engine into the lower modules.
 (setq tp--reactive-update-function #'tp--reactive-apply-update)
-(setq tp--reactive-flush-function #'tp--reactive-flush-entry)
 (setq tp--layer-refresh-function #'tp--update-layer-regions)
 
 (provide 'tp-render)
