@@ -250,5 +250,33 @@
         (should (<= (nth 1 iv) 4)))
       (should (equal intervals '((2 4 (face bold))))))))
 
+;;; tp-member
+
+(ert-deftest tp-ops-test-member-present ()
+  "tp-member returns (PROPERTY VALUE) when the property is present."
+  (let ((str (copy-sequence "hello")))
+    (tp-set 0 5 '(face bold) str)
+    (should (equal (tp-member 0 'face str) '(face bold)))))
+
+(ert-deftest tp-ops-test-member-present-nil-value ()
+  "tp-member distinguishes a nil value from an absent property."
+  (let ((str (copy-sequence "hello")))
+    (tp-set 0 5 '(face nil) str)
+    (should (equal (tp-member 0 'face str) '(face nil)))))
+
+(ert-deftest tp-ops-test-member-absent ()
+  "tp-member returns nil for an absent property."
+  (let ((str (copy-sequence "hello")))
+    (tp-set 0 5 '(help-echo "tip") str)
+    (should (equal (tp-member 0 'face str) nil))))
+
+(ert-deftest tp-ops-test-member-buffer ()
+  "tp-member works on buffer positions."
+  (with-temp-buffer
+    (insert "hello")
+    (put-text-property 1 6 'my-prop nil)
+    (should (equal (tp-member 1 'my-prop) '(my-prop nil)))
+    (should (equal (tp-member 1 'other) nil))))
+
 (provide 'tp-ops-tests)
 ;;; tp-ops-tests.el ends here

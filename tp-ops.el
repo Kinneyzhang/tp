@@ -538,6 +538,23 @@ Examples:
             prop-value))
       (text-properties-at pos obj))))
 
+(defun tp-member (pos property &optional object)
+  "Return (PROPERTY VALUE) if PROPERTY is present at POS in OBJECT.
+Return nil when the property is absent.  Unlike `tp-at' (which
+returns nil both for an absent property and for a property whose
+value is nil), this distinguishes \"present with value nil\" from
+\"not present\", like `plist-member' does for plists.
+
+OBJECT is a string or buffer; nil means the current buffer.
+
+Examples:
+  (tp-member 1 \\='face)          ;; => (face bold) when face is bold
+  (tp-member 1 \\='face)          ;; => (face nil) when face is present but nil
+  (tp-member 1 \\='face)          ;; => nil when face is absent"
+  (let ((plist (text-properties-at pos object)))
+    (when-let ((cell (plist-member plist property)))
+      (list (car cell) (cadr cell)))))
+
 (defun tp--remove-sub (start end property sub-property &optional object)
   "Remove SUB-PROPERTY from PROPERTY between START and END in OBJECT."
   (let* ((pos start))
