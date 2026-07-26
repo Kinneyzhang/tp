@@ -234,5 +234,23 @@ tp-builtins restores the shipped layer definitions."
   (should-not (tp-parse-color nil))
   (should-error (tp-parse-color 42)))
 
+;;; API-NAME-02: prefix-conforming tp-define-palette alias
+
+(ert-deftest tp-builtins-test-define-palette-alias ()
+  "tp-define-palette is a working macro alias of define-tp-palette."
+  (unwind-protect
+      (progn
+        (tp-define-palette tp-test-alias-palette
+          :fg ("#111111" . "#eeeeee"))
+        (should (tp-palette-p 'tp-test-alias-palette))
+        (tp-builtins-test--with-background-mode 'light
+          (should (equal (tp-palette-fg-color 'tp-test-alias-palette)
+                         "#111111")))
+        (tp-builtins-test--with-background-mode 'dark
+          (should (equal (tp-palette-fg-color 'tp-test-alias-palette)
+                         "#eeeeee"))))
+    (setq tp-palette-alist
+          (assq-delete-all 'tp-test-alias-palette tp-palette-alist))))
+
 (provide 'tp-builtins-tests)
 ;;; tp-builtins-tests.el ends here

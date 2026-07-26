@@ -42,6 +42,15 @@ definition updates the stored palette in place."
   (declare (indent defun))
   `(setf (alist-get ',name tp-palette-alist) '(,@plist)))
 
+(defalias 'tp-define-palette 'define-tp-palette
+  "Register a color palette named NAME; alias of `define-tp-palette'.
+This is the package-prefix-conforming name for the palette
+definition macro, so it is discoverable via the tp- prefix;
+`define-tp-palette' is the historical name and both are permanent -
+neither will be removed.  See `define-tp-palette' for the full
+documentation of NAME and PLIST.")
+(function-put 'tp-define-palette 'lisp-indent-function 'defun)
+
 (define-tp-palette button-primary
   :fg ("#ffffff" . "#ffffff") :bg ("#007bff" . "#007bff"))
 

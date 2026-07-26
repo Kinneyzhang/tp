@@ -397,6 +397,16 @@ complete list of reserved names."
            (t
             (error "define-tp ARGLIST must be empty or a list of symbols"))))))))
 
+;;;###autoload
+(defalias 'tp-define-layer 'define-tp
+  "Define a text property layer named NAME; alias of `define-tp'.
+This is the package-prefix-conforming name for the layer definition
+macro, so it is discoverable via the tp- prefix; `define-tp' is the
+historical name and both are permanent - neither will be removed.
+See `define-tp' for the full documentation of NAME, ARGLIST and
+BODY.")
+(function-put 'tp-define-layer 'lisp-indent-function 'defun)
+
 (defun tp--define-layer-unified (name arglist body)
   "Define a layer NAME with ARGLIST and BODY using unified structure.
 For non-parameterized layers, ARGLIST is nil and BODY is the evaluated plist.
@@ -731,6 +741,16 @@ complete list of reserved names."
 (defalias 'define-tp-group 'define-tps
   "Alias for `define-tps' for backward compatibility.")
 
+;;;###autoload
+(defalias 'tp-define-group 'define-tps
+  "Define a text property group named NAME; alias of `define-tps'.
+This is the package-prefix-conforming name for the group definition
+macro, so it is discoverable via the tp- prefix; `define-tps' and
+`define-tp-group' are the historical names and all three are
+permanent - none will be removed.  See `define-tps' for the full
+documentation of NAME, ARGLIST and BODY.")
+(function-put 'tp-define-group 'lisp-indent-function 'defun)
+
 (defun tp--set-layer-props (layer-name properties)
   "Set PROPERTIES for layer LAYER-NAME in `tp-layer-alist'.
 If the layer already exists, updates its properties; otherwise creates it.
@@ -841,7 +861,11 @@ reactive dependencies (parameterized layers cannot be reactive).
 Signals an error naming the cycle if layer references are cyclic.
 The returned plist is a fresh copy: mutating it does not affect the
 stored layer definition.
-Returns nil when LAYER-NAME is not a parameterized layer."
+Returns nil when LAYER-NAME is not a parameterized layer.
+
+See also `tp-layer-props-with-arg' - note the one-character name
+difference - for the single-argument convenience, and
+`tp-group-props-with-args' for the group counterpart."
   (when (tp-layer-parameterized-p layer-name)
     (let* ((entry (cdr (assoc layer-name tp-layer-alist)))
            (arglist (car entry))
@@ -873,7 +897,8 @@ Returns nil when LAYER-NAME is not a parameterized layer."
   "Return properties for parameterized layer LAYER-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
 This is the single-argument convenience over
-`tp-layer-props-with-args', equivalent to calling it with (list ARG).
+`tp-layer-props-with-args' - note the one-character name difference -
+equivalent to calling it with (list ARG).
 If INCLUDE-TP-NAME is non-nil, appends `tp-name' property to identify
 the layer.
 Recursively expands any nested layer names in the returned plist.
@@ -882,7 +907,9 @@ values of their variables at evaluation time; they do not create
 reactive dependencies (parameterized layers cannot be reactive).
 Signals an error naming the cycle if layer references are cyclic.
 The returned plist is a fresh copy: mutating it does not affect the
-stored layer definition."
+stored layer definition.
+
+See also `tp-group-props-with-arg' for the group counterpart."
   (tp-layer-props-with-args layer-name (list arg) include-tp-name))
 
 (defun tp--layer-props-for-arg-value (layer-name value &optional include-tp-name)
@@ -999,7 +1026,8 @@ so dynamically) to the group's parameters while the stored body form
 is evaluated.  Each evaluated element is converted like
 `tp-group-props-with-arg' documents.  If INCLUDE-TP-NAME is non-nil,
 named layer references include tp-name.
-Returns nil when GROUP-NAME is not a parameterized group."
+Returns nil when GROUP-NAME is not a parameterized group.
+The public entry point delegating here is `tp-group-props-with-args'."
   (when (tp-group-parameterized-p group-name)
     (let* ((entry (cdr (assoc group-name tp-layer-groups)))
            (arglist (car entry))
@@ -1015,14 +1043,33 @@ Returns nil when GROUP-NAME is not a parameterized group."
 (defun tp-group-props-with-arg (group-name arg &optional include-tp-name)
   "Return list of properties for parameterized group GROUP-NAME with ARG.
 Evaluates the body form with the argument bound to the parameter.
-This is the single-argument convenience over the multi-argument path
-\(`tp--group-props-with-args'), equivalent to passing (list ARG).
+This is the single-argument convenience over
+`tp-group-props-with-args' - note the one-character name difference -
+equivalent to calling it with (list ARG).
 Each evaluated element may be a layer name symbol, a (LAYER-NAME ARG)
 reference, a named element (\"NAME\" . PLIST) / (\"NAME\" :props PLIST),
 or a raw property list (anonymous layer) as documented in `define-tps'.
 If INCLUDE-TP-NAME is non-nil, named layer references include tp-name.
-Returns a list of property lists for each layer in the group."
+Returns a list of property lists for each layer in the group.
+
+See also `tp-layer-props-with-arg' for the single-layer counterpart."
   (tp--group-props-with-args group-name (list arg) include-tp-name))
+
+(defun tp-group-props-with-args (group-name args &optional include-tp-name)
+  "Return list of properties for parameterized group GROUP-NAME with ARGS.
+ARGS is a list of argument values bound positionally to the group's
+parameters while the stored body form is evaluated - the public
+multi-argument introspection path for groups defined by `define-tps'
+with two or more parameters (which `tp-put-layer' specs like
+\(GROUP-NAME ARG1 ARG2) consume).  Each evaluated element is
+converted exactly as `tp-group-props-with-arg' documents.  If
+INCLUDE-TP-NAME is non-nil, named layer references include tp-name.
+Returns nil when GROUP-NAME is not a parameterized group.
+
+This mirrors `tp-layer-props-with-args' for layers.  See also
+`tp-group-props-with-arg' - note the one-character name difference -
+for the single-argument convenience."
+  (tp--group-props-with-args group-name args include-tp-name))
 
 (defun tp--group-props-for-arg-value (group-name value &optional include-tp-name)
   "Return props list for parameterized GROUP-NAME given a stored VALUE.

@@ -657,5 +657,54 @@ text property list\"."
                      '(face (:foreground "red" :background "blue")
                        tp-name tp-lt-colors))))))
 
+;;; API-SYM-01: public tp-group-props-with-args mirrors the layer pair
+
+(ert-deftest tp-layer-test-group-props-with-args-public ()
+  "The public plural group accessor matches the private path."
+  (tp-layer-tests--with-clean
+    (define-tps tp-layer-test-pgrp (fg w)
+      `((face (:foreground ,fg)))
+      `((face (:weight ,w))))
+    (should (equal (tp-group-props-with-args 'tp-layer-test-pgrp
+                                             '("red" bold))
+                   '((face (:foreground "red")) (face (:weight bold)))))
+    (should (equal (tp-group-props-with-args 'tp-layer-test-pgrp
+                                             '("red" bold))
+                   (tp--group-props-with-args 'tp-layer-test-pgrp
+                                              '("red" bold))))
+    (should (equal (tp-group-props-with-args 'tp-layer-test-pgrp
+                                             '("red" bold) t)
+                   (tp--group-props-with-args 'tp-layer-test-pgrp
+                                              '("red" bold) t)))
+    ;; Non-parameterized or undefined groups return nil, like the
+    ;; layer counterpart.
+    (should-not (tp-group-props-with-args 'tp-layer-test-nope '("x")))))
+
+;;; API-NAME-02: prefix-conforming tp-define-* aliases
+
+(ert-deftest tp-layer-test-define-layer-alias ()
+  "tp-define-layer is a working macro alias of define-tp."
+  (tp-layer-tests--with-clean
+    (tp-define-layer tp-layer-test-alias-l ()
+      '(face bold))
+    (should (equal (tp-layer-props 'tp-layer-test-alias-l) '(face bold)))
+    ;; Parameterized definitions work through the alias too.
+    (tp-define-layer tp-layer-test-alias-p (color)
+      `(face (:foreground ,color)))
+    (should (equal (tp-layer-props-with-arg 'tp-layer-test-alias-p "red")
+                   '(face (:foreground "red"))))))
+
+(ert-deftest tp-layer-test-define-group-alias ()
+  "tp-define-group is a working macro alias of define-tps."
+  (tp-layer-tests--with-clean
+    (tp-define-layer tp-layer-test-alias-m ()
+      '(face italic))
+    (tp-define-group tp-layer-test-alias-g ()
+      'tp-layer-test-alias-m
+      '(face bold))
+    (should (assoc 'tp-layer-test-alias-g tp-layer-groups))
+    (should (equal (tp-group-props 'tp-layer-test-alias-g)
+                   '((face italic) (face bold))))))
+
 (provide 'tp-layer-tests)
 ;;; tp-layer-tests.el ends here
