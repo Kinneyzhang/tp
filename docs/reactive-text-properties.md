@@ -395,13 +395,13 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
   (tp-set 1 12 'dynamic-content)
   ;; 文本现在显示 "Loading..."
   (message "初始文本: %s" (buffer-string))
-  ;; => "Loading... "
+  ;; => "Loading..."
   
   ;; 改变变量
   (setq my-dynamic-text "数据加载完成!")
   ;; 文本自动更新！
   (message "更新后: %s" (buffer-string)))
-;; => "数据加载完成! "
+;; => "数据加载完成!"
 ```
 
 ### 使用 :compute 生成动态文本
@@ -451,7 +451,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
 
 ### 注意事项
 
-1. **tp-text 只影响缓冲区文本**：对于字符串对象，由于 Emacs 字符串长度固定，`tp-text` 不会替换字符串内容。
+1. **tp-text 作用于字符串时返回新字符串**：Emacs 字符串长度无法原地改变，因此字符串形式的调用会返回一个新字符串，而不是修改原字符串。子区域的 `tp-text` 只替换该区域并保留字符串的其余部分；整串形式则只返回替换后的文本。
 2. **保留现有属性**：使用 `tp-set` 或 `tp-add` 设置 `tp-text` 时，现有的文本属性会被保留。
 3. **非响应式属性不添加 tp-name**：如果文本属性中没有响应式变量（`$` 前缀），则不会添加 `tp-name` 等响应式专用属性，保持原生文本属性行为。
 
@@ -466,7 +466,7 @@ tp.el 的响应式系统借鉴了 Vue 的 API，提供了三个强大的关键�
   :data '((price . "99.9"))
   :transform (lambda (text)
                (format "$%.2f" (string-to-number text))))
-;; 99.9 显示为 $99.00
+;; 99.9 显示为 $99.90
 
 ;; 日期格式化
 (define-tp date-display ()

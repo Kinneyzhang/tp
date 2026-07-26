@@ -189,7 +189,7 @@ Test infrastructure:
 - Per-module regression test suites: `tp-core-tests.el`,
   `tp-ops-tests.el`, `tp-builtins-tests.el`, `tp-layer-tests.el`,
   `tp-stack-tests.el`, `tp-search-tests.el`, `tp-render-tests.el` —
-  the combined suite grew from 280 to 438 tests.
+  the combined suite grew from 280 to 439 tests.
 
 ### Changed
 

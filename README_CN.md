@@ -17,6 +17,7 @@
 
 ## 目录
 
+- [快速开始](#快速开始)
 - [概述](#概述)
   - [核心创新](#核心创新)
 - [功能特性](#功能特性)
@@ -37,6 +38,7 @@
     - [tp-add](#tp-add---添加合并属性)
     - [tp-get](#tp-get---获取属性值)
     - [tp-at](#tp-at---获取位置属性)
+    - [tp-member](#tp-member---判断位置属性是否存在)
     - [tp-remove](#tp-remove---移除属性)
     - [tp-clear](#tp-clear---清除所有属性)
   - [模式匹配函数](#模式匹配函数)
@@ -90,6 +92,8 @@
     - [tp-plist](#tp-plist---获取区域中的所有属性)
     - [tp-empty-p](#tp-empty-p---检查对象是否有属性)
     - [tp-region-layer-props](#tp-region-layer-props---获取区域中的层属性)
+    - [tp-with-current-buffer / tp-pop-to-buffer / tp-switch-to-buffer](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer)
+  - [调色板系统](#调色板系统)
 - [响应式文本属性](#响应式文本属性)
   - [核心概念](#核心概念)
   - [工作原理](#工作原理)
@@ -114,9 +118,44 @@
 
 ---
 
+## 快速开始
+
+```elisp
+;; 安装：克隆仓库，将其加入 load-path，然后 require
+(add-to-list 'load-path "/path/to/tp")
+(require 'tp)
+
+;; 用统一的 API 设置属性（返回一个新的带属性字符串）
+(tp-set "hello" 'face 'bold)
+;; => #("hello" 0 5 (face bold))
+
+;; 在缓冲区区域上堆叠属性层
+(define-tp spotlight () '(face (:background "yellow")))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-push-layer 1 6 'spotlight)
+  (tp-layer-top 1 6))
+;; => spotlight
+
+;; 响应式：文本属性跟随变量变化
+(defvar accent-color "red")
+(define-tp accent ()
+  :props '(face (:foreground $accent-color)))
+(with-temp-buffer
+  (insert "Hello")
+  (tp-push-layer 1 6 'accent)
+  (setq accent-color "blue")   ; 文本自动更新！
+  (tp-at 1 'face))
+;; => (:foreground "blue")
+```
+
+---
+
 ## 概述
 
 **tp.el** 是一个全面增强 Emacs 文本属性操作的库。它不仅仅是对原生文本属性 API（如 `put-text-property`、`get-text-property`）的简单封装，更提供了许多**原生函数所不具备的功能拓展**。tp.el 在以下方面进行了创新：
+
+自 0.2.0 起，本库被组织为一组分层模块（`tp-core`、`tp-reactive`、`tp-layer`、`tp-ops`、`tp-search`、`tp-render`、`tp-stack`、`tp-palette`、`tp-builtins`），由伞形文件 `tp.el` 统一加载 — `(require 'tp)` 仍会加载全部模块，对用户没有任何变化。模块一览见[安装](#安装)。
 
 ### 核心创新
 
@@ -167,13 +206,13 @@
 
 - ✅ **路径式访问**：通过路径语法访问深层嵌套的属性值
   ```elisp
-  ;; 获取嵌套属性
-  (tp-get str 'face :underline :style)  ; => wave
+  ;; 获取嵌套属性（tp-get 返回 (START END VALUE) 区间列表）
+  (tp-get str 'face :underline :style)  ; => ((0 5 wave))
   (tp-at 5 '(face :box :color))         ; => "blue"
   
   ;; 获取多个嵌套键
   (tp-get str 'face :underline '(:color :style))
-  ;; => ((:color "green" :style wave))
+  ;; => ((0 5 (:color "green" :style wave)))
   ```
 - ✅ **子属性删除**：精确移除嵌套属性中的特定键
   ```elisp
@@ -190,7 +229,8 @@
         'face 'bold
         'face '(:background "green")
         'face '(:foreground "red"))
-;; 结果: face 是 ((:background "green" :foreground "red") bold)
+;; 结果: face 是 ((:foreground "red") (:background "green") bold)
+;; （各条目堆叠为一个 face 列表，最新的在前）
 
 ;; 同一子属性后面的覆盖前面的
 (tp-set "emacs"
@@ -274,15 +314,14 @@
 ;; 之后只需改变变量 - 文本自动更新！
 (setq my-color "blue")  ;; 所有 my-highlight 层的文本自动变成蓝色！
 
-;; 高级响应式示例（使用 define-tp）：
-;; 对于需要 :data、:compute、:watch 等高级特性的场景，
-;; 可以使用 define-tp
+;; 使用 :data、:compute、:watch 的高级示例
+;; （注意：参数列表 () 是必需的，且各关键字的值必须加引号）
 (define-tp full-name-layer ()
   :props '(help-echo $full-name face (:foreground $name-color))
-  :data '((first-name . "John") (last-name . "Doe"))  ;; 带初始值
+  :data '((first-name . "John") (last-name . "Doe") (name-color . "purple"))
   :compute '((full-name (lambda () (concat first-name " " last-name))))
   :watch '((first-name (lambda (new old layer)
-                        (message "名字从 %s 改为 %s" old new)))))
+                         (message "名字从 %s 改为 %s" old new)))))
 ```
 
 ### 增强的搜索与导航
@@ -297,15 +336,18 @@
 (tp-search my-string 'marker)  ; => ((0 5 t) (12 17 t))
 
 ;; 将所有标记文本转为大写
-(tp-search-map #'upcase my-string 'marker)
+(tp-search-map #'upcase 'marker nil my-string)
 ```
 
 ## 系统要求
 
 - **Emacs 28.1+**（使用 `object-intervals` 函数）
-- **dash.el**（列表操作工具库）
+- **dash.el 2.19.1+**（列表操作工具库）
 
 ## 安装
+
+本库由 `tp-*.el` 模块家族加上伞形文件 `tp.el` 组成。安装即把目录加入
+`load-path` 并 require 伞形文件，它会加载全部模块：
 
 ```elisp
 ;; 添加到 load-path
@@ -319,6 +361,23 @@
 (use-package tp
   :load-path "/path/to/tp")
 ```
+
+各模块及其职责：
+
+| 模块 | 职责 |
+|---|---|
+| `tp-core.el` | 区间、plist/face 合并引擎、调试日志、`$var` 工具 |
+| `tp-reactive.el` | 响应式依赖注册表、变量监视器、批量更新队列 |
+| `tp-layer.el` | `define-tp` / `define-tps`、属性层注册表与解析 |
+| `tp-ops.el` | `tp-set` / `tp-reset` / `tp-add` / `tp-get` / `tp-at` / `tp-remove` / `tp-clear` |
+| `tp-search.el` | `tp-match-*`、`tp-regexp-*`、`tp-search`、导航 |
+| `tp-render.el` | 响应式重渲染引擎 |
+| `tp-stack.el` | 属性层栈操作（push/pop/移动/合并/扁平化/...） |
+| `tp-palette.el` | 亮色/暗色调色板数据 |
+| `tp-builtins.el` | 内置属性层、调色板画廊、display-buffer 辅助工具 |
+
+项目附带 `Makefile`：`make test` 运行所有 ERT 测试套件，`make compile`
+字节编译各模块，`make clean` 清除编译产物。
 
 ---
 
@@ -336,6 +395,7 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-add`](#tp-add---添加合并属性) | 添加/合并属性，支持深度合并 |
 | [`tp-get`](#tp-get---获取属性值) | 从范围或字符串获取属性值 |
 | [`tp-at`](#tp-at---获取位置属性) | 获取单个位置的属性值 |
+| [`tp-member`](#tp-member---判断位置属性是否存在) | 类似 `tp-at`，但能区分"存在且值为 nil"与"不存在" |
 | [`tp-remove`](#tp-remove---移除属性) | 移除属性或子属性 |
 | [`tp-clear`](#tp-clear---清除所有属性) | 清除区域中的所有文本属性 |
 
@@ -422,6 +482,17 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-intervals-map`](#tp-intervals-map---对区间应用函数) | 对区域中的所有区间应用函数 |
 | [`tp-plist`](#tp-plist---获取区域中的所有属性) | 获取区域中存在的所有属性 |
 | [`tp-empty-p`](#tp-empty-p---检查对象是否有属性) | 检查对象是否没有文本属性 |
+| [`tp-with-current-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | 在绑定 `inhibit-read-only` 的情况下在缓冲区中执行 body |
+| [`tp-pop-to-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | 填充缓冲区、设为只读并通过 `pop-to-buffer` 显示 |
+| [`tp-switch-to-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | 填充缓冲区、设为只读并通过 `switch-to-buffer` 显示 |
+
+#### 调色板函数
+| 函数 | 描述 |
+|------|------|
+| [`tp-palette-alist`](#调色板系统) | 具名调色板注册表（变量） |
+| [`define-tp-palette`](#调色板系统) | 注册或更新一个具名调色板 |
+| [`tp-palette-show`](#调色板系统) | 展示所有已注册调色板的画廊 |
+| [`tp-parse-color`](#调色板系统) | 按当前亮色/暗色主题解析颜色规格 |
 
 ---
 
@@ -489,8 +560,8 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 (let ((my-buffer (generate-new-buffer "*test*")))
   (with-current-buffer my-buffer
     (insert "Hello World"))
-  (tp-set 1 10 '(face italic) my-buffer)
-  (kill-buffer my-buffer))
+  (prog1 (tp-set 1 10 '(face italic) my-buffer)
+    (kill-buffer my-buffer)))
 ;; => (1 . 10)
 
 ;; 在字符串区域设置属性（0 索引）- 修改原始字符串
@@ -514,14 +585,15 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
   :props '(face (:foreground $my-color))
   :data '((my-color . "blue")))
 (tp-set " " 'my-style)
-;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
+;; => #(" " 0 1 (face (:foreground "blue") tp-name my-style))
 
 ;; 单次调用中合并多个 face（重复属性自动合并）
 (tp-set "emacs"
         'face 'bold
         'face '(:background "green")
         'face '(:foreground "red"))
-;; => 三个 face 合并为一个: ((:background "green" :foreground "red") bold)
+;; => face 是 ((:foreground "red") (:background "green") bold)
+;;    （各条目堆叠为一个 face 列表，最新的在前）
 
 ;; 同一子属性后面的值覆盖前面的
 (tp-set "emacs"
@@ -800,6 +872,34 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 
 ---
 
+#### `tp-member` - 判断位置属性是否存在
+
+```elisp
+(tp-member POS PROPERTY &optional OBJECT)
+```
+
+类似 `tp-at`，但当 PROPERTY 在 POS 处存在时返回 `(PROPERTY VALUE)` 列表，不存在时返回 nil。由此可以区分"属性存在且值为 nil"与"属性完全不存在"（类似 `plist-member`）。
+
+**示例：**
+
+```elisp
+;; 存在且值为 nil vs. 不存在
+(let ((str (copy-sequence "Hello")))
+  (tp-set 0 5 '(face nil) str)
+  (list (tp-member 0 'face str)       ; 存在，值为 nil
+        (tp-member 0 'display str)))  ; 不存在
+;; => ((face nil) nil)
+
+;; 在缓冲区中
+(with-temp-buffer
+  (insert "Hello")
+  (tp-set 1 6 '(face bold))
+  (tp-member 1 'face))
+;; => (face bold)
+```
+
+---
+
 #### `tp-remove` - 移除属性
 
 从区域或整个字符串中移除属性或嵌套子属性。
@@ -868,7 +968,7 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 ;; 从字符串移除嵌套键
 (let ((original (propertize "Hello" 'face '(:underline (:style wave :color "blue")))))
   (let ((result (tp-remove original 'face :underline '(:style))))
-    (get-text-property 0 '(face :underline) result)))
+    (tp-at 0 '(face :underline) result)))
 ;; => (:color "blue")
 ```
 
@@ -936,7 +1036,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 (with-temp-buffer
   (insert "Hello world, Hello again")
   (tp-match-set '("world" "Hello") '(face bold)))
-;; => ((1 . 6) (7 . 12) (14 . 19))  ; 匹配 "Hello", "world", "Hello"
+;; => ((7 . 12) (1 . 6) (14 . 19))  ; 结果按模式分组：
+;;    先是 "world" 的区域，再是每个 "Hello"，顺序与模式列表一致
 
 ;; 在字符串上使用多个模式
 (tp-match-set '("Hello" "world") '(face bold) "Hello world")
@@ -1058,13 +1159,15 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (list (tp-at 5 'face) (tp-at 13 'face)))
 ;; => (font-lock-number-face font-lock-number-face)
 
-;; 在字符串上
+;; 在字符串上（默认受 `case-fold-search' 影响，"Hello" 也会匹配；
+;; 需要区分大小写时请将其 let 绑定为 nil）
 (tp-regexp-set "[A-Z]+" '(face bold) "Hello WORLD")
-;; => #("Hello WORLD" 6 11 (face bold))
+;; => #("Hello WORLD" 0 5 (face bold) 6 11 (face bold))
 
 ;; 多个正则 - 同时匹配数字和大写字母
+;; （忽略大小写时 "abc" 也匹配 "[A-Z]+"）
 (tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
-;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
+;; => #("abc 123 XYZ" 0 3 (face bold) 4 7 (face bold) 8 11 (face bold))
 
 ;; 使用已定义的层名称
 (define-tp number-style ()
@@ -1101,12 +1204,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (tp-at 5))
 ;; => (face bold)  ; help-echo 被移除
 
-;; 在字符串上
+;; 在字符串上 - 返回新字符串，原字符串保持不变
 (let ((str (copy-sequence "abc 123 def")))
   (tp-set 4 7 '(help-echo "original") str)
-  (tp-regexp-reset "[0-9]+" '(face italic) str)
-  (tp-at 4 str))
-;; => (face italic)
+  (let ((result (tp-regexp-reset "[0-9]+" '(face italic) str)))
+    (list (tp-at 4 result) (tp-at 4 str))))
+;; => ((face italic) (help-echo "original"))
 
 ;; 使用已定义的层名称
 (define-tp code-number ()
@@ -1143,12 +1246,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (tp-at 5))
 ;; => (face bold help-echo "number")
 
-;; 在字符串上
+;; 在字符串上 - 返回新字符串，原字符串保持不变
 (let ((str (copy-sequence "abc 123 def")))
   (tp-set 4 7 '(help-echo "number") str)
-  (tp-regexp-add "[0-9]+" '(face italic) str)
-  (tp-at 4 str))
-;; => (face italic help-echo "number")
+  (let ((result (tp-regexp-add "[0-9]+" '(face italic) str)))
+    (list (tp-at 4 result) (tp-at 4 str))))
+;; => ((face italic help-echo "number") (help-echo "number"))
 
 ;; 使用已定义的层名称
 (define-tp bold-underline ()
@@ -1185,23 +1288,46 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 向前/向后搜索 N 次具有 PROPERTY 的文本。
 
 - **N** 是搜索次数，默认为 1。
-- **VALUE** 是可选的匹配值。
+- **VALUE** 在缓冲区中与属性值做 `equal` 匹配。
+  因此传入 nil 会匹配下一段 PROPERTY *不存在*（值为 nil）的区段；
+  要查找带属性的区域，请显式传入属性值。
+- **`tp-backward` 与 `tp-forward` 对称**：相同的 equal 匹配语义，
+  方向相反。
 - **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
 - 对于缓冲区，返回最后一次成功搜索的 prop-match 对象。
-- 对于字符串，返回所有匹配的 (START END VALUE) 列表。
+- 对于字符串，返回 PROPERTY 存在的各区段的 (START END VALUE) 列表；
+  VALUE 为 nil 表示匹配任意值。`tp-backward` 按从末尾到开头的顺序返回。
 
 **示例：**
 
 ```elisp
-;; 查找下一个具有 'marker 属性的文本
+;; 查找下一个 'marker 等于 t 的文本
+(with-temp-buffer
+  (insert "Hello World Test")
+  (tp-set 7 12 '(marker t))
+  (goto-char 1)
+  (let ((match (tp-forward 'marker t)))
+    (when match
+      (prop-match-beginning match))))
+;; => 7
+
+;; VALUE 为 nil 时 equal 匹配 nil - 即匹配没有该属性的区段
 (with-temp-buffer
   (insert "Hello World Test")
   (tp-set 7 12 '(marker t))
   (goto-char 1)
   (let ((match (tp-forward 'marker)))
-    (when match
-      (prop-match-beginning match))))
-;; => 7
+    (list (prop-match-beginning match) (prop-match-end match))))
+;; => (1 7)  ; marker 不存在的区段
+
+;; backward 与 forward 对称：相同的值匹配，方向相反
+(with-temp-buffer
+  (insert "Hello World Test")
+  (tp-set 7 12 '(marker t))
+  (goto-char (point-max))
+  (let ((match (tp-backward 'marker t)))
+    (list (prop-match-beginning match) (prop-match-end match))))
+;; => (7 12)
 
 ;; 查找下一个 'type 等于 'heading 的文本
 (with-temp-buffer
@@ -1232,7 +1358,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 在 OBJECT 的 START 到 END 范围内，向前/向后搜索匹配 PROPERTY 属性（值为 VALUE）的部分，**仅对最后一次匹配执行 FUNCTION 函数**。
 
-- **FUNCTION** 的参数是 `(TEXT &optional START END)`，其中 TEXT 是此次匹配到的文本，START 和 END 为开始结束的位置。FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+- **FUNCTION** 的参数是 `(TEXT &optional START END IDX)`，其中 TEXT 是此次匹配到的文本，START 和 END 为开始结束的位置，IDX 是从 0 开始的匹配索引。FUNCTION 会按其实际接受的参数个数被调用。当 FUNCTION 返回字符串时，它将替换字符串或缓冲区中的匹配文本。
+- **在缓冲区中替换文本可以改变长度**（先删除匹配文本，再插入替换文本）。**字符串无法就地改变长度**：长度不同的替换会发出错误信号；长度相同的替换会就地应用。
 - **PROPERTY** 是要搜索的文本属性。
 - **VALUE** 为 nil 时，表示搜索 PROPERTY 属性，不用匹配值。
 - **OBJECT** 默认是当前 buffer 或指定的字符串或指定的 buffer。
@@ -1339,7 +1466,11 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   - TEXT 是此次匹配到的文本
   - START 和 END 为开始结束的位置
   - IDX 是遍历中的当前从 0 开始的索引
-  FUNCTION 的返回值将替换字符串或缓冲区中的匹配文本。
+  FUNCTION 会按其实际接受的参数个数被调用。当 FUNCTION 返回字符串时，
+  它将替换字符串或缓冲区中的匹配文本。
+- **在缓冲区中替换文本可以改变长度**（先删除匹配文本，再插入替换文本）。
+  **字符串无法就地改变长度**：长度不同的替换会发出错误信号；
+  长度相同的替换会就地应用。
 - **PROPERTY** 是要搜索的文本属性。
 - **VALUE** 为 nil 时，表示搜索 PROPERTY 属性，不用匹配值。
 - **OBJECT** 默认是当前 buffer 或指定的字符串或指定的 buffer。
@@ -1418,8 +1549,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
         'face 'bold
         'face '(:background "green")
         'face '(:foreground "red"))
-;; 结果: face 是 ((:background "green" :foreground "red") bold)
-;; 三个 face 属性被智能合并
+;; 结果: face 是 ((:foreground "red") (:background "green") bold)
+;; 三个 face 属性堆叠为一个 face 列表，最新的在前
 
 ;; 同一子属性后面的覆盖前面的
 (tp-set "emacs"
@@ -1477,6 +1608,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ### 属性层概念
 
+```
 ┌─────────────────────────────┐
 │   顶层（可见）              │  ← idx=0，你看到的
 ├─────────────────────────────┤
@@ -1484,6 +1616,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ├─────────────────────────────┤
 │   底层（隐藏）              │  ← idx=-1，被保留
 └─────────────────────────────┘
+```
 
 ### 属性层定义
 
@@ -1491,7 +1624,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ##### `define-tp` - 定义单个自定义文本属性（层）
 
-定义自定义文本属性，名称无需单引号引用。支持三种格式：
+定义自定义文本属性，名称无需单引号引用。**所有格式中参数列表都是必需的**：无参数层（包括响应式关键字格式）用 `()`，参数化层用 `(ARG)`。支持三种格式：
 
 **格式一 - 无参数（空参数列表，简单属性）：**
 
@@ -1519,9 +1652,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 (define-tp my-reactive-layer ()
-  :props '(face (:foreground $my-color))
-  :data '((my-color . "red"))
-  :compute '((full-name (lambda () (concat first-name " " last-name))))
+  :props '(face (:foreground $my-color) help-echo $status-note)
+  :data '((my-color . "red") (status . "active"))
+  :compute '((status-note (lambda () (concat "status: " status))))
   :watch '((my-color (lambda (new old layer) (message "Color changed!"))))
   :transform (lambda (text) (upcase text)))
 
@@ -1539,9 +1672,12 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - **:watch** - 监听器列表，变量改变时执行回调
 - **:transform** - 转换函数，在显示 `tp-text` 值之前对其进行处理
 
+注意：`:props`、`:data`、`:compute` 和 `:watch` 的值必须**加引号**
+（它们在层定义时会被求值）；`:transform` 接受一个函数。
+
 ##### `define-tps` - 定义自定义文本属性组（层组）
 
-定义多个相关的自定义文本属性，名称无需单引号引用。属性组中定义的文本属性可以单独使用，也可以使用组名称来设置多层。
+定义多个相关的自定义文本属性，名称无需单引号引用。与 `define-tp` 一样，**参数列表是必需的**：无参数层组用 `()`，参数化层组用 `(ARG)`。属性组中定义的文本属性可以单独使用，也可以使用组名称来设置多层。
 
 **格式一 - 无参数（空参数列表）：**
 
@@ -1636,8 +1772,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 ;; 先定义状态层，然后将它们组合成层组
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp highlight ()
     '(face (:background "yellow" :foreground "black")))
   (define-tp error ()
@@ -1651,20 +1786,18 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ;; 使用命名层定义层组
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tps moon-phases ()
     '("new" . (display "🌑"))
     '("waxing-crescent" . (display "🌒"))
     '("first-quarter" . (display "🌓"))
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
-;; => (display "🌕" tp-name moon-phases-full)
+;; => (display "🌕")
 
 ;; 参数化层组，引用其他已定义的层
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp tp-test-l1 (color)
     `(face (:foreground ,color)))
   (define-tp tp-test-l2 (color)
@@ -1686,27 +1819,33 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 #### `tp-layer-props` / `tp-group-props`
 
 ```elisp
-(tp-layer-props LAYER-NAME)
-(tp-group-props GROUP-NAME)
+(tp-layer-props LAYER-NAME &optional INCLUDE-TP-NAME)
+(tp-group-props GROUP-NAME &optional INCLUDE-TP-NAME)
 ```
 
 获取属性层或属性层组中所有属性层的属性。
 
+默认情况下，结果只包含属性层自身的属性。当 INCLUDE-TP-NAME 非 nil 时，
+会在结果末尾追加一个 `tp-name LAYER-NAME` 条目（属性层栈内部使用的形式）。
+例外：注册了响应式依赖的属性层总是包含 `tp-name` —— 响应式引擎依靠
+它定位并重新渲染这些区域。
+
 **示例：**
 
 ```elisp
-;; 获取属性层属性
+;; 获取属性层属性（默认不含 tp-name）
 (progn
-  (setq tp-layer-alist nil)
+  (tp-layer-reset)
   (define-tp my-layer ()
     '(face bold help-echo "tip"))
-  (tp-layer-props 'my-layer))
-;; => (face bold help-echo "tip" tp-name my-layer)
+  (list (tp-layer-props 'my-layer)
+        (tp-layer-props 'my-layer t)))
+;; => ((face bold help-echo "tip")
+;;     (face bold help-echo "tip" tp-name my-layer))
 
 ;; 获取属性层组属性
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp layer1 ()
     '(face bold))
   (define-tp layer2 ()
@@ -1733,7 +1872,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 ```elisp
 ;; 取消定义属性层
 (progn
-  (setq tp-layer-alist nil)
+  (tp-layer-reset)
   (define-tp temp-layer ()
     '(face bold))
   (tp-undefine-layer 'temp-layer)
@@ -1742,10 +1881,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ;; 取消定义属性层组
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp l1 () '(face bold))
-  (define-tps my-group 'l1)
+  (define-tps my-group ()
+    'l1)
   (tp-undefine-group 'my-group)
   (assoc 'my-group tp-layer-groups))
 ;; => nil
@@ -1795,7 +1934,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-reactive-reset)
   ;; 层仍然存在，但改变 my-reactive-color 不再更新它
   (tp-layer-props 'reactive-layer))
-;; => (face (:foreground "red") tp-name reactive-layer)
+;; => (face (:foreground "red"))
 ```
 
 ---
@@ -1817,6 +1956,16 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - `IDX = 0`：顶部（可见属性层）
 - `IDX = -1`：底部
 - 其他值在该位置插入
+
+LAYER 接受以下几种形式：
+
+- 用 `define-tp` 定义的层名：`'highlight`
+- 内联属性 plist（无需 `define-tp`）：`'(face bold help-echo "tip")`
+- 层名列表（第一个层名位于顶部）：`'(layer-a layer-b)`
+- 参数化层调用：`'(tp-color "red")`
+
+**栈模型：**只有顶层的属性是可见的文本属性；下层被保存在
+`tp-layers` 文本属性中，直到被上移、轮换或扁平化。
 
 **示例：**
 
@@ -1855,6 +2004,35 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
     (tp-put-layer 1 10 'info -1)
     (tp-layer-top 1 10)))
 ;; => base  ; info 在底部，base 可见
+
+;; 内联 plist - 无需 define-tp
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-put-layer 1 10 '(face bold help-echo "tip") 0)
+  (list (tp-at 1 'face) (tp-at 1 'help-echo)))
+;; => (bold "tip")
+
+;; 层名列表 - layer-a 位于顶部
+(progn
+  (tp-layer-reset)
+  (define-tp layer-a () '(face bold))
+  (define-tp layer-b () '(face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 '(layer-a layer-b) 0)
+    (list (tp-at 1 'face) (tp-layer-list 1 10))))
+;; => (bold (layer-a layer-b))
+
+;; 参数化层调用
+(progn
+  (tp-layer-reset)
+  (define-tp tp-color (color)
+    `(face (:foreground ,color)))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 '(tp-color "red") 0)
+    (tp-at 1 'face)))
+;; => (:foreground "red")
 ```
 
 ---
@@ -1896,6 +2074,21 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
     (tp-push-layer 1 10 'highlight)
     (tp-at 1 'tp-name)))
 ;; => highlight
+
+;; 顶层的属性是可见的；下层保存在 `tp-layers' 中等待
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (list :face (tp-at 1 'face)
+          :top (tp-layer-top 1 10)
+          :layers (tp-layer-list 1 10)
+          :hidden (length (tp-at 1 'tp-layers)))))
+;; => (:face (:background "yellow") :top highlight :layers (highlight base) :hidden 1)
 ```
 
 ---
@@ -2468,7 +2661,10 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 从 OBJECT 中获取 START 到 END 之间的所有文本属性区间。
 
-- 返回每个区间的 (START END PROPERTIES) 列表。
+- 返回每个区间的 (START END PROPERTIES) 列表，包括没有属性的
+  间隙区间，其 PROPERTIES 为 nil。
+- 对于缓冲区输入，START 和 END 是从 1 开始的缓冲区位置，但返回的位置是
+  **相对于 START 的 0 基偏移量**。对于字符串，位置是绝对的 0 基索引。
 - 使用 `object-intervals`（需要 Emacs 28.1+）。
 - OBJECT 可以是缓冲区或字符串；nil 默认为当前缓冲区。
 
@@ -2480,7 +2676,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-set 1 6 '(face bold))
   (tp-set 7 12 '(face italic))
   (tp-intervals 1 12))
-;; => ((0 5 (face bold)) (6 11 (face italic)))
+;; => ((0 5 (face bold)) (5 6 nil) (6 11 (face italic)))
+;;    位置是相对 START 的偏移量；(5 6 nil) 是无属性的间隙
 ```
 
 ---
@@ -2494,8 +2691,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 对 OBJECT 中 START 到 END 之间的所有区间应用 FUNCTION。
 
 - FUNCTION 接收四个参数：interval-start、interval-end、top-props（可见层属性）和 below-props-lst（隐藏层列表）。
+- 没有属性的区间也会被访问，此时 top-props 为 nil（位置遵循与 `tp-intervals` 相同的偏移量约定）。
 - OBJECT 可以是缓冲区或字符串；nil 默认为当前缓冲区。
-- 返回函数结果列表（nil 值被移除）。
+- 返回函数结果列表（nil 结果被移除）。
 
 **示例：**
 
@@ -2508,7 +2706,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
    (lambda (start end props belows)
      (list start end (plist-get props 'face)))
    1 12))
-;; => ((0 5 bold) (6 11 italic))
+;; => ((0 5 bold) (5 6 nil) (6 11 italic))
 ```
 
 ---
@@ -2553,7 +2751,8 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 获取区域或字符串中存在的所有属性的属性列表。
 
-- 返回包含范围内找到的所有属性的 plist。
+- 返回将范围内找到的属性合并成的单个 plist；当同一属性出现在多个
+  区间中时，靠后区间的值胜出。
 - OBJECT 在区域形式中默认为当前缓冲区。
 
 **示例：**
@@ -2564,7 +2763,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-set 1 6 '(face bold help-echo "Tip"))
   (tp-set 7 12 '(face italic))
   (tp-plist 1 12))
-;; => (face bold help-echo "Tip" face italic)
+;; => (help-echo "Tip" face italic)  ; 靠后区间的 face 胜出
 ```
 
 ---
@@ -2584,10 +2783,76 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ```elisp
 (tp-empty-p "plain text")  ; => t
-(let ((str (copy-sequence "text")))
-  (tp-set str 'face 'bold)
-  (tp-empty-p str))  ; => nil
+
+;; 整个字符串形式的 tp-set 是非破坏性的：原始字符串保持无属性
+(let* ((str "text")
+       (new (tp-set str 'face 'bold)))
+  (list (tp-empty-p str) (tp-empty-p new)))
+;; => (t nil)
 ```
+
+---
+
+#### `tp-with-current-buffer` / `tp-pop-to-buffer` / `tp-switch-to-buffer`
+
+```elisp
+(tp-with-current-buffer BUFFER-OR-NAME BODY...)
+(tp-pop-to-buffer BUFFER-OR-NAME BODY...)
+(tp-switch-to-buffer BUFFER-OR-NAME BODY...)
+```
+
+用于操作和展示带属性内容的便捷宏：
+
+- **`tp-with-current-buffer`** 在 BUFFER-OR-NAME 中求值 BODY，并将
+  `inhibit-read-only` 绑定为 t。适合修改只读的展示缓冲区。
+- **`tp-pop-to-buffer`** 创建（或复用）BUFFER-OR-NAME，清空它，在其中
+  求值 BODY，然后将其设为只读并通过 `pop-to-buffer` 显示。在显示的
+  缓冲区中按 `q` 可退出其窗口。
+- **`tp-switch-to-buffer`** 与上者相同，但通过 `switch-to-buffer`
+  显示缓冲区。
+
+**示例：**
+
+```elisp
+(tp-pop-to-buffer "*tp-demo*"
+  (insert (tp-set "Important" 'face '(:foreground "red" :weight bold))
+          " message\n"))
+;; 显示 *tp-demo* 及其中的带属性文本；按 `q' 退出窗口
+```
+
+---
+
+### 调色板系统
+
+`tp-palette.el` 内置了一组具名调色板，每个调色板包含独立的亮色模式和
+暗色模式颜色；`tp-builtins.el` 通过内置的参数化 `tp-palette` 层将它们
+暴露出来（如 `(tp-set "emacs" 'tp-palette 'info)`）。
+
+- **`tp-palette-alist`**（变量）— `(NAME . PLIST)` 形式的调色板定义
+  alist；调色板查询的唯一数据源。每个 PLIST 将 `:fg`、`:bg` 和
+  `:border` 映射到颜色。
+- **`define-tp-palette`** — 注册（或更新）一个调色板：
+
+  ```elisp
+  (define-tp-palette my-brand
+    :fg ("#0969da" . "#58a6ff")     ; ("亮色" . "暗色")
+    :bg ("#ddf4ff" . "#1f3d5c"))
+  ```
+
+- **`tp-palette-show`** — 交互式命令，显示一个画廊缓冲区，展示每个已
+  注册调色板及其 `-fg` / `-bg` / `-fbg` / `-border` 变体（按 `q` 退出）。
+- **`tp-parse-color`** — 按当前主题解析颜色规格。接受普通颜色字符串、
+  `("亮色" . "暗色")` cons（任意一侧可以为 nil），或
+  `(:light L :dark D)` plist：
+
+  ```elisp
+  (tp-parse-color "red")                 ; => "red"
+  (tp-parse-color '("white" . "black"))  ; => 亮色主题下为 "white"，
+                                         ;    暗色主题下为 "black"
+  ```
+
+注意：`tp-layer-reset` 会清除所有属性层定义，包括 `tp-palette` 这样的
+内置属性层。
 
 ---
 
@@ -2634,7 +2899,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (define-tp status-todo () '(face (:foreground "gray")))
   (define-tp status-progress () '(face (:foreground "yellow")))
   (define-tp status-done () '(face (:foreground "green")))
-  (define-tps task-status 'status-todo 'status-progress 'status-done)
+  (define-tps task-status () 'status-todo 'status-progress 'status-done)
   ;; 检查组是否已定义
   (length (tp-group-props 'task-status)))
 ;; => 3
@@ -2655,7 +2920,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (define-tp temp-highlight ()
   '(face (:background "yellow")))
   (tp-layer-props 'temp-highlight))
-;; => (face (:background "yellow") tp-name temp-highlight)
+;; => (face (:background "yellow"))
 
 ;; 闪烁函数（用于实际缓冲区）
 (defun flash-region (start end)
@@ -2791,9 +3056,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (define-tp monitored-layer ()
   :props '(face (:foreground $status-color))
   :watch '((status-color 
-           (lambda (new-val old-val layer-name)
-             (message "层 %s: 颜色从 %s 改为 %s" 
-                      layer-name old-val new-val)))))
+            (lambda (new-val old-val layer-name)
+              (message "层 %s: 颜色从 %s 改为 %s" 
+                       layer-name old-val new-val)))))
 
 (setq status-color "red")
 ;; 消息: "层 monitored-layer: 颜色从 nil 改为 red"
@@ -2872,7 +3137,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 层组也可以使用响应式特性：
 
 ```elisp
-(define-tps status-indicators
+(define-tps status-indicators ()
   '("success" :props (face (:foreground $success-color))
               :data ((success-color . "green")))
   '("warning" :props (face (:foreground $warning-color))
@@ -2957,20 +3222,16 @@ tp.el 提供调试模式来帮助理解响应式更新流程：
 (defvar theme-bg "black")
 (defvar theme-accent "cyan")
 
-;; 定义主题感知层
+;; 定义主题感知层 - 每个层都引用主题变量
+(define-tp code-text ()
+  :props '(face (:foreground $theme-fg :background $theme-bg)))
+
 (define-tp code-keyword ()
   :props '(face (:foreground $theme-accent :weight bold)))
 
-(define-tp code-comment ()
-  :props '(face (:foreground "gray" :slant italic)))
-
-(define-tp code-string ()
-  :props '(face (:foreground "green")))
-
-;; 将层应用到代码
+;; 将层应用到当前缓冲区中的代码
+(tp-set (point-min) (point-max) 'code-text)
 (tp-match-set '("defun" "defvar" "let" "if" "when") 'code-keyword)
-(tp-regexp-set ";.*$" 'code-comment)
-(tp-regexp-set "\"[^\"]*\"" 'code-string)
 
 ;; 切换到浅色主题 - 只需改变变量！
 (defun switch-to-light-theme ()
@@ -2985,13 +3246,16 @@ tp.el 提供调试模式来帮助理解响应式更新流程：
   (setq theme-fg "white")
   (setq theme-bg "black")
   (setq theme-accent "cyan"))
+
+;; 调用 `switch-to-light-theme' 后，关键字变为蓝色，其余代码变为
+;; 白底黑字 - 每个区域都会自动重新渲染
 ```
 
 ---
 
 ## 许可证
 
-GNU 通用公共许可证 v2 或更高版本。
+GNU 通用公共许可证 v3 或更高版本。参见 [LICENSE](LICENSE) 文件。
 
 ---
 

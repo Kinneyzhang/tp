@@ -395,13 +395,13 @@ The real power of `tp-text` comes from combining it with reactive variables:
   (tp-set 1 12 'dynamic-content)
   ;; Text now shows "Loading..."
   (message "Initial text: %s" (buffer-string))
-  ;; => "Loading... "
+  ;; => "Loading..."
   
   ;; Change the variable
   (setq my-dynamic-text "Data loaded successfully!")
   ;; Text updates automatically!
   (message "After update: %s" (buffer-string)))
-;; => "Data loaded successfully! "
+;; => "Data loaded successfully!"
 ```
 
 ### Using :compute for Dynamic Text
@@ -451,7 +451,7 @@ You can also use reactive `tp-text` directly in property lists without defining 
 
 ### Important Notes
 
-1. **tp-text only affects buffer text**: For string objects, since Emacs string length is fixed, `tp-text` won't replace string content.
+1. **tp-text on strings returns a new string**: Emacs strings cannot change length in place, so string-object calls return a new string instead of modifying the original. A sub-region `tp-text` replaces only that region and keeps the rest of the string; the whole-string form returns just the replacement text.
 2. **Preserves existing properties**: When using `tp-set` or `tp-add` to set `tp-text`, existing text properties are preserved.
 3. **Non-reactive properties don't add tp-name**: If there are no reactive variables (`$` prefix) in the text properties, `tp-name` and other reactive-specific properties won't be added, maintaining native text property behavior.
 
@@ -466,7 +466,7 @@ The `:transform` keyword allows you to register a transformation function that p
   :data '((price . "99.9"))
   :transform (lambda (text)
                (format "$%.2f" (string-to-number text))))
-;; 99.9 displays as $99.00
+;; 99.9 displays as $99.90
 
 ;; Date formatting
 (define-tp date-display ()
