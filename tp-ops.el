@@ -1148,7 +1148,8 @@ Returns a new plist (does not modify the original)."
 OBJECT is a string or buffer; nil means the current buffer.
 If START and END are not provided, they default to the whole of
 OBJECT: 0/(length OBJECT) for strings, `point-min'/`point-max' of
-OBJECT for buffers (the current buffer when OBJECT is nil)."
+OBJECT for buffers (the current buffer when OBJECT is nil).
+Returns nil."
   (interactive)
   (let ((beg (or start
                  (cond ((stringp object) 0)
@@ -1160,7 +1161,8 @@ OBJECT for buffers (the current buffer when OBJECT is nil)."
                           ((bufferp object)
                            (with-current-buffer object (point-max)))
                           (t (point-max))))))
-    (set-text-properties beg finish nil object)))
+    (set-text-properties beg finish nil object)
+    nil))
 
 (provide 'tp-ops)
 ;;; tp-ops.el ends here

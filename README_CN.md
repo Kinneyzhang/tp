@@ -61,6 +61,8 @@
   - [属性层定义](#属性层定义)
     - [define-tp / define-tps](#define-tp--define-tps---定义自定义文本属性)
     - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
+    - [tp-layer-props-with-args / tp-group-props-with-args / tp-layer-arglist](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist)
+    - [tp-describe-layer](#tp-describe-layer---描述属性层)
     - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
     - [tp-layer-reset](#tp-layer-reset)
     - [tp-reactive-reset](#tp-reactive-reset)
@@ -73,9 +75,12 @@
   - [属性层移动](#属性层移动)
     - [tp-move-layer](#tp-move-layer---移动属性层到指定位置)
     - [tp-raise-layer](#tp-raise-layer---上移下移属性层)
+    - [tp-lower-layer](#tp-lower-layer---tp-raise-layer-的镜像)
     - [tp-rotate-layer](#tp-rotate-layer---轮换属性层)
     - [tp-pin-layer](#tp-pin-layer---将属性层置顶)
     - [tp-switch-layer](#tp-switch-layer---交换两个属性层)
+  - [属性层可见性](#属性层可见性)
+    - [tp-hide-layer / tp-show-layer](#tp-hide-layer--tp-show-layer---隐藏与显示属性层)
   - [属性层合并](#属性层合并)
     - [tp-merge-layers](#tp-merge-layers---合并多个属性层)
     - [tp-flatten-layers](#tp-flatten-layers---扁平化所有属性层)
@@ -84,6 +89,7 @@
     - [tp-layer-count](#tp-layer-count)
     - [tp-layer-exists-p](#tp-layer-exists-p)
     - [tp-layer-top](#tp-layer-top)
+    - [tp-layer-stack-at](#tp-layer-stack-at---获取某位置的完整层栈)
     - [tp-add-to-layers](#tp-add-to-layers---向特定属性层添加属性)
     - [tp-add-to-all-layers](#tp-add-to-all-layers---向所有属性层添加属性)
   - [实用工具函数](#实用工具函数)
@@ -106,6 +112,7 @@
   - [API 中的层名解析](#api-中的层名解析)
   - [响应式层组](#响应式层组)
   - [批量更新](#批量更新)
+  - [层-缓冲区注册表与生命周期](#层-缓冲区注册表与生命周期)
   - [调试模式](#调试模式)
   - [重置响应式状态](#重置响应式状态)
   - [完整示例：主题感知文本](#完整示例主题感知文本)
@@ -184,6 +191,42 @@
   ```
 - ✅ **统一对象支持**：同一个函数同时支持字符串和缓冲区，无需记忆不同的 API
 
+**只需记住一条规则**：当第一个参数是**字符串**时，调用作用于整个字符串；
+当第一个参数是**数字**时，调用作用于 OBJECT 的 `[START, END)` 区域 —— 而
+OBJECT 总是位于最后（nil 表示当前缓冲区）。所有核心函数和层栈函数都遵循
+这条规则。
+
+匹配/搜索家族（`tp-match-*`、`tp-regexp-*`、`tp-search-map`、
+`tp-forward-do`/`tp-backward-do`）刻意采用了**第二种约定**：PATTERN
+（或 FUNCTION）和 PLIST 在前，然后是 OBJECT，最后才是可选的 START/END
+边界。对这些函数来说，作用于整个对象才是常见用法，因此 OBJECT 位于范围
+参数之前而不是之后。
+
+**返回值约定**（自 0.3.0 起）：
+
+| 函数家族 | 返回值 |
+|---|---|
+| `tp-set` / `tp-reset` / `tp-add` | 缓冲区/区域形式返回 `(START . END)`；整字符串形式返回一个**新**字符串 |
+| `tp-remove` | 缓冲区形式返回 nil；整字符串形式返回一个**新**字符串 |
+| `tp-clear` | nil |
+| `tp-match-*` / `tp-regexp-*` | 缓冲区返回 `(START . END)` 匹配列表；字符串返回一个**新**字符串 |
+| 栈修改函数（delete/pop/move/raise/lower/rotate/pin/switch/hide/show/merge/flatten） | 被修改的属性区段数量（0 = 没有匹配任何层） |
+| `tp-put-layer` / `tp-push-layer` | 给定 OBJECT 时返回 OBJECT（字符串形式返回该字符串本身），否则返回 `(START . END)` |
+| `tp-add-to-layers` / `tp-add-to-all-layers` | 字符串形式返回该字符串本身（**就地**修改）；缓冲区返回 nil |
+
+**命名空间地图**：接受*层名*参数的 `tp-layer-NAME` 函数
+（`tp-layer-props`、`tp-layer-arglist` 等）查询的是层**注册表**（层定
+义）；接受*位置*参数的函数 —— START END（`tp-layer-list`、
+`tp-layer-count`、`tp-layer-top` 等）或单个 POS（`tp-layer-stack-at`）
+—— 查询的是实际文本上的层**栈**。
+
+**命名约定**：`tp-define-layer` / `tp-define-group` /
+`tp-define-palette` 是今后符合前缀规范的规范名称（可通过
+`C-h f tp-...` 发现）；`define-tp` / `define-tps` / `define-tp-group` /
+`define-tp-palette` 是永久别名，永远不会被移除（本 README 的示例仍使用
+历史名称）。`tp-search-forward` / `tp-search-backward` 自 0.3.0 起已废
+弃 —— 参见[搜索和导航函数](#tp-search-forward--tp-search-backward)。
+
 ### 三种属性操作语义
 
 原生 API 只有简单的设置和获取，tp.el 提供了三种清晰的操作语义：
@@ -254,9 +297,10 @@
 - ✅ **丰富的属性层操作**：
   - 放置：`tp-put-layer`（指定位置）、`tp-push-layer`（顶部）
   - 删除：`tp-delete-layer`（按名称/索引）、`tp-pop-layer`（顶层）
-  - 移动：`tp-raise-layer`（上下移动）、`tp-rotate-layer`（轮换）、`tp-pin-layer`（置顶）、`tp-switch-layer`（交换）
+  - 移动：`tp-raise-layer` / `tp-lower-layer`（上下移动）、`tp-rotate-layer`（轮换）、`tp-pin-layer`（一次性置顶）、`tp-switch-layer`（交换）
+  - 可见性：`tp-hide-layer` / `tp-show-layer`（隐藏属性层而不移除它）
   - 合并：`tp-merge-layers`（合并指定层）、`tp-flatten-layers`（扁平化所有层）
-- ✅ **属性层查询**：`tp-layer-list`、`tp-layer-count`、`tp-layer-exists-p`、`tp-layer-top`
+- ✅ **属性层查询**：`tp-layer-list`、`tp-layer-count`、`tp-layer-exists-p`、`tp-layer-top`、`tp-layer-stack-at`
 
 ```elisp
 ;; 属性层使用示例
@@ -299,6 +343,7 @@
 - ✅ **:data 附加状态**：定义不直接用于属性但可以触发更新的额外响应式变量
 - ✅ **:compute 计算属性**：创建从其他响应式变量派生值的计算属性（类似 Vue 的 computed）
 - ✅ **:watch 副作用监听**：当响应式变量改变时执行回调函数（类似 Vue 的 watch）
+- ✅ **定向更新（0.3.0）**：层→缓冲区注册表使更新只访问展示受影响层的缓冲区；`tp-text` 重渲染只编辑差异区段（point 和标记保持原位）；`tp-reactive-track-buffer` / `tp-gc-anonymous-layers` 管理层的生命周期 —— 参见[层-缓冲区注册表与生命周期](#层-缓冲区注册表与生命周期)
 
 ```elisp
 ;; 定义一个带响应式属性的层
@@ -327,8 +372,8 @@
 ### 增强的搜索与导航
 
 - ✅ **范围搜索**：`tp-search` 返回所有匹配区间的列表
-- ✅ **N次搜索**：`tp-forward`/`tp-backward` 支持向前/向后搜索N次
-- ✅ **搜索并执行**：`tp-forward-do`/`tp-backward-do` 搜索并对匹配文本执行函数
+- ✅ **N次搜索**：`tp-forward`/`tp-backward` 支持向前/向后搜索N次，并支持可选的 PREDICATE 匹配和 NOT-CURRENT
+- ✅ **搜索并执行**：`tp-forward-do`/`tp-backward-do` 搜索 N 次并在第 N 个匹配处应用函数
 - ✅ **批量转换**：`tp-search-map` 对所有匹配应用转换函数
 
 ```elisp
@@ -403,32 +448,37 @@ tp.el 所有函数按类别组织的完整概览：
 #### 模式匹配函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-match-set`](#tp-match-set---匹配字符串) | 在字符串匹配处设置属性 |
-| [`tp-match-reset`](#tp-match-reset---匹配并重置) | 在字符串匹配处重置所有属性 |
-| [`tp-match-add`](#tp-match-add---匹配并添加) | 在字符串匹配处添加/合并属性 |
-| [`tp-regexp-set`](#tp-regexp-set---匹配正则表达式) | 在正则匹配处设置属性 |
-| [`tp-regexp-reset`](#tp-regexp-reset---正则匹配并重置) | 在正则匹配处重置所有属性 |
-| [`tp-regexp-add`](#tp-regexp-add---正则匹配并添加) | 在正则匹配处添加/合并属性 |
+| [`tp-match-set`](#tp-match-set---匹配字符串) | 在字符串匹配处设置属性（可选边界） |
+| [`tp-match-reset`](#tp-match-reset---匹配并重置) | 在字符串匹配处重置所有属性（可选边界） |
+| [`tp-match-add`](#tp-match-add---匹配并添加) | 在字符串匹配处添加/合并属性（可选边界） |
+| [`tp-regexp-set`](#tp-regexp-set---匹配正则表达式) | 在正则匹配处设置属性（可选边界和捕获组） |
+| [`tp-regexp-reset`](#tp-regexp-reset---正则匹配并重置) | 在正则匹配处重置所有属性（可选边界和捕获组） |
+| [`tp-regexp-add`](#tp-regexp-add---正则匹配并添加) | 在正则匹配处添加/合并属性（可选边界和捕获组） |
 
 #### 搜索和导航函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-search-forward`](#tp-search-forward--tp-search-backward) | text-property-search-forward 的原始包装 |
-| [`tp-search-backward`](#tp-search-forward--tp-search-backward) | text-property-search-backward 的原始包装 |
-| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本（支持缓冲区和字符串） |
-| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本（支持缓冲区和字符串） |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 向前搜索并对最后一个匹配应用函数（支持起始和结束范围） |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 向后搜索并对最后一个匹配应用函数（支持起始和结束范围） |
+| [`tp-search-forward`](#tp-search-forward--tp-search-backward) | **已废弃（0.3.0）** —— 请使用 [`tp-forward`](#tp-forward--tp-backward) 或 Emacs 原语 |
+| [`tp-search-backward`](#tp-search-forward--tp-search-backward) | **已废弃（0.3.0）** —— 请使用 [`tp-backward`](#tp-forward--tp-backward) 或 Emacs 原语 |
+| [`tp-forward`](#tp-forward--tp-backward) | 向前搜索 N 次具有属性的文本（可选谓词匹配） |
+| [`tp-backward`](#tp-forward--tp-backward) | 向后搜索 N 次具有属性的文本（可选谓词匹配） |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | 向前搜索 N 次，在第 N 个匹配处应用函数 |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | 向后搜索 N 次，在第 N 个匹配处应用函数 |
 | [`tp-search`](#tp-search---搜索所有匹配) | 在范围或字符串中搜索所有匹配的属性 |
 | [`tp-search-map`](#tp-search-map---对匹配文本应用函数) | 对所有匹配的文本应用函数（支持起始和结束范围） |
 
 #### 属性层定义函数
 | 函数 | 描述 |
 |------|------|
-| [`define-tp`](#define-tp--define-tps---定义自定义文本属性) | 定义自定义文本属性（层），支持参数化 |
-| [`define-tps`](#define-tp--define-tps---定义自定义文本属性) | 定义自定义文本属性组（层组），支持参数化 |
+| [`define-tp`](#define-tp--define-tps---定义自定义文本属性) | 定义自定义文本属性（层），支持可选参数 |
+| [`define-tps`](#define-tp--define-tps---定义自定义文本属性) | 定义自定义文本属性组（层组），支持可选参数 |
+| [`tp-define-layer` / `tp-define-group`](#define-tp--define-tps---定义自定义文本属性) | `define-tp` / `define-tps` 的前缀规范别名 |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | 获取属性层的属性 |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | 获取属性层组中所有属性层的属性 |
+| [`tp-layer-props-with-args`](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist) | 用参数列表展开参数化属性层 |
+| [`tp-group-props-with-args`](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist) | 用参数列表展开参数化属性层组 |
+| [`tp-layer-arglist`](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist) | 获取参数化属性层的参数列表 |
+| [`tp-describe-layer`](#tp-describe-layer---描述属性层) | 在帮助缓冲区中描述属性层的定义 |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | 移除属性层定义 |
 | [`tp-undefine-group`](#tp-undefine-layer--tp-undefine-group) | 移除属性层组定义 |
 | [`tp-layer-reset`](#tp-layer-reset) | 清除所有属性层/属性层组定义 |
@@ -437,8 +487,8 @@ tp.el 所有函数按类别组织的完整概览：
 #### 属性层放置函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-put-layer`](#tp-put-layer---在指定位置设置属性层) | 在指定索引位置设置属性层 |
-| [`tp-push-layer`](#tp-push-layer---推送属性层到顶部) | 将属性层推到堆栈顶部 |
+| [`tp-put-layer`](#tp-put-layer---在指定位置设置属性层) | 在指定索引位置设置属性层（可选 NOERROR） |
+| [`tp-push-layer`](#tp-push-layer---推送属性层到顶部) | 将属性层推到堆栈顶部（可选 NOERROR） |
 
 #### 属性层删除函数
 | 函数 | 描述 |
@@ -451,15 +501,22 @@ tp.el 所有函数按类别组织的完整概览：
 |------|------|
 | [`tp-move-layer`](#tp-move-layer---移动属性层到指定位置) | 将属性层从一个位置移动到另一个位置 |
 | [`tp-raise-layer`](#tp-raise-layer---上移下移属性层) | 将属性层上移/下移 N 个位置 |
-| [`tp-rotate-layer`](#tp-rotate-layer---轮换属性层) | 轮换属性层（顶层移到底部） |
-| [`tp-pin-layer`](#tp-pin-layer---将属性层置顶) | 将属性层置顶（使其可见） |
+| [`tp-lower-layer`](#tp-lower-layer---tp-raise-layer-的镜像) | `tp-raise-layer` 的镜像：将属性层下移/上移 N 个位置 |
+| [`tp-rotate-layer`](#tp-rotate-layer---轮换属性层) | 向上或向下轮换属性层 N 步 |
+| [`tp-pin-layer`](#tp-pin-layer---将属性层置顶) | 将属性层移到顶部（一次性；之后的 push 仍可能覆盖它） |
 | [`tp-switch-layer`](#tp-switch-layer---交换两个属性层) | 交换两个属性层的位置 |
+
+#### 属性层可见性函数
+| 函数 | 描述 |
+|------|------|
+| [`tp-hide-layer`](#tp-hide-layer--tp-show-layer---隐藏与显示属性层) | 隐藏属性层而不将其从栈中移除 |
+| [`tp-show-layer`](#tp-hide-layer--tp-show-layer---隐藏与显示属性层) | 让隐藏的属性层重新渲染 |
 
 #### 属性层合并函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-merge-layers`](#tp-merge-layers---合并多个属性层) | 将指定属性层合并为新属性层 |
-| [`tp-flatten-layers`](#tp-flatten-layers---扁平化所有属性层) | 将所有属性层扁平化为单一属性层 |
+| [`tp-merge-layers`](#tp-merge-layers---合并多个属性层) | 将指定属性层合并为新属性层（隐藏层不贡献属性） |
+| [`tp-flatten-layers`](#tp-flatten-layers---扁平化所有属性层) | 将所有属性层扁平化为单一属性层（隐藏层被丢弃） |
 
 #### 属性层查询函数
 | 函数 | 描述 |
@@ -467,7 +524,8 @@ tp.el 所有函数按类别组织的完整概览：
 | [`tp-layer-list`](#tp-layer-list---列出所有属性层) | 列出区域中的所有属性层名称 |
 | [`tp-layer-count`](#tp-layer-count) | 计算区域中的属性层数量 |
 | [`tp-layer-exists-p`](#tp-layer-exists-p) | 检查区域中是否存在某属性层 |
-| [`tp-layer-top`](#tp-layer-top) | 获取顶层（可见）属性层的名称 |
+| [`tp-layer-top`](#tp-layer-top) | 获取顶层属性层的名称（按栈序，即使它被隐藏） |
+| [`tp-layer-stack-at`](#tp-layer-stack-at---获取某位置的完整层栈) | 以 `(NAME . PROPS)` cons 形式返回某位置的完整有序层栈 |
 | [`tp-region-layer-props`](#tp-region-layer-props---获取区域中的层属性) | 获取区域中特定层的属性 |
 
 #### 属性层操作函数
@@ -479,8 +537,8 @@ tp.el 所有函数按类别组织的完整概览：
 #### 实用工具函数
 | 函数 | 描述 |
 |------|------|
-| [`tp-intervals`](#tp-intervals---获取文本属性区间) | 获取区域中的所有文本属性区间 |
-| [`tp-intervals-map`](#tp-intervals-map---对区间应用函数) | 对区域中的所有区间应用函数 |
+| [`tp-intervals`](#tp-intervals---获取文本属性区间) | 获取区域中的所有文本属性区间（可选 ABSOLUTE 坐标） |
+| [`tp-intervals-map`](#tp-intervals-map---对区间应用函数) | 对区域中的所有区间应用函数（可选 ABSOLUTE 坐标） |
 | [`tp-plist`](#tp-plist---获取区域中的所有属性) | 获取区域中存在的所有属性 |
 | [`tp-empty-p`](#tp-empty-p---检查对象是否有属性) | 检查对象是否没有文本属性 |
 | [`tp-with-current-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | 在绑定 `inhibit-read-only` 的情况下在缓冲区中执行 body |
@@ -491,9 +549,19 @@ tp.el 所有函数按类别组织的完整概览：
 | 函数 | 描述 |
 |------|------|
 | [`tp-palette-alist`](#调色板系统) | 具名调色板注册表（变量） |
-| [`define-tp-palette`](#调色板系统) | 注册或更新一个具名调色板 |
+| [`define-tp-palette`](#调色板系统) | 注册或更新一个具名调色板（别名：`tp-define-palette`） |
+| [`tp-palette-color`](#调色板系统) | 获取调色板的 `:fg` / `:bg` / `:border` 颜色，按主题解析 |
+| [`tp-palette-has-p`](#调色板系统) | 测试调色板（或其某个键）是否已定义 |
 | [`tp-palette-show`](#调色板系统) | 展示所有已注册调色板的画廊 |
 | [`tp-parse-color`](#调色板系统) | 按当前亮色/暗色主题解析颜色规格 |
+
+#### 响应式生命周期函数
+| 函数 | 描述 |
+|------|------|
+| [`tp-with-batch-updates`](#批量更新) | 将多个响应式变量更改合并为一次更新 |
+| [`tp-reactive-layer-buffers`](#层-缓冲区注册表与生命周期) | 注册为展示某层的缓冲区（或 `unknown`） |
+| [`tp-reactive-track-buffer`](#层-缓冲区注册表与生命周期) | 插入已带属性的字符串后注册缓冲区 |
+| [`tp-gc-anonymous-layers`](#层-缓冲区注册表与生命周期) | 回收已无注册的存活缓冲区展示的匿名层 |
 
 ---
 
@@ -982,7 +1050,7 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 (tp-clear &optional START END OBJECT)
 ```
 
-清除区域中的所有文本属性。
+清除区域中的所有文本属性。返回 nil。
 
 **示例：**
 
@@ -1011,8 +1079,8 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 #### `tp-match-set` - 匹配字符串
 
 ```elisp
-(tp-match-set PATTERN PLIST &optional OBJECT)
-(tp-match-set PATTERN LAYER-NAME &optional OBJECT)
+(tp-match-set PATTERN PLIST &optional OBJECT START END)
+(tp-match-set PATTERN LAYER-NAME &optional OBJECT START END)
 ```
 
 在所有字符串模式匹配处设置属性。
@@ -1020,6 +1088,10 @@ PATTERN 可以是字符串（单个模式）或字符串列表（多个模式）
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
 LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或通过 `define-tps` 定义的属性组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
+START 和 END（0.3.0 新增）将匹配限制在 OBJECT 的 `[START, END)` 部分，
+使用原生坐标（字符串从 0 开始，缓冲区从 1 开始）。匹配的行为**如同
+OBJECT 只由这一部分组成**，因此匹配不会跨越边界；颠倒的边界会被交换。
+全部六个 `tp-match-*` / `tp-regexp-*` 函数都接受同样的边界参数。
 
 **示例：**
 
@@ -1052,6 +1124,12 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (insert "TODO: fix this. TODO: also this.")
   (tp-match-set "TODO" 'todo-style))
 ;; => ((1 . 5) (17 . 21))
+
+;; 用 START/END 边界限制匹配 - 只有第二个 TODO 在范围内
+(with-temp-buffer
+  (insert "TODO one TODO two")
+  (tp-match-set "TODO" '(face warning) nil 5 18))
+;; => ((10 . 14))
 ```
 
 ---
@@ -1065,9 +1143,12 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
-(tp-match-reset PATTERN PLIST &optional OBJECT)
-(tp-match-reset PATTERN LAYER-NAME &optional OBJECT)
+(tp-match-reset PATTERN PLIST &optional OBJECT START END)
+(tp-match-reset PATTERN LAYER-NAME &optional OBJECT START END)
 ```
+
+START 和 END 将匹配限制在 OBJECT 的 `[START, END)` 部分
+（参见 [`tp-match-set`](#tp-match-set---匹配字符串)）。
 
 **示例：**
 
@@ -1106,9 +1187,12 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
-(tp-match-add PATTERN PLIST &optional OBJECT)
-(tp-match-add PATTERN LAYER-NAME &optional OBJECT)
+(tp-match-add PATTERN PLIST &optional OBJECT START END)
+(tp-match-add PATTERN LAYER-NAME &optional OBJECT START END)
 ```
+
+START 和 END 将匹配限制在 OBJECT 的 `[START, END)` 部分
+（参见 [`tp-match-set`](#tp-match-set---匹配字符串)）。
 
 **示例：**
 
@@ -1141,8 +1225,8 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 #### `tp-regexp-set` - 匹配正则表达式
 
 ```elisp
-(tp-regexp-set PATTERN PLIST &optional OBJECT)
-(tp-regexp-set PATTERN LAYER-NAME &optional OBJECT)
+(tp-regexp-set PATTERN PLIST &optional OBJECT START END SUBEXP)
+(tp-regexp-set PATTERN LAYER-NAME &optional OBJECT START END SUBEXP)
 ```
 
 在所有正则表达式匹配处设置属性。
@@ -1150,6 +1234,13 @@ PATTERN 可以是字符串（单个正则）或字符串列表（多个正则）
 PLIST 是属性列表，如 `'(face bold help-echo "tip")`。
 LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或通过 `define-tps` 定义的属性组名称。
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
+START 和 END（0.3.0 新增）将匹配限制在 OBJECT 的 `[START, END)` 部分，
+使用原生坐标；匹配的行为如同 OBJECT 只由这一部分组成，颠倒的边界会被
+交换（参见 [`tp-match-set`](#tp-match-set---匹配字符串)）。
+SUBEXP（0.3.0 新增）指定 PATTERN 的一个捕获组（1 = 第一个组，与
+font-lock 高亮的约定一致）：属性应用于每个匹配中的该捕获组，而不是整个
+匹配。捕获组未参与的匹配不贡献任何内容；SUBEXP 超出模式的捕获组数量时
+会发出明确的错误信号。全部三个 `tp-regexp-*` 函数都接受 SUBEXP。
 
 **示例：**
 
@@ -1178,6 +1269,28 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
   (insert "abc 123 def 456")
   (tp-regexp-set "[0-9]+" 'number-style))
 ;; => ((5 . 8) (13 . 16))
+
+;; SUBEXP - 只对每个匹配的捕获组 1 设置属性
+(tp-regexp-set "\\([0-9]+\\)px" '(face bold) "margin: 10px 4px" nil nil 1)
+;; => #("margin: 10px 4px" 8 10 (face bold) 13 14 (face bold))
+
+;; 捕获组未参与的匹配不贡献任何内容：
+;; "bar" 匹配该模式，但捕获组 1 只在 "foo" 中参与
+(tp-regexp-set "\\(foo\\)\\|bar" '(face bold) "foo bar" nil nil 1)
+;; => #("foo bar" 0 3 (face bold))
+
+;; SUBEXP 超出模式的捕获组数量时发出明确的错误信号
+(tp-regexp-set "[0-9]+" '(face bold) "abc 123" nil nil 2)
+;; error: Regexp "[0-9]+" has no group 2
+
+;; START/END 边界：如同只有这一部分存在 - 贪婪的 a+
+;; 恰好匹配 [1, 3) 而不是整段字符
+(tp-regexp-set "a+" '(face bold) "aaaa" 1 3)
+;; => #("aaaa" 1 3 (face bold))
+
+;; 颠倒的边界会被交换
+(tp-regexp-set "a+" '(face bold) "aaaa" 3 1)
+;; => #("aaaa" 1 3 (face bold))
 ```
 
 ---
@@ -1191,9 +1304,12 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
-(tp-regexp-reset PATTERN PLIST &optional OBJECT)
-(tp-regexp-reset PATTERN LAYER-NAME &optional OBJECT)
+(tp-regexp-reset PATTERN PLIST &optional OBJECT START END SUBEXP)
+(tp-regexp-reset PATTERN LAYER-NAME &optional OBJECT START END SUBEXP)
 ```
+
+START/END 边界和 SUBEXP 捕获组的用法与
+[`tp-regexp-set`](#tp-regexp-set---匹配正则表达式) 完全相同。
 
 **示例：**
 
@@ -1233,9 +1349,12 @@ LAYER-NAME 可以是通过 `define-tp` 定义的自定义文本属性名称或�
 OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 ```elisp
-(tp-regexp-add PATTERN PLIST &optional OBJECT)
-(tp-regexp-add PATTERN LAYER-NAME &optional OBJECT)
+(tp-regexp-add PATTERN PLIST &optional OBJECT START END SUBEXP)
+(tp-regexp-add PATTERN LAYER-NAME &optional OBJECT START END SUBEXP)
 ```
+
+START/END 边界和 SUBEXP 捕获组的用法与
+[`tp-regexp-set`](#tp-regexp-set---匹配正则表达式) 完全相同。
 
 **示例：**
 
@@ -1270,21 +1389,27 @@ OBJECT 是缓冲区或字符串；nil 表示当前缓冲区。
 
 #### `tp-search-forward` / `tp-search-backward`
 
-```elisp
-(tp-search-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
-(tp-search-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
-```
+> ⚠️ **自 0.3.0 起已废弃。**这两个函数是 Emacs 的
+> `text-property-search-forward` / `text-property-search-backward` 的原
+> 始包装，其 nil-PREDICATE 默认行为（匹配非 nil 且与 VALUE **不**
+> `equal` 的值）与本库其余部分使用的 `equal` 匹配相矛盾。请使用
+> [`tp-forward` / `tp-backward`](#tp-forward--tp-backward) 获得 tp 对称
+> 的 `equal` 匹配搜索 —— 它们现在也暴露了 PREDICATE 和 NOT-CURRENT ——
+> 或者直接调用 Emacs 原语进行底层访问。这两个包装仍然可用，但已被标记
+> 为过时（字节编译器会对新的调用发出警告）。
 
-Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的原始包装。
-这些是直接使用 prop-match 对象的底层搜索函数。
+```elisp
+(tp-search-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)   ; deprecated
+(tp-search-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)  ; deprecated
+```
 
 ---
 
 #### `tp-forward` / `tp-backward`
 
 ```elisp
-(tp-forward PROPERTY &optional VALUE OBJECT N)
-(tp-backward PROPERTY &optional VALUE OBJECT N)
+(tp-forward PROPERTY &optional VALUE OBJECT N PREDICATE NOT-CURRENT)
+(tp-backward PROPERTY &optional VALUE OBJECT N PREDICATE NOT-CURRENT)
 ```
 
 向前/向后搜索 N 次具有 PROPERTY 的文本。
@@ -1296,9 +1421,16 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - **`tp-backward` 与 `tp-forward` 对称**：相同的 equal 匹配语义，
   方向相反。
 - **OBJECT** 可以是缓冲区或字符串；nil 默认为当前缓冲区。
+- **PREDICATE**（0.3.0 新增）自定义匹配方式：nil（默认值）和 t 都
+  **完全**保持 0.2.0 的 `equal` 匹配契约；传入函数时以 `(VALUE PROP-VALUE)`
+  调用，返回非 nil 即视为匹配。
+- **NOT-CURRENT**（0.3.0 新增）非 nil 时跳过包含 point 的匹配区段，与
+  `text-property-search-*` 原语的行为一致。仅缓冲区路径有效；字符串没
+  有 point，因此在字符串上会被忽略。
 - 对于缓冲区，返回最后一次成功搜索的 prop-match 对象。
-- 对于字符串，返回 PROPERTY 存在的各区段的 (START END VALUE) 列表；
-  VALUE 为 nil 表示匹配任意值。`tp-backward` 按从末尾到开头的顺序返回。
+- 对于字符串，返回**前 N 个** PROPERTY 匹配区段的 (START END VALUE)
+  列表，从位置 0 开始计数（与 point 无关）；VALUE 为 nil 表示匹配任意
+  值。`tp-backward` 按从末尾到开头的顺序返回。
 
 **示例：**
 
@@ -1347,6 +1479,38 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward 'marker nil my-string 2))
 ;; => ((0 5 t) (12 17 t))
+
+;; PREDICATE - 用自定义函数代替 `equal' 进行匹配
+;; （调用参数为 VALUE 和该区段的属性值）
+(with-temp-buffer
+  (insert "abcdef")
+  (tp-set 1 3 '(size 10))
+  (tp-set 3 6 '(size 20))
+  (goto-char 1)
+  (let ((match (tp-forward 'size 15 nil 1
+                           (lambda (target v) (and v (> v target))))))
+    (list (prop-match-beginning match) (prop-match-end match))))
+;; => (3 6)  ; 第一个 size 超过 15 的区段
+
+;; PREDICATE 也适用于字符串（返回前 N 个匹配区段）
+(let ((str (copy-sequence "hello world")))
+  (tp-set 0 5 '(size 10) str)
+  (tp-set 6 11 '(size 20) str)
+  (tp-forward 'size 15 str 2 (lambda (target v) (and v (> v target)))))
+;; => ((6 11 20))
+
+;; NOT-CURRENT - 跳过包含 point 的匹配区段
+(with-temp-buffer
+  (insert "one two")
+  (tp-set 1 4 '(mark t))
+  (tp-set 5 8 '(mark t))
+  (let (a b)
+    (goto-char 2)                    ; 位于第一个 mark 区段内
+    (setq a (prop-match-beginning (tp-forward 'mark t)))
+    (goto-char 2)
+    (setq b (prop-match-beginning (tp-forward 'mark t nil 1 nil t)))
+    (list a b)))
+;; => (2 5)  ; 不带 NOT-CURRENT 时当前区段在 point 处即匹配
 ```
 
 ---
@@ -1354,11 +1518,14 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 #### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
-(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END PREDICATE NOT-CURRENT)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END PREDICATE NOT-CURRENT)
 ```
 
-在 OBJECT 的 START 到 END 范围内，向前/向后搜索匹配 PROPERTY 属性（值为 VALUE）的部分，**仅对最后一次匹配执行 FUNCTION 函数**。
+向前/向后搜索 TIMES 次具有 PROPERTY 的文本，**仅在第 TIMES 个匹配处应用 FUNCTION**。
+
+尽管带有 `-do` 后缀，它并**不是** for-each —— 要对*每个*匹配应用函数，
+请使用 [`tp-search-map`](#tp-search-map---对匹配文本应用函数)。
 
 - **FUNCTION** 的参数是 `(TEXT &optional START END IDX)`，其中 TEXT 是此次匹配到的文本，START 和 END 为开始结束的位置，IDX 是从 0 开始的匹配索引。FUNCTION 会按其实际接受的参数个数被调用。当 FUNCTION 返回字符串时，它将替换字符串或缓冲区中的匹配文本。
 - **在缓冲区中替换文本可以改变长度**（先删除匹配文本，再插入替换文本）。**字符串无法就地改变长度**：长度不同的替换会发出错误信号；长度相同的替换会就地应用。
@@ -1367,6 +1534,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 - **OBJECT** 默认是当前 buffer 或指定的字符串或指定的 buffer。
 - **TIMES** 表示向前/向后搜索几次，默认搜索一次。该函数会搜索 TIMES 次，但仅对第 TIMES 个匹配应用 FUNCTION。要么全有要么全无：当匹配数量不足 TIMES 时，完全不应用 FUNCTION，仅返回实际找到的匹配数量。
 - **START** 和 **END** 默认为 OBJECT 的起始和结束位置。
+- **PREDICATE** 和 **NOT-CURRENT**（0.3.0 新增）的用法与
+  [`tp-forward` / `tp-backward`](#tp-forward--tp-backward) 相同，并被应
+  用到每一次底层搜索；默认值完全保持 0.2.0 的行为。
 - 返回成功匹配的数量。
 
 **示例：**
@@ -1386,7 +1556,9 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do #'upcase 'marker nil my-string 2 6 17)
   my-string)
-;; => "hello world HELLO"  ; 范围 6-17 内仅有 1 个匹配
+;; => "hello world hello"  ; 范围 6-17 内仅有 1 个匹配，请求的
+;;    第 2 个匹配不存在：不做任何应用（要么全有要么全无；
+;;    调用仍返回实际匹配数 1）
 
 ;; 使用带有 start 和 end 参数的函数
 ;; 函数接收位置信息；使用 upcase 保持相同长度
@@ -1624,9 +1796,15 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 #### `define-tp` / `define-tps` - 定义自定义文本属性
 
+> 自 0.3.0 起，符合前缀规范的别名 `tp-define-layer`（对应
+> `define-tp`）、`tp-define-group`（对应 `define-tps`）和
+> `tp-define-palette`（对应 `define-tp-palette`）是今后的规范名称 ——
+> 它们让这些宏可以通过 `C-h f tp-...` 被发现。历史名称是永久别名，永远
+> 不会被移除；本 README 的示例仍继续使用它们。
+
 ##### `define-tp` - 定义单个自定义文本属性（层）
 
-定义自定义文本属性，名称无需单引号引用。**所有格式中参数列表都是必需的**：无参数层（包括响应式关键字格式）用 `()`，参数化层用 `(ARG)`。支持三种格式：
+定义自定义文本属性，名称无需单引号引用。**所有格式中参数列表都是必需的**：无参数层（包括响应式关键字格式）用 `()`，参数化层用 `(ARG1 ARG2 ...)`，可包含任意数量的参数符号。支持三种格式：
 
 **格式一 - 无参数（空参数列表，简单属性）：**
 
@@ -1639,7 +1817,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-set 0 5 '(tp-bold t) "emacs")
 ```
 
-**格式二 - 有参数（带单个参数）：**
+**格式二 - 有参数（带一个或多个参数）：**
 
 ```elisp
 (define-tp tp-space (pixel)
@@ -1649,6 +1827,42 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 (tp-set "emacs" 'tp-space 2)
 (tp-set 0 5 '(tp-space 2) "emacs")
 ```
+
+自 0.3.0 起，参数列表可以声明**任意数量的参数**。调用规格既接受平铺的
+参数 —— `(LAYER ARG1 ... ARGN)` —— 也接受包在一个列表中的参数 ——
+`(LAYER (ARG1 ... ARGN))` —— 两种写法在 `tp-set` 和 `tp-put-layer` 中
+都有效：
+
+```elisp
+(define-tp tp-colors (fg bg)
+  `(face (:foreground ,fg :background ,bg)))
+
+;; 整字符串形式：参数跟在层名后面
+(tp-set "hello" 'tp-colors "red" "blue")
+;; => #("hello" 0 5 (face (:foreground "red" :background "blue")))
+
+;; 区域形式，包装的参数列表外加额外属性
+(let ((str (copy-sequence "hello")))
+  (tp-set 0 5 '(tp-colors ("red" "blue") help-echo "tip") str)
+  (list (tp-at 0 'face str) (tp-at 0 'help-echo str)))
+;; => ((:foreground "red" :background "blue") "tip")
+
+;; tp-put-layer 规格
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-put-layer 1 10 '(tp-colors "white" "black") 0)
+  (tp-at 1 'face))
+;; => (:foreground "white" :background "black")
+
+;; 参数个数不符的调用会发出明确的错误信号，指出层名和两个数量
+(tp-set "hello" 'tp-colors "red")
+;; error: tp layer tp-colors takes 2 argument(s), got 1
+```
+
+参数化层组（`define-tps`）以同样的方式接受多个参数；
+`(GROUP ARG1 ... ARGN)` 和 `(GROUP (ARG1 ... ARGN))` 规格在 `tp-set`
+家族中都有效。注意：参数化 body 中的 `$` 符号在展开时解析为其变量的当
+前值 —— 参数化层**不是**响应式的。
 
 **格式三 - 响应式特性（支持 :props、:data、:compute、:watch、:transform）：**
 
@@ -1679,7 +1893,7 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ##### `define-tps` - 定义自定义文本属性组（层组）
 
-定义多个相关的自定义文本属性，名称无需单引号引用。与 `define-tp` 一样，**参数列表是必需的**：无参数层组用 `()`，参数化层组用 `(ARG)`。属性组中定义的文本属性可以单独使用，也可以使用组名称来设置多层。
+定义多个相关的自定义文本属性，名称无需单引号引用。与 `define-tp` 一样，**参数列表是必需的**：无参数层组用 `()`，参数化层组用 `(ARG1 ARG2 ...)`（自 0.3.0 起支持任意数量的参数）。属性组中定义的文本属性可以单独使用，也可以使用组名称来设置多层。
 
 **格式一 - 无参数（空参数列表）：**
 
@@ -1862,6 +2076,87 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ---
 
+#### `tp-layer-props-with-args` / `tp-group-props-with-args` / `tp-layer-arglist`
+
+```elisp
+(tp-layer-props-with-args LAYER-NAME ARGS &optional INCLUDE-TP-NAME)
+(tp-group-props-with-args GROUP-NAME ARGS &optional INCLUDE-TP-NAME)
+(tp-layer-arglist LAYER-NAME)
+```
+
+针对**参数化**属性层和属性层组的自省函数（0.3.0 新增）：
+
+- **`tp-layer-props-with-args`** 用 ARGS 展开参数化属性层，ARGS 是按位
+  置绑定到层参数的值列表。多余的值会被忽略；值的数量少于参数数量时会发
+  出参数个数不符的错误信号。返回一个全新的副本（修改它不会破坏注册
+  表）；对无参数或未定义的层返回 nil。原有的单参数
+  `tp-layer-props-with-arg`（注意名称只差一个字符）保留为一个薄薄的
+  `(list ARG)` 包装。
+- **`tp-group-props-with-args`** 是层组版本，返回展开后的逐层 plist 列
+  表；`tp-group-props-with-arg` 保留为单参数便捷形式。
+- **`tp-layer-arglist`** 返回层参数列表的副本；当 LAYER-NAME 不是参数
+  化层时返回 nil。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (define-tp tp-colors (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (tp-layer-props-with-args 'tp-colors '("red" "blue")))
+;; => (face (:foreground "red" :background "blue"))
+
+;; 参数列表本身
+(tp-layer-arglist 'tp-colors)
+;; => (fg bg)
+
+;; 层组展开为每层一个 plist
+(progn
+  (define-tps tp-badge (fg bg)
+    `(tp-colors ,fg ,bg)
+    '(face bold))
+  (tp-group-props-with-args 'tp-badge '("white" "black")))
+;; => ((face (:foreground "white" :background "black")) (face bold))
+
+;; 参数太少时发出与 tp-set 相同的明确错误信号
+(tp-layer-props-with-args 'tp-colors '("red"))
+;; error: tp layer tp-colors takes 2 argument(s), got 1
+```
+
+---
+
+#### `tp-describe-layer` - 描述属性层
+
+```elisp
+(tp-describe-layer NAME)   ; interactive
+```
+
+弹出一个帮助缓冲区，描述属性层 NAME（交互式调用时可在所有已注册层中补
+全）。该缓冲区会展示存储格式（flat / unified / parameterized /
+reactive）、原始存储的 body、展开后的属性（参数化层需要参数，因此显示
+占位说明）、参数列表、该层依赖的响应式变量、是否注册了 transform，以及
+生成该层的层组（如果有）。
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (define-tp tp-colors (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (tp-describe-layer 'tp-colors))
+;; 弹出一个 *Help* 缓冲区:
+;;   tp-colors is a tp layer.
+;;
+;;   Storage format: parameterized
+;;   Arguments:      (fg bg)
+;;   Stored body:    `(face (:foreground ,fg :background ,bg))
+;;   Expanded props: parameterized layer: expand with `tp-layer-props-with-args'
+;;   Reactive deps:  none
+;;   Transform:      no
+```
+
+---
+
 #### `tp-undefine-layer` / `tp-undefine-group`
 
 ```elisp
@@ -1945,14 +2240,29 @@ Emacs 的 `text-property-search-forward` 和 `text-property-search-backward` 的
 
 ### 属性层放置
 
+> ⚠️ **栈操作的字符串形式会就地修改字符串。**与返回**新**属性字符串的
+> `tp-set` 不同，每一个栈修改函数（`tp-put-layer`、`tp-push-layer`、
+> `tp-pop-layer`、`tp-delete-layer`、`tp-move-layer`、`tp-raise-layer`、
+> `tp-lower-layer`、`tp-rotate-layer`、`tp-pin-layer`、
+> `tp-switch-layer`、`tp-hide-layer`、`tp-show-layer`、
+> `tp-merge-layers`、`tp-flatten-layers`、`tp-add-to-layers`、
+> `tp-add-to-all-layers`）的字符串形式都会**破坏性地**修改 STRING。绝
+> 不要传入字符串字面量或不属于你的共享字符串 —— 请先用
+> `copy-sequence`。将这一行为与 `tp-set` 的复制语义统一已列入 0.4 计划。
+
+**返回值（0.3.0）：**`tp-put-layer` / `tp-push-layer` 在给定 OBJECT 时
+返回 OBJECT（字符串形式返回该字符串本身），否则返回 `(START . END)`。
+其余每个栈修改函数都返回**被修改的属性区段数量**；层名或索引不存在时
+从不发出错误信号 —— 未匹配的区段被静默跳过，返回 0 表示没有任何匹配。
+
 #### `tp-put-layer` - 在指定位置设置属性层
 
 ```elisp
 ;; 缓冲区/字符串区域
-(tp-put-layer START END LAYER IDX OBJECT)
+(tp-put-layer START END LAYER IDX OBJECT NOERROR)
 
 ;; 整个字符串
-(tp-put-layer STRING LAYER IDX)
+(tp-put-layer STRING LAYER IDX NOERROR)
 ```
 
 在属性层堆栈的指定索引位置设置属性层。
@@ -1966,10 +2276,16 @@ LAYER 接受以下几种形式：
 - 用 `define-tp` 定义的层名：`'highlight`
 - 内联属性 plist（无需 `define-tp`）：`'(face bold help-echo "tip")`
 - 层名列表（第一个层名位于顶部）：`'(layer-a layer-b)`
-- 参数化层调用：`'(tp-color "red")`
+- 参数化层调用：`'(tp-color "red")` —— 多参数层同样可用：
+  `'(tp-colors "white" "black")`
 
 **栈模型：**只有顶层的属性是可见的文本属性；下层被保存在
 `tp-layers` 文本属性中，直到被上移、轮换或扁平化。
+
+**NOERROR（0.3.0 新增）：**LAYER 指向未定义的层或层组时，通常会发出错
+误信号。NOERROR 非 nil 时，调用改为返回 nil 且不做任何修改 —— 在应用
+可能尚未定义的层时非常方便。`tp-push-layer` 接受同样的末尾 NOERROR 参
+数。
 
 **示例：**
 
@@ -2037,6 +2353,12 @@ LAYER 接受以下几种形式：
     (tp-put-layer 1 10 '(tp-color "red") 0)
     (tp-at 1 'face)))
 ;; => (:foreground "red")
+
+;; NOERROR - 未定义的层名返回 nil 而不发出错误信号
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-put-layer 1 10 'no-such-layer 0 nil t))
+;; => nil  ; 没有任何修改
 ```
 
 ---
@@ -2045,13 +2367,16 @@ LAYER 接受以下几种形式：
 
 ```elisp
 ;; 缓冲区/字符串区域
-(tp-push-layer START END LAYER OBJECT)
+(tp-push-layer START END LAYER OBJECT NOERROR)
 
 ;; 整个字符串
-(tp-push-layer STRING LAYER)
+(tp-push-layer STRING LAYER NOERROR)
 ```
 
 将属性层推到堆栈顶部（相当于 `tp-put-layer ... 0`）。
+NOERROR（0.3.0 新增）的用法与
+[`tp-put-layer`](#tp-put-layer---在指定位置设置属性层) 相同：未定义的
+LAYER 返回 nil 而不发出错误信号。
 
 **示例：**
 
@@ -2303,17 +2628,69 @@ LAYER 接受以下几种形式：
 
 ---
 
-#### `tp-rotate-layer` - 轮换属性层
+#### `tp-lower-layer` - `tp-raise-layer` 的镜像
 
 ```elisp
 ;; 缓冲区/字符串区域
-(tp-rotate-layer START END OBJECT)
+(tp-lower-layer START END IDX/LAYER-NAME N OBJECT)
 
 ;; 整个字符串
-(tp-rotate-layer STRING)
+(tp-lower-layer STRING IDX/LAYER-NAME N)
 ```
 
-轮换属性层 - 顶层移到底部，下一层变为可见。
+将属性层下移 N 个位置（0.3.0 新增）。它是 `tp-raise-layer` 的镜像：正
+数 N 向底部移动，负数 N 向顶部移动。N 默认为 1，最终位置会被钳制在栈的
+范围内。返回被修改的属性区段数量。
+
+**示例：**
+
+```elisp
+;; 将顶层下移一个位置
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; 堆栈: layer3 (顶), layer2, layer1 (底)
+    (tp-lower-layer 1 10 'layer3 1)
+    ;; 堆栈: layer2 (顶), layer3, layer1 (底)
+    (list (tp-layer-top 1 10) (tp-layer-list 1 10))))
+;; => (layer2 (layer2 layer3 layer1))
+```
+
+---
+
+#### `tp-rotate-layer` - 轮换属性层
+
+```elisp
+;; 缓冲区/字符串区域（规范顺序，OBJECT 在最后 - 0.3.0 新增）
+(tp-rotate-layer START END DIRECTION &optional COUNT OBJECT)
+
+;; 整个字符串
+(tp-rotate-layer STRING DIRECTION COUNT)
+
+;; 缓冲区/字符串区域（历史顺序，永远保持可用）
+(tp-rotate-layer START END OBJECT)
+```
+
+将属性层轮换 COUNT 步，保持它们的相对顺序。
+
+- **DIRECTION** 为 `down` 或 nil 时将顶层移到底部（历史行为），为
+  `up` 时将底层带到顶部；其他值会发出错误信号。
+- **COUNT** 是轮换的步数，默认为 1；COUNT 小于 1 时不做任何轮换。隐藏
+  层随栈中其他层一起轮换。
+- 返回被修改的属性区段数量。
+
+两种区域顺序通过第三个参数区分：符号 `up` / `down` 永远不是合法的
+OBJECT，因此 `(tp-rotate-layer 1 5 'up)` 会无歧义地选中规范的
+`(START END DIRECTION [COUNT] [OBJECT])` 顺序 —— 无需 nil OBJECT 占位。
+第三个参数为其他值（缓冲区、字符串，或表示当前缓冲区的 nil）时选中历
+史的 `(START END OBJECT [DIRECTION] [COUNT])` 顺序，后者继续可用。
 
 **示例：**
 
@@ -2332,6 +2709,37 @@ LAYER 接受以下几种形式：
     ;; 堆栈: base (顶) -> highlight (底)
     (tp-layer-top 1 10)))
 ;; => base
+
+;; 规范顺序：`up' 将底层带到顶部
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; 堆栈: layer3 (顶), layer2, layer1 (底)
+    (tp-rotate-layer 1 10 'up)
+    (tp-layer-list 1 10)))
+;; => (layer1 layer3 layer2)
+
+;; COUNT 一次轮换多步
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    (tp-rotate-layer 1 10 'down 2)
+    (tp-layer-list 1 10)))
+;; => (layer1 layer3 layer2)
 ```
 
 ---
@@ -2346,7 +2754,9 @@ LAYER 接受以下几种形式：
 (tp-pin-layer STRING IDX/LAYER-NAME)
 ```
 
-将特定属性层移到顶部（使其可见）。
+将属性层移到栈顶。**一次性操作**：尽管名字里有 pin，但没有任何东西会
+保持"钉住"状态 —— 这只是一次移动到索引 0 的操作，之后的
+`tp-push-layer` 或 `tp-put-layer` 仍然可以覆盖被移动的层。
 
 **示例：**
 
@@ -2401,6 +2811,105 @@ LAYER 接受以下几种形式：
 
 ---
 
+### 属性层可见性
+
+#### `tp-hide-layer` / `tp-show-layer` - 隐藏与显示属性层
+
+```elisp
+;; 缓冲区/字符串区域
+(tp-hide-layer START END NAME OBJECT)
+(tp-show-layer START END NAME OBJECT)
+
+;; 整个字符串
+(tp-hide-layer STRING NAME)
+(tp-show-layer STRING NAME)
+```
+
+隐藏属性层而不移除它，以及让它重新渲染（0.3.0 新增）。NAME 标识属性
+层：层名符号，或指向完整栈（包含隐藏层）的整数索引（0 = 顶层，-1 =
+底层）。
+
+**可见性模型：**
+
+- 隐藏层**仍留在栈中**：它仍计入 `tp-layer-count`，出现在
+  `tp-layer-list` 和 `tp-layer-stack-at` 中，也可以被移动、上移或下移
+  —— 但它不渲染。文本改为展示最顶部**未隐藏**层的属性。
+- 因此隐藏当前可见的顶层会显露它下面的下一个可见层。
+- 当**所有**层都被隐藏时，文本以裸文本渲染（只剩 `tp-layers` 这个簿记
+  属性 —— 连 `tp-name` 也不渲染），同时所有层仍然可查询。
+- 隐藏层在隐藏期间**持续接收响应式更新**，因此 `tp-show-layer` 总是显
+  露最新的值（参见[层-缓冲区注册表与生命周期](#层-缓冲区注册表与生命周期)）。
+- `tp-flatten-layers` 只合并可见层，`tp-merge-layers` 排除隐藏的匹配层
+  的属性 —— 隐藏的内容绝不会泄漏（参见[属性层合并](#属性层合并)）。
+- 隐藏状态以 `tp-hidden` 标志的形式存储在 `tp-layers` 栈存储内该层的
+  plist 中，因此 `tp-hidden` 与 `tp-name` 一样是层内部的保留属性名。
+
+两个函数都返回被修改的属性区段数量。NAME 不匹配任何层时从不发出错误信
+号，隐藏一个已隐藏的层（或显示一个可见的层）是静默的空操作 —— 返回 0
+表示没有任何变化。
+
+**示例：**
+
+```elisp
+;; 隐藏顶层会显露下面的层；栈保持完整
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (list :visible (tp-at 1 'tp-name)
+          :face (tp-at 1 'face)
+          :count (tp-layer-count 1 10)
+          :layers (tp-layer-list 1 10))))
+;; => (:visible base :face default :count 2 :layers (highlight base))
+
+;; 所有层都隐藏时文本以裸文本渲染
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'base)
+    (list :face (tp-at 1 'face) :count (tp-layer-count 1 10))))
+;; => (:face nil :count 2)
+
+;; tp-show-layer 恢复该层的渲染
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-show-layer 1 10 'highlight)
+    (tp-at 1 'face)))
+;; => (:background "yellow")
+
+;; 返回值：被修改的区段数量；名称不存在时静默返回 0
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (list (tp-hide-layer 1 10 'base)
+          (tp-hide-layer 1 10 'base)          ; 已经隐藏
+          (tp-hide-layer 1 10 'nonexistent)))) ; 没有这个层
+;; => (1 0 0)
+```
+
+---
+
 ### 属性层合并
 
 #### `tp-merge-layers` - 合并多个属性层
@@ -2414,6 +2923,12 @@ LAYER 接受以下几种形式：
 ```
 
 将指定的属性层合并为一个新属性层。列表中靠前的属性层优先级更高。
+
+**隐藏层（0.3.0）：**隐藏的匹配层会和其他层一起被合并掉，但**不**向合
+并层贡献任何属性，因此合并绝不会渲染出被隐藏的内容。当*所有*匹配层都
+被隐藏时，合并层保留它们合并后的属性，但自身携带 `tp-hidden` 标志 ——
+数据被保留而没有取消任何隐藏，对合并层执行 `tp-show-layer` 即可渲染
+它。返回被修改的属性区段数量（0 = 列出的层都没有匹配）。
 
 **示例：**
 
@@ -2443,6 +2958,22 @@ LAYER 接受以下几种形式：
     (tp-merge-layers 1 10 'merged '(0 1))
     (tp-layer-count 1 10)))
 ;; => 1
+
+;; 隐藏层的属性绝不会泄漏进合并结果
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-hide-layer 1 10 'layer2)
+    (tp-merge-layers 1 10 'merged '(layer1 layer2))
+    (list :face (tp-at 1 'face)
+          :help (tp-at 1 'help-echo)
+          :name (tp-at 1 'tp-name))))
+;; => (:face bold :help nil :name merged)  ; layer2 被隐藏了
 ```
 
 ---
@@ -2458,6 +2989,12 @@ LAYER 接受以下几种形式：
 ```
 
 将所有属性层扁平化为一个具有给定名称的单一属性层。
+
+**隐藏层（0.3.0）：**隐藏层会被**丢弃**，与图像编辑器的扁平化语义一致
+—— 只有可见层的属性会合并进结果，因此扁平化绝不会渲染出被隐藏的内容。
+当某个区段的*所有*层都被隐藏时，该区段的属性会被完全清除（裸文本），
+与 `tp-hide-layer` 的全隐藏渲染行为一致。返回被修改的属性区段数量
+（0 = 没有区段带有属性层）。
 
 **示例：**
 
@@ -2485,6 +3022,20 @@ LAYER 接受以下几种形式：
     (tp-flatten-layers 1 10 nil)
     (tp-at 1 'tp-name)))
 ;; => nil
+
+;; 扁平化会丢弃隐藏层
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-flatten-layers 1 10 'flat)
+    (list (tp-at 1 'face) (tp-at 1 'tp-name))))
+;; => (default flat)  ; highlight 的背景色消失了
 ```
 
 ---
@@ -2571,7 +3122,9 @@ LAYER 接受以下几种形式：
 (tp-layer-top START END &optional OBJECT)
 ```
 
-获取顶层（可见）属性层的名称。
+获取顶层属性层的名称。最顶部的层按**栈序**报告，即使它被隐藏（参见
+[`tp-hide-layer`](#tp-hide-layer--tp-show-layer---隐藏与显示属性层)）；
+要区分隐藏层和可见层，请使用 `tp-layer-stack-at`。
 
 **示例：**
 
@@ -2586,6 +3139,61 @@ LAYER 接受以下几种形式：
     (tp-push-layer 1 10 'layer2)
     (tp-layer-top 1 10)))
 ;; => layer2
+```
+
+---
+
+#### `tp-layer-stack-at` - 获取某位置的完整层栈
+
+```elisp
+(tp-layer-stack-at POS &optional OBJECT)
+```
+
+返回某一位置上完整的有序层栈（0.3.0 新增），列表中每层一个元素，最顶
+层在前，每个元素是一个 cons `(NAME . PROPS)`：
+
+- **NAME** 是层的 `tp-name` 符号，无名层为 nil。
+- **PROPS** 是层的属性 plist，其中不含 `tp-name` 条目。隐藏层可通过
+  PROPS 中值为 t 的 `tp-hidden` 条目辨认；可见层永远不携带该条目。
+
+隐藏层按其栈位置包含在内。裸文本返回 nil。POS 使用 OBJECT 的原生坐标
+（字符串从 0 开始，缓冲区从 1 开始）；OBJECT 是字符串、缓冲区，或表示
+当前缓冲区的 nil。
+
+**示例：**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-layer-stack-at 1)))
+;; => ((highlight . (face (:background "yellow")))
+;;     (base . (face default)))
+
+;; 隐藏层在 PROPS 中携带 `tp-hidden' 条目
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-layer-stack-at 1)))
+;; => ((highlight . (tp-hidden t face (:background "yellow")))
+;;     (base . (face default)))
+
+;; 裸文本没有层栈
+(with-temp-buffer
+  (insert "Hello")
+  (tp-layer-stack-at 1))
+;; => nil
 ```
 
 ---
@@ -2605,7 +3213,8 @@ LAYER 接受以下几种形式：
 - **IDX-OR-LAYER-NAME-LIST** 是层索引（整数）或层名称（符号）的列表。对于索引：0 表示顶层，-1 表示底层。
 - 属性被深度合并到指定的层中（嵌套的 plist 被合并，而非替换）。
 - OBJECT 在区域形式中默认为当前缓冲区。
-- 对于字符串，返回一个新的字符串（原始字符串不变）。对于缓冲区，返回 nil。
+- 与其他栈修改函数一样（且与 `tp-set` 不同），字符串形式会**就地**修
+  改 STRING 并返回这个被修改的字符串本身。对于缓冲区，返回 nil。
 
 **示例：**
 
@@ -2640,7 +3249,8 @@ LAYER 接受以下几种形式：
 
 - 属性被深度合并到所有现有层中。
 - OBJECT 在区域形式中默认为当前缓冲区。
-- 对于字符串，返回一个新的字符串（原始字符串不变）。对于缓冲区，返回 nil。
+- 与其他栈修改函数一样（且与 `tp-set` 不同），字符串形式会**就地**修
+  改 STRING 并返回这个被修改的字符串本身。对于缓冲区，返回 nil。
 
 **示例：**
 
@@ -2660,15 +3270,18 @@ LAYER 接受以下几种形式：
 #### `tp-intervals` - 获取文本属性区间
 
 ```elisp
-(tp-intervals START END &optional OBJECT)
+(tp-intervals START END &optional OBJECT ABSOLUTE)
 ```
 
 从 OBJECT 中获取 START 到 END 之间的所有文本属性区间。
 
 - 返回每个区间的 (START END PROPERTIES) 列表，包括没有属性的
   间隙区间，其 PROPERTIES 为 nil。
-- 对于缓冲区输入，START 和 END 是从 1 开始的缓冲区位置，但返回的位置是
-  **相对于 START 的 0 基偏移量**。对于字符串，位置是绝对的 0 基索引。
+- 对于缓冲区输入，START 和 END 是从 1 开始的缓冲区位置，但返回的位置
+  默认是**相对于 START 的 0 基偏移量**（历史约定）。ABSOLUTE 非 nil
+  时（0.3.0 新增），返回的位置改为原生的 1 基缓冲区位置，可以不做偏移
+  运算直接用于其他 tp 调用（`tp-set`、`tp-remove` 等）。对于字符串，
+  位置始终是绝对的 0 基索引；ABSOLUTE 不改变任何行为。
 - 使用 `object-intervals`（需要 Emacs 28.1+）。
 - OBJECT 可以是缓冲区或字符串；nil 默认为当前缓冲区。
 
@@ -2682,6 +3295,24 @@ LAYER 接受以下几种形式：
   (tp-intervals 1 12))
 ;; => ((0 5 (face bold)) (5 6 nil) (6 11 (face italic)))
 ;;    位置是相对 START 的偏移量；(5 6 nil) 是无属性的间隙
+
+;; ABSOLUTE - 原生缓冲区坐标
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals 1 12 nil t))
+;; => ((1 6 (face bold)) (6 7 nil) (7 12 (face italic)))
+
+;; ABSOLUTE 位置可直接回馈给其他 tp 调用
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (dolist (iv (tp-intervals 1 12 nil t))
+    (when (eq (plist-get (nth 2 iv) 'face) 'bold)
+      (tp-add (nth 0 iv) (nth 1 iv) '(help-echo "bold text"))))
+  (tp-at 1 'help-echo))
+;; => "bold text"
 ```
 
 ---
@@ -2689,13 +3320,18 @@ LAYER 接受以下几种形式：
 #### `tp-intervals-map` - 对区间应用函数
 
 ```elisp
-(tp-intervals-map FUNCTION START END &optional OBJECT)
+(tp-intervals-map FUNCTION START END &optional OBJECT ABSOLUTE)
 ```
 
 对 OBJECT 中 START 到 END 之间的所有区间应用 FUNCTION。
 
-- FUNCTION 接收四个参数：interval-start、interval-end、top-props（可见层属性）和 below-props-lst（隐藏层列表）。
-- 没有属性的区间也会被访问，此时 top-props 为 nil（位置遵循与 `tp-intervals` 相同的偏移量约定）。
+- FUNCTION 接收四个参数：interval-start、interval-end、top-props（直
+  接渲染的属性，其中的 `tp-layers` 条目已被移除）和 below-props-lst
+  （`tp-layers` 的值：埋在被渲染顶层之下的层 plist 存储 —— 当任何层被
+  隐藏时它保存整个有序层栈；解码后的视图参见
+  [`tp-layer-stack-at`](#tp-layer-stack-at---获取某位置的完整层栈)）。
+- 没有属性的区间也会被访问，此时 top-props 为 nil（位置遵循与
+  `tp-intervals` 相同的坐标约定，包括 0.3.0 新增的 ABSOLUTE 参数）。
 - OBJECT 可以是缓冲区或字符串；nil 默认为当前缓冲区。
 - 返回函数结果列表（nil 结果被移除）。
 
@@ -2711,6 +3347,17 @@ LAYER 接受以下几种形式：
      (list start end (plist-get props 'face)))
    1 12))
 ;; => ((0 5 bold) (5 6 nil) (6 11 italic))
+
+;; ABSOLUTE - FUNCTION 接收原生缓冲区位置
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals-map
+   (lambda (start end props belows)
+     (list start end (plist-get props 'face)))
+   1 12 nil t))
+;; => ((1 6 bold) (6 7 nil) (7 12 italic))
 ```
 
 ---
@@ -2835,13 +3482,45 @@ LAYER 接受以下几种形式：
 - **`tp-palette-alist`**（变量）— `(NAME . PLIST)` 形式的调色板定义
   alist；调色板查询的唯一数据源。每个 PLIST 将 `:fg`、`:bg` 和
   `:border` 映射到颜色。
-- **`define-tp-palette`** — 注册（或更新）一个调色板：
+- **`define-tp-palette`** — 注册（或更新）一个调色板（自 0.3.0 起也可
+  使用符合前缀规范的别名 `tp-define-palette`）：
 
   ```elisp
   (define-tp-palette my-brand
     :fg ("#0969da" . "#58a6ff")     ; ("亮色" . "暗色")
     :bg ("#ddf4ff" . "#1f3d5c"))
   ```
+
+- **`tp-palette-color`**（0.3.0 新增）— **首选的**调色板访问器：获取调
+  色板的 `:fg` / `:bg` / `:border` 颜色，按当前亮色/暗色主题解析。调色
+  板或键不存在时返回 nil：
+
+  ```elisp
+  (tp-palette-color 'info :fg)
+  ;; => 亮色主题下为 "#0969da"，暗色主题下为 "#58a6ff"
+  (tp-palette-color 'no-such-palette :fg)
+  ;; => nil
+  ```
+
+- **`tp-palette-has-p`**（0.3.0 新增）— **首选的**调色板谓词：只传
+  SYMBOL 时测试它是否命名了一个已注册的调色板；KIND 为 `:fg` / `:bg` /
+  `:border` 之一时，还要求其定义中含有该键（已定义的键在当前主题下仍
+  可能解析不出颜色 —— 在意解析后颜色时请使用 `tp-palette-color`）：
+
+  ```elisp
+  (list (tp-palette-has-p 'info)
+        (tp-palette-has-p 'info :border)
+        (tp-palette-has-p 'no-such-palette))
+  ;; => (t t nil)
+  ```
+
+  旧的按键便捷函数保留为兼容包装：`tp-palette-fg-color` /
+  `tp-palette-bg-color` / `tp-palette-border-color`（`tp-palette-color`
+  的固定 KEY 变体）、`tp-palette-p`（KIND 为 nil 的
+  `tp-palette-has-p`），以及带后缀名的谓词 `tp-palette-fg-p` /
+  `tp-palette-bg-p` / `tp-palette-fbg-p` / `tp-palette-border-p` —— 它
+  们回答的是另一个问题：像 `info-fg` 这样的*变体名*是否表示一个已注册
+  的调色板（`tp-palette` 层使用的约定）。
 
 - **`tp-palette-show`** — 交互式命令，显示一个画廊缓冲区，展示每个已
   注册调色板及其 `-fg` / `-bg` / `-fbg` / `-border` 变体（按 `q` 退出）。
@@ -3177,6 +3856,127 @@ LAYER 接受以下几种形式：
 - 减少冗余的缓冲区修改
 - 提高同时更改多个变量时的性能
 - 当多个变量相互依赖时确保状态一致
+
+### 层-缓冲区注册表与生命周期
+
+自 0.3.0 起，响应式引擎维护一个**层→缓冲区注册表**：每条修改缓冲区并
+盖上层标记的写入路径（`tp-set` 家族、栈修改函数、match/regexp 应用函
+数）都会把目标缓冲区注册为展示该层，而一次响应式更新只访问**已注册的
+缓冲区**，不再扫描整个 `(buffer-list)`。被杀死的缓冲区会被自动清理。
+当某个层完全没有注册表条目时，会退回到旧行为做一次**学习性全量扫描**，
+并把实际发现该层的每个缓冲区都注册上。
+
+即使层被**隐藏**或**埋**在栈中其他层之下，更新也能到达它的区域：存储
+在 `tp-layers` 中的条目会被就地更新，因此 `tp-show-layer`（或上移该
+层）总是显露最新的值。
+
+#### `tp-reactive-layer-buffers` - 查看注册表
+
+```elisp
+(tp-reactive-layer-buffers LAYER-NAME)
+```
+
+返回注册为展示 LAYER-NAME 的存活缓冲区 —— 一个列表（可能为空，表示
+"已知：没有缓冲区展示该层"）—— 或者符号 `unknown`，表示该层完全没有注
+册表条目：
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (defvar reg-color "red")
+  (define-tp reg-layer ()
+    :props '(face (:foreground $reg-color)))
+  (tp-reactive-layer-buffers 'reg-layer))
+;; => unknown  ; 还从未被应用到任何缓冲区
+
+(with-temp-buffer
+  (rename-buffer "demo-buffer" t)
+  (insert "Hello")
+  (tp-push-layer 1 6 'reg-layer)
+  (mapcar #'buffer-name (tp-reactive-layer-buffers 'reg-layer)))
+;; => ("demo-buffer")
+```
+
+#### `tp-reactive-track-buffer` - 补齐字符串插入的缺口
+
+```elisp
+(tp-reactive-track-buffer &optional BUFFER)   ; interactive
+```
+
+**已知缺口：**向缓冲区插入一个*已经带属性的字符串*会绕过注册缓冲区的
+缓冲区操作，因此在一次学习性全量扫描找到它之前，该缓冲区不在注册表中。
+在这类插入之后调用 `tp-reactive-track-buffer`：它会扫描 BUFFER（默认
+为当前缓冲区）中的层区域 —— 既包括被渲染的顶层，也包括埋在或隐藏在
+`tp-layers` 栈存储中的层 —— 为每个层注册该缓冲区，并按缓冲区顺序返回
+找到的层名：
+
+```elisp
+(let ((s (tp-set "hello" 'reg-layer)))   ; 带属性的字符串，游离状态
+  (with-temp-buffer
+    (insert s)                           ; 绕过了注册
+    (tp-reactive-track-buffer)))
+;; => (reg-layer)  ; 缓冲区现已为 reg-layer 注册
+```
+
+#### `tp-gc-anonymous-layers` - 回收未使用的匿名层
+
+```elisp
+(tp-gc-anonymous-layers)   ; interactive
+```
+
+[匿名响应式层](#匿名响应式层)是被驻留（intern）的：`equal` 相同的属性
+规格会复用其注册表条目，而不是在每次 `tp-set` 时铸造一个新层。
+`tp-gc-anonymous-layers` 取消定义所有已无注册的存活缓冲区仍在展示的驻
+留匿名层（被埋住和被隐藏的层都算作存活），并返回被回收的层名：
+
+```elisp
+(defvar tmp-color "green")
+(let ((buf (generate-new-buffer "*gc-demo*")))
+  (with-current-buffer buf
+    (insert "Hello")
+    (tp-set 1 6 '(face (:foreground $tmp-color))))  ; 匿名层
+  (kill-buffer buf)
+  (tp-gc-anonymous-layers))
+;; => (tp-anon-1)  ; 被回收的层名（计数器数字会变化）
+```
+
+**保守的 `unknown` 语义：**注册表状态为 `unknown` 的层 —— 从未通过任
+何注册路径出现在任何缓冲区中，例如只被游离字符串引用 —— 会被刻意
+**保留**。一个层只有在至少为一个缓冲区注册过、且所有已注册的缓冲区都不再
+展示它（例如全部被杀死）之后才可回收。在插入带属性的字符串后请调用
+`tp-reactive-track-buffer`，让它们所在的缓冲区也被注册。
+
+#### 最小差异的 `tp-text` 重渲染
+
+响应式 `tp-text` 替换只编辑新旧文本的**差异区段**（先插入后删除），因
+此位于未变化文本中的 point 和标记保持原位；位于被编辑区段内的 point
+落在编辑起点。值完全相同的更新是真正的空操作：不编辑文本、不搅动属
+性，也不触碰缓冲区的修改标志。
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (defvar counter-val "0")
+  (define-tp counter-label ()
+    :props '(tp-text $counter-val))
+  (with-temp-buffer
+    (insert "count: 0 items")
+    (tp-set 8 9 'counter-label)
+    (let ((m (copy-marker 10)))          ; 标记在 "items" 的 "i" 上
+      (setq counter-val "9")             ; 只有数字被编辑
+      (list (buffer-substring-no-properties 1 (point-max))
+            (char-after m)))))
+;; => ("count: 9 items" ?i)  ; 标记仍指向它原来的字符
+
+;; 值相同的更新完全不触碰缓冲区
+(with-temp-buffer
+  (insert "count: 9 items")
+  (tp-set 8 9 'counter-label)
+  (set-buffer-modified-p nil)
+  (setq counter-val "9")                 ; 与显示的文本相同
+  (buffer-modified-p))
+;; => nil
+```
 
 ### 调试模式
 

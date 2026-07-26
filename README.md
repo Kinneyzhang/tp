@@ -62,6 +62,8 @@
   - [Property Layer Definition](#property-layer-definition)
     - [define-tp / define-tps](#define-tp--define-tps---define-custom-text-properties)
     - [tp-layer-props / tp-group-props](#tp-layer-props--tp-group-props)
+    - [tp-layer-props-with-args / tp-group-props-with-args / tp-layer-arglist](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist)
+    - [tp-describe-layer](#tp-describe-layer---describe-a-layer)
     - [tp-undefine-layer / tp-undefine-group](#tp-undefine-layer--tp-undefine-group)
     - [tp-layer-reset](#tp-layer-reset)
     - [tp-reactive-reset](#tp-reactive-reset)
@@ -74,9 +76,12 @@
   - [Property Layer Movement](#property-layer-movement)
     - [tp-move-layer](#tp-move-layer---move-layer-to-position)
     - [tp-raise-layer](#tp-raise-layer---move-layer-updown)
+    - [tp-lower-layer](#tp-lower-layer---mirror-of-tp-raise-layer)
     - [tp-rotate-layer](#tp-rotate-layer---cycle-layers)
     - [tp-pin-layer](#tp-pin-layer---pin-layer-to-top)
     - [tp-switch-layer](#tp-switch-layer---switch-two-layers)
+  - [Property Layer Visibility](#property-layer-visibility)
+    - [tp-hide-layer / tp-show-layer](#tp-hide-layer--tp-show-layer---hide-and-show-layers)
   - [Property Layer Merging](#property-layer-merging)
     - [tp-merge-layers](#tp-merge-layers---merge-multiple-layers)
     - [tp-flatten-layers](#tp-flatten-layers---flatten-all-layers)
@@ -85,6 +90,7 @@
     - [tp-layer-count](#tp-layer-count)
     - [tp-layer-exists-p](#tp-layer-exists-p)
     - [tp-layer-top](#tp-layer-top)
+    - [tp-layer-stack-at](#tp-layer-stack-at---full-stack-at-a-position)
     - [tp-add-to-layers](#tp-add-to-layers---add-properties-to-specific-layers)
     - [tp-add-to-all-layers](#tp-add-to-all-layers---add-properties-to-all-layers)
   - [Utility Functions](#utility-functions)
@@ -107,6 +113,7 @@
   - [Layer Name Resolution in APIs](#layer-name-resolution-in-apis)
   - [Reactive Layer Groups](#reactive-layer-groups)
   - [Batched Updates](#batched-updates)
+  - [Layer-Buffer Registry & Lifecycle](#layer-buffer-registry--lifecycle)
   - [Debug Mode](#debug-mode)
   - [Resetting Reactive State](#resetting-reactive-state)
   - [Complete Example: Theme-Aware Text](#complete-example-theme-aware-text)
@@ -185,6 +192,43 @@ Native Emacs APIs have different functions and parameter orders for strings and 
   ```
 - ✅ **Unified Object Support**: The same function works with both strings and buffers, no need to remember different APIs
 
+**One rule to remember**: when the first argument is a **string**, the call
+operates on that whole string; when it is a **number**, the call operates on
+the `[START, END)` region of OBJECT — and OBJECT always comes last (nil means
+the current buffer). Every core and layer-stack function follows this rule.
+
+The match/search family (`tp-match-*`, `tp-regexp-*`, `tp-search-map`,
+`tp-forward-do`/`tp-backward-do`) follows a deliberate **second convention**:
+PATTERN (or FUNCTION) and PLIST come first, then OBJECT, then the optional
+START/END bounds. Operating on the whole object is these functions' common
+case, so OBJECT sits before the range instead of after it.
+
+**Return value conventions** (as of 0.3.0):
+
+| Family | Return value |
+|---|---|
+| `tp-set` / `tp-reset` / `tp-add` | `(START . END)` for buffer/region forms; a **new** string for whole-string forms |
+| `tp-remove` | nil for buffer forms; a **new** string for whole-string forms |
+| `tp-clear` | nil |
+| `tp-match-*` / `tp-regexp-*` | list of `(START . END)` matches for buffers; a **new** string for strings |
+| Stack mutators (delete/pop/move/raise/lower/rotate/pin/switch/hide/show/merge/flatten) | the number of property runs modified (0 = nothing matched) |
+| `tp-put-layer` / `tp-push-layer` | OBJECT when given (the string itself in string forms), else `(START . END)` |
+| `tp-add-to-layers` / `tp-add-to-all-layers` | the string itself (mutated **in place**) for string forms; nil for buffers |
+
+**Namespace map**: `tp-layer-NAME` functions taking a *layer name* argument
+(`tp-layer-props`, `tp-layer-arglist`, ...) query the layer **registry**
+(definitions); the ones taking *position* arguments — START END
+(`tp-layer-list`, `tp-layer-count`, `tp-layer-top`, ...) or a single POS
+(`tp-layer-stack-at`) — query the layer **stack on actual text**.
+
+**Naming conventions**: `tp-define-layer` / `tp-define-group` /
+`tp-define-palette` are the prefix-conforming canonical names going forward
+(discoverable via `C-h f tp-...`); `define-tp` / `define-tps` /
+`define-tp-group` / `define-tp-palette` are permanent aliases that will never
+be removed (this README's examples still use the historical names).
+`tp-search-forward` / `tp-search-backward` are deprecated since 0.3.0 — see
+[Search & Navigation](#tp-search-forward--tp-search-backward).
+
 ### Three Property Operation Semantics
 
 Native APIs only have simple set and get. tp.el provides three clear operation semantics:
@@ -255,9 +299,10 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 - ✅ **Rich Property Layer Operations**:
   - Placement: `tp-put-layer` (specific position), `tp-push-layer` (top)
   - Deletion: `tp-delete-layer` (by name/index), `tp-pop-layer` (top layer)
-  - Movement: `tp-raise-layer` (up/down), `tp-rotate-layer` (rotate), `tp-pin-layer` (pin to top), `tp-switch-layer` (swap)
+  - Movement: `tp-raise-layer` / `tp-lower-layer` (up/down), `tp-rotate-layer` (rotate), `tp-pin-layer` (one-shot move to top), `tp-switch-layer` (swap)
+  - Visibility: `tp-hide-layer` / `tp-show-layer` (hide a layer without removing it)
   - Merging: `tp-merge-layers` (merge specified layers), `tp-flatten-layers` (flatten all layers)
-- ✅ **Property Layer Queries**: `tp-layer-list`, `tp-layer-count`, `tp-layer-exists-p`, `tp-layer-top`
+- ✅ **Property Layer Queries**: `tp-layer-list`, `tp-layer-count`, `tp-layer-exists-p`, `tp-layer-top`, `tp-layer-stack-at`
 
 ```elisp
 ;; Property layer usage example
@@ -300,6 +345,7 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 - ✅ **:data for Additional State**: Define additional reactive variables that aren't directly used in properties but can trigger updates
 - ✅ **:compute for Derived Values**: Create computed properties that derive their values from other reactive variables (like Vue's computed properties)
 - ✅ **:watch for Side Effects**: Execute callbacks when reactive variables change (like Vue's watch)
+- ✅ **Targeted Updates (0.3.0)**: a layer→buffer registry means updates visit only the buffers showing the affected layer, `tp-text` re-renders edit only the differing span (point and markers stay put), and `tp-reactive-track-buffer` / `tp-gc-anonymous-layers` manage the layer lifecycle — see [Layer-Buffer Registry & Lifecycle](#layer-buffer-registry--lifecycle)
 
 ```elisp
 ;; Define a layer with reactive properties
@@ -327,8 +373,8 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 ### Enhanced Search & Navigation
 
 - ✅ **Range Search**: `tp-search` returns a list of all matching intervals
-- ✅ **N-times Search**: `tp-forward`/`tp-backward` support searching forward/backward N times
-- ✅ **Search and Execute**: `tp-forward-do`/`tp-backward-do` search and execute function on matched text
+- ✅ **N-times Search**: `tp-forward`/`tp-backward` support searching forward/backward N times, with optional PREDICATE matching and NOT-CURRENT
+- ✅ **Search and Execute**: `tp-forward-do`/`tp-backward-do` search N times and apply a function at the Nth match
 - ✅ **Batch Transform**: `tp-search-map` applies transformation function to all matches
 
 ```elisp
@@ -405,32 +451,37 @@ A complete overview of all tp.el functions organized by category:
 #### Pattern Matching Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-match-set`](#tp-match-set---match-string) | Set properties on string pattern matches |
-| [`tp-match-reset`](#tp-match-reset---match-and-reset) | Reset all properties on string matches |
-| [`tp-match-add`](#tp-match-add---match-and-add) | Add/merge properties on string matches |
-| [`tp-regexp-set`](#tp-regexp-set---match-regexp) | Set properties on regexp matches |
-| [`tp-regexp-reset`](#tp-regexp-reset---regexp-and-reset) | Reset all properties on regexp matches |
-| [`tp-regexp-add`](#tp-regexp-add---regexp-and-add) | Add/merge properties on regexp matches |
+| [`tp-match-set`](#tp-match-set---match-string) | Set properties on string pattern matches (optional bounds) |
+| [`tp-match-reset`](#tp-match-reset---match-and-reset) | Reset all properties on string matches (optional bounds) |
+| [`tp-match-add`](#tp-match-add---match-and-add) | Add/merge properties on string matches (optional bounds) |
+| [`tp-regexp-set`](#tp-regexp-set---match-regexp) | Set properties on regexp matches (optional bounds and capture group) |
+| [`tp-regexp-reset`](#tp-regexp-reset---regexp-and-reset) | Reset all properties on regexp matches (optional bounds and capture group) |
+| [`tp-regexp-add`](#tp-regexp-add---regexp-and-add) | Add/merge properties on regexp matches (optional bounds and capture group) |
 
 #### Search & Navigation Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-search-forward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-forward |
-| [`tp-search-backward`](#tp-search-forward--tp-search-backward) | Raw wrapper for text-property-search-backward |
-| [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property (buffers and strings) |
-| [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property (buffers and strings) |
-| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Apply function to last match in forward search (with optional start/end range) |
-| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Apply function to last match in backward search (with optional start/end range) |
+| [`tp-search-forward`](#tp-search-forward--tp-search-backward) | **Deprecated (0.3.0)** — use [`tp-forward`](#tp-forward--tp-backward) or the Emacs primitive |
+| [`tp-search-backward`](#tp-search-forward--tp-search-backward) | **Deprecated (0.3.0)** — use [`tp-backward`](#tp-forward--tp-backward) or the Emacs primitive |
+| [`tp-forward`](#tp-forward--tp-backward) | Search forward N times for text with property (optional predicate matching) |
+| [`tp-backward`](#tp-forward--tp-backward) | Search backward N times for text with property (optional predicate matching) |
+| [`tp-forward-do`](#tp-forward-do--tp-backward-do) | Search forward N times, apply function at the Nth match |
+| [`tp-backward-do`](#tp-forward-do--tp-backward-do) | Search backward N times, apply function at the Nth match |
 | [`tp-search`](#tp-search---search-all-matches) | Search all matching properties in range or string |
 | [`tp-search-map`](#tp-search-map---apply-function-to-matched-text) | Apply function to all matches (with optional start/end range) |
 
 #### Property Layer Definition Functions
 | Function | Description |
 |----------|-------------|
-| [`define-tp`](#define-tp--define-tps---define-custom-text-properties) | Define custom text property (layer) with optional parameter |
-| [`define-tps`](#define-tp--define-tps---define-custom-text-properties) | Define custom text property group (layer group) with optional parameter |
+| [`define-tp`](#define-tp--define-tps---define-custom-text-properties) | Define custom text property (layer) with optional parameters |
+| [`define-tps`](#define-tp--define-tps---define-custom-text-properties) | Define custom text property group (layer group) with optional parameters |
+| [`tp-define-layer` / `tp-define-group`](#define-tp--define-tps---define-custom-text-properties) | Prefix-conforming aliases of `define-tp` / `define-tps` |
 | [`tp-layer-props`](#tp-layer-props--tp-group-props) | Get properties for a layer |
 | [`tp-group-props`](#tp-layer-props--tp-group-props) | Get properties for all layers in a group |
+| [`tp-layer-props-with-args`](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist) | Expand a parameterized layer with a list of arguments |
+| [`tp-group-props-with-args`](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist) | Expand a parameterized group with a list of arguments |
+| [`tp-layer-arglist`](#tp-layer-props-with-args--tp-group-props-with-args--tp-layer-arglist) | Get a parameterized layer's parameter list |
+| [`tp-describe-layer`](#tp-describe-layer---describe-a-layer) | Describe a layer's definition in a help buffer |
 | [`tp-undefine-layer`](#tp-undefine-layer--tp-undefine-group) | Remove layer definition |
 | [`tp-undefine-group`](#tp-undefine-layer--tp-undefine-group) | Remove group definition |
 | [`tp-layer-reset`](#tp-layer-reset) | Clear all layer/group definitions |
@@ -439,8 +490,8 @@ A complete overview of all tp.el functions organized by category:
 #### Property Layer Placement Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-put-layer`](#tp-put-layer---set-layer-at-index) | Set layer at specific index position |
-| [`tp-push-layer`](#tp-push-layer---push-layer-to-top) | Push layer to top of stack |
+| [`tp-put-layer`](#tp-put-layer---set-layer-at-index) | Set layer at specific index position (optional NOERROR) |
+| [`tp-push-layer`](#tp-push-layer---push-layer-to-top) | Push layer to top of stack (optional NOERROR) |
 
 #### Property Layer Deletion Functions
 | Function | Description |
@@ -453,15 +504,22 @@ A complete overview of all tp.el functions organized by category:
 |----------|-------------|
 | [`tp-move-layer`](#tp-move-layer---move-layer-to-position) | Move a layer from one position to another |
 | [`tp-raise-layer`](#tp-raise-layer---move-layer-updown) | Move layer up/down by N positions |
-| [`tp-rotate-layer`](#tp-rotate-layer---cycle-layers) | Cycle layers (top goes to bottom) |
-| [`tp-pin-layer`](#tp-pin-layer---pin-layer-to-top) | Pin a layer to top (make visible) |
+| [`tp-lower-layer`](#tp-lower-layer---mirror-of-tp-raise-layer) | Mirror of `tp-raise-layer`: move layer down/up by N positions |
+| [`tp-rotate-layer`](#tp-rotate-layer---cycle-layers) | Cycle layers up or down by N steps |
+| [`tp-pin-layer`](#tp-pin-layer---pin-layer-to-top) | Move a layer to the top (one-shot; later pushes can cover it) |
 | [`tp-switch-layer`](#tp-switch-layer---switch-two-layers) | Swap positions of two layers |
+
+#### Property Layer Visibility Functions
+| Function | Description |
+|----------|-------------|
+| [`tp-hide-layer`](#tp-hide-layer--tp-show-layer---hide-and-show-layers) | Hide a layer without removing it from the stack |
+| [`tp-show-layer`](#tp-hide-layer--tp-show-layer---hide-and-show-layers) | Make a hidden layer render again |
 
 #### Property Layer Merging Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-merge-layers`](#tp-merge-layers---merge-multiple-layers) | Merge specified layers into a new layer |
-| [`tp-flatten-layers`](#tp-flatten-layers---flatten-all-layers) | Flatten all layers into a single layer |
+| [`tp-merge-layers`](#tp-merge-layers---merge-multiple-layers) | Merge specified layers into a new layer (hidden layers contribute no props) |
+| [`tp-flatten-layers`](#tp-flatten-layers---flatten-all-layers) | Flatten all layers into a single layer (hidden layers are discarded) |
 
 #### Property Layer Query Functions
 | Function | Description |
@@ -469,7 +527,8 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-layer-list`](#tp-layer-list---list-all-layers) | List all layer names in region |
 | [`tp-layer-count`](#tp-layer-count) | Count layers in region |
 | [`tp-layer-exists-p`](#tp-layer-exists-p) | Check if layer exists in region |
-| [`tp-layer-top`](#tp-layer-top) | Get name of top (visible) layer |
+| [`tp-layer-top`](#tp-layer-top) | Get name of top layer (in stack order, even when hidden) |
+| [`tp-layer-stack-at`](#tp-layer-stack-at---full-stack-at-a-position) | Full ordered stack at one position as `(NAME . PROPS)` conses |
 | [`tp-region-layer-props`](#tp-region-layer-props---get-layer-properties-in-region) | Get properties for a specific layer in region |
 
 #### Property Layer Manipulation Functions
@@ -481,8 +540,8 @@ A complete overview of all tp.el functions organized by category:
 #### Utility Functions
 | Function | Description |
 |----------|-------------|
-| [`tp-intervals`](#tp-intervals---get-text-property-intervals) | Get all text property intervals in a region |
-| [`tp-intervals-map`](#tp-intervals-map---apply-function-to-intervals) | Apply function to all intervals in a region |
+| [`tp-intervals`](#tp-intervals---get-text-property-intervals) | Get all text property intervals in a region (optional ABSOLUTE coordinates) |
+| [`tp-intervals-map`](#tp-intervals-map---apply-function-to-intervals) | Apply function to all intervals in a region (optional ABSOLUTE coordinates) |
 | [`tp-plist`](#tp-plist---get-all-properties-in-region) | Get all properties present in a region |
 | [`tp-empty-p`](#tp-empty-p---check-if-object-has-properties) | Check if object has no text properties |
 | [`tp-with-current-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | Run body in a buffer with `inhibit-read-only` bound |
@@ -493,9 +552,19 @@ A complete overview of all tp.el functions organized by category:
 | Function | Description |
 |----------|-------------|
 | [`tp-palette-alist`](#color-palette-system) | Registry of named palettes (variable) |
-| [`define-tp-palette`](#color-palette-system) | Register or update a named palette |
+| [`define-tp-palette`](#color-palette-system) | Register or update a named palette (alias: `tp-define-palette`) |
+| [`tp-palette-color`](#color-palette-system) | Get a palette's `:fg` / `:bg` / `:border` color, theme-resolved |
+| [`tp-palette-has-p`](#color-palette-system) | Test whether a palette (or one of its keys) is defined |
 | [`tp-palette-show`](#color-palette-system) | Show a gallery of all registered palettes |
 | [`tp-parse-color`](#color-palette-system) | Resolve a color spec for the current light/dark theme |
+
+#### Reactive Lifecycle Functions
+| Function | Description |
+|----------|-------------|
+| [`tp-with-batch-updates`](#batched-updates) | Apply several reactive variable changes as one update |
+| [`tp-reactive-layer-buffers`](#layer-buffer-registry--lifecycle) | Buffers registered as showing a layer (or `unknown`) |
+| [`tp-reactive-track-buffer`](#layer-buffer-registry--lifecycle) | Register a buffer after inserting an already-propertized string |
+| [`tp-gc-anonymous-layers`](#layer-buffer-registry--lifecycle) | Collect anonymous layers no registered live buffer still shows |
 
 ---
 
@@ -996,7 +1065,7 @@ Remove a property or nested sub-property from a region or entire string.
 (tp-clear &optional START END OBJECT)
 ```
 
-Clear all text properties from a region.
+Clear all text properties from a region.  Returns nil.
 
 **Examples:**
 
@@ -1025,8 +1094,8 @@ Clear all text properties from a region.
 #### `tp-match-set` - Match String
 
 ```elisp
-(tp-match-set PATTERN PLIST &optional OBJECT)
-(tp-match-set PATTERN LAYER-NAME &optional OBJECT)
+(tp-match-set PATTERN PLIST &optional OBJECT START END)
+(tp-match-set PATTERN LAYER-NAME &optional OBJECT START END)
 ```
 
 Set properties on all occurrences of a string pattern.
@@ -1034,6 +1103,11 @@ PATTERN can be a string (single pattern) or a list of strings (multiple patterns
 PLIST is a property list like `'(face bold help-echo "tip")`.
 LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
+START and END (new in 0.3.0) restrict matching to the `[START, END)` portion
+of OBJECT, in native coordinates (0-based for strings, 1-based for buffers).
+Matching behaves **as if OBJECT consisted only of that portion**, so no match
+crosses the boundaries; reversed bounds are swapped. The same bounds are
+accepted by all six `tp-match-*` / `tp-regexp-*` functions.
 
 **Examples:**
 
@@ -1066,6 +1140,12 @@ OBJECT is a buffer or string; nil means current buffer.
   (insert "TODO: fix this. TODO: also this.")
   (tp-match-set "TODO" 'todo-style))
 ;; => ((1 . 5) (17 . 21))
+
+;; Restrict matching with START/END bounds - only the second TODO is in range
+(with-temp-buffer
+  (insert "TODO one TODO two")
+  (tp-match-set "TODO" '(face warning) nil 5 18))
+;; => ((10 . 14))
 ```
 
 ---
@@ -1079,9 +1159,12 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-match-reset PATTERN PLIST &optional OBJECT)
-(tp-match-reset PATTERN LAYER-NAME &optional OBJECT)
+(tp-match-reset PATTERN PLIST &optional OBJECT START END)
+(tp-match-reset PATTERN LAYER-NAME &optional OBJECT START END)
 ```
+
+START and END restrict matching to the `[START, END)` portion of OBJECT
+(see [`tp-match-set`](#tp-match-set---match-string)).
 
 **Examples:**
 
@@ -1120,9 +1203,12 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-match-add PATTERN PLIST &optional OBJECT)
-(tp-match-add PATTERN LAYER-NAME &optional OBJECT)
+(tp-match-add PATTERN PLIST &optional OBJECT START END)
+(tp-match-add PATTERN LAYER-NAME &optional OBJECT START END)
 ```
+
+START and END restrict matching to the `[START, END)` portion of OBJECT
+(see [`tp-match-set`](#tp-match-set---match-string)).
 
 **Examples:**
 
@@ -1155,8 +1241,8 @@ OBJECT is a buffer or string; nil means current buffer.
 #### `tp-regexp-set` - Match Regexp
 
 ```elisp
-(tp-regexp-set PATTERN PLIST &optional OBJECT)
-(tp-regexp-set PATTERN LAYER-NAME &optional OBJECT)
+(tp-regexp-set PATTERN PLIST &optional OBJECT START END SUBEXP)
+(tp-regexp-set PATTERN LAYER-NAME &optional OBJECT START END SUBEXP)
 ```
 
 Set properties on all matches of a regular expression.
@@ -1164,6 +1250,15 @@ PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
 PLIST is a property list like `'(face bold help-echo "tip")`.
 LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a group defined by `define-tps`.
 OBJECT is a buffer or string; nil means current buffer.
+START and END (new in 0.3.0) restrict matching to the `[START, END)` portion
+of OBJECT, in native coordinates; matching behaves as if OBJECT consisted
+only of that portion, and reversed bounds are swapped
+(see [`tp-match-set`](#tp-match-set---match-string)).
+SUBEXP (new in 0.3.0) names a capture group of PATTERN (1 = first group, as
+in font-lock highlights): properties apply to that group of each match
+instead of the whole match. A match in which the group does not participate
+contributes nothing; a SUBEXP beyond the pattern's group count signals a
+clear error. All three `tp-regexp-*` functions accept SUBEXP.
 
 **Examples:**
 
@@ -1192,6 +1287,28 @@ OBJECT is a buffer or string; nil means current buffer.
   (insert "abc 123 def 456")
   (tp-regexp-set "[0-9]+" 'number-style))
 ;; => ((5 . 8) (13 . 16))
+
+;; SUBEXP - propertize only capture group 1 of each match
+(tp-regexp-set "\\([0-9]+\\)px" '(face bold) "margin: 10px 4px" nil nil 1)
+;; => #("margin: 10px 4px" 8 10 (face bold) 13 14 (face bold))
+
+;; A match whose group does not participate contributes nothing:
+;; "bar" matches the pattern, but group 1 only participates in "foo"
+(tp-regexp-set "\\(foo\\)\\|bar" '(face bold) "foo bar" nil nil 1)
+;; => #("foo bar" 0 3 (face bold))
+
+;; SUBEXP beyond the pattern's group count signals a clear error
+(tp-regexp-set "[0-9]+" '(face bold) "abc 123" nil nil 2)
+;; error: Regexp "[0-9]+" has no group 2
+
+;; START/END bounds: as if only that portion existed - the greedy a+
+;; matches exactly [1, 3) instead of the whole run
+(tp-regexp-set "a+" '(face bold) "aaaa" 1 3)
+;; => #("aaaa" 1 3 (face bold))
+
+;; Reversed bounds are swapped
+(tp-regexp-set "a+" '(face bold) "aaaa" 3 1)
+;; => #("aaaa" 1 3 (face bold))
 ```
 
 ---
@@ -1205,9 +1322,12 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-regexp-reset PATTERN PLIST &optional OBJECT)
-(tp-regexp-reset PATTERN LAYER-NAME &optional OBJECT)
+(tp-regexp-reset PATTERN PLIST &optional OBJECT START END SUBEXP)
+(tp-regexp-reset PATTERN LAYER-NAME &optional OBJECT START END SUBEXP)
 ```
+
+START/END bounds and the SUBEXP capture group work exactly as in
+[`tp-regexp-set`](#tp-regexp-set---match-regexp).
 
 **Examples:**
 
@@ -1247,9 +1367,12 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 OBJECT is a buffer or string; nil means current buffer.
 
 ```elisp
-(tp-regexp-add PATTERN PLIST &optional OBJECT)
-(tp-regexp-add PATTERN LAYER-NAME &optional OBJECT)
+(tp-regexp-add PATTERN PLIST &optional OBJECT START END SUBEXP)
+(tp-regexp-add PATTERN LAYER-NAME &optional OBJECT START END SUBEXP)
 ```
+
+START/END bounds and the SUBEXP capture group work exactly as in
+[`tp-regexp-set`](#tp-regexp-set---match-regexp).
 
 **Examples:**
 
@@ -1284,21 +1407,28 @@ OBJECT is a buffer or string; nil means current buffer.
 
 #### `tp-search-forward` / `tp-search-backward`
 
-```elisp
-(tp-search-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
-(tp-search-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)
-```
+> ⚠️ **Deprecated since 0.3.0.** These are raw wrappers for Emacs's
+> `text-property-search-forward` / `text-property-search-backward` whose
+> nil-PREDICATE default (match values that are non-nil and **not** `equal`
+> to VALUE) contradicts the `equal`-matching used by the rest of the
+> library. Use [`tp-forward` / `tp-backward`](#tp-forward--tp-backward)
+> for tp's symmetric `equal`-matching search — they now expose PREDICATE
+> and NOT-CURRENT too — or call the Emacs primitives directly for raw
+> access. The wrappers keep working, but are marked obsolete (the byte
+> compiler warns on new callers).
 
-Raw wrappers for Emacs's `text-property-search-forward` and `text-property-search-backward`.
-These are low-level search functions that work directly with prop-match objects.
+```elisp
+(tp-search-forward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)   ; deprecated
+(tp-search-backward PROPERTY &optional VALUE PREDICATE NOT-CURRENT)  ; deprecated
+```
 
 ---
 
 #### `tp-forward` / `tp-backward`
 
 ```elisp
-(tp-forward PROPERTY &optional VALUE OBJECT N)
-(tp-backward PROPERTY &optional VALUE OBJECT N)
+(tp-forward PROPERTY &optional VALUE OBJECT N PREDICATE NOT-CURRENT)
+(tp-backward PROPERTY &optional VALUE OBJECT N PREDICATE NOT-CURRENT)
 ```
 
 Search forward/backward N times for text with PROPERTY.
@@ -1310,10 +1440,16 @@ Search forward/backward N times for text with PROPERTY.
 - **`tp-backward` mirrors `tp-forward`**: the same equal-matching semantics,
   in the opposite direction.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
+- **PREDICATE** (new in 0.3.0) customizes matching: nil (the default) and t
+  both keep the 0.2.0 `equal`-matching contract **exactly**; a function is
+  called with `(VALUE PROP-VALUE)` and matches when it returns non-nil.
+- **NOT-CURRENT** (new in 0.3.0), when non-nil, skips a matching region
+  containing point, mirroring the `text-property-search-*` primitives.
+  Buffer path only; strings have no point, so it is ignored there.
 - For buffers, returns the prop-match object from the last successful search.
-- For strings, returns a list of (START END VALUE) for runs where PROPERTY
-  is present; VALUE nil means any value. `tp-backward` returns them from
-  end to start.
+- For strings, returns a list of (START END VALUE) for the **first N** runs
+  where PROPERTY matches, counted from position 0 (point is not involved);
+  VALUE nil means any value. `tp-backward` returns them from end to start.
 
 **Examples:**
 
@@ -1362,6 +1498,38 @@ Search forward/backward N times for text with PROPERTY.
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward 'marker nil my-string 2))
 ;; => ((0 5 t) (12 17 t))
+
+;; PREDICATE - match with a custom function instead of `equal'
+;; (called with VALUE and the region's property value)
+(with-temp-buffer
+  (insert "abcdef")
+  (tp-set 1 3 '(size 10))
+  (tp-set 3 6 '(size 20))
+  (goto-char 1)
+  (let ((match (tp-forward 'size 15 nil 1
+                           (lambda (target v) (and v (> v target))))))
+    (list (prop-match-beginning match) (prop-match-end match))))
+;; => (3 6)  ; the first run whose size exceeds 15
+
+;; PREDICATE works on strings too (returns the first N matching runs)
+(let ((str (copy-sequence "hello world")))
+  (tp-set 0 5 '(size 10) str)
+  (tp-set 6 11 '(size 20) str)
+  (tp-forward 'size 15 str 2 (lambda (target v) (and v (> v target)))))
+;; => ((6 11 20))
+
+;; NOT-CURRENT - skip the matching region containing point
+(with-temp-buffer
+  (insert "one two")
+  (tp-set 1 4 '(mark t))
+  (tp-set 5 8 '(mark t))
+  (let (a b)
+    (goto-char 2)                    ; inside the first mark region
+    (setq a (prop-match-beginning (tp-forward 'mark t)))
+    (goto-char 2)
+    (setq b (prop-match-beginning (tp-forward 'mark t nil 1 nil t)))
+    (list a b)))
+;; => (2 5)  ; without NOT-CURRENT the current region matches at point
 ```
 
 ---
@@ -1369,11 +1537,15 @@ Search forward/backward N times for text with PROPERTY.
 #### `tp-forward-do` / `tp-backward-do`
 
 ```elisp
-(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
-(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END)
+(tp-forward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END PREDICATE NOT-CURRENT)
+(tp-backward-do FUNCTION PROPERTY &optional VALUE OBJECT TIMES START END PREDICATE NOT-CURRENT)
 ```
 
-Search forward/backward for text with PROPERTY and apply FUNCTION **only to the last match**.
+Search forward/backward TIMES times for text with PROPERTY and apply FUNCTION **only at the TIMES-th match**.
+
+Despite the `-do` suffix this is **not** a for-each — use
+[`tp-search-map`](#tp-search-map---apply-function-to-matched-text) to apply
+a function to *every* match.
 
 - **FUNCTION** receives `(TEXT &optional START END IDX)` where TEXT is the matched text, START and END are the positions of the match, and IDX is the 0-based match index. FUNCTION is called with as many of these arguments as it accepts. When FUNCTION returns a string, it replaces the matched text in the string or buffer.
 - **Replacements may change length in buffers** (the match is deleted and the replacement inserted). **Strings cannot change length in place**: a replacement of a different length signals an error; same-length replacements are applied in place.
@@ -1382,6 +1554,9 @@ Search forward/backward for text with PROPERTY and apply FUNCTION **only to the 
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
 - **TIMES** is the number of searches, defaulting to 1. The function searches TIMES times but only applies FUNCTION to the TIMES-th match. All-or-nothing: if fewer than TIMES matches exist, FUNCTION is not applied at all and the number of available matches is returned.
 - **START** and **END** define the search range; defaults are object start and end.
+- **PREDICATE** and **NOT-CURRENT** (new in 0.3.0) work as in
+  [`tp-forward` / `tp-backward`](#tp-forward--tp-backward) and are applied
+  to each underlying search; the defaults keep the 0.2.0 behavior exactly.
 - Returns the number of successful matches.
 
 **Examples:**
@@ -1401,7 +1576,9 @@ Search forward/backward for text with PROPERTY and apply FUNCTION **only to the 
   (tp-set 12 17 '(marker t) my-string)
   (tp-forward-do #'upcase 'marker nil my-string 2 6 17)
   my-string)
-;; => "hello world HELLO"  ; Only 1 match in range 6-17
+;; => "hello world hello"  ; only 1 match in range 6-17, so the
+;;    requested 2nd match does not exist: nothing is applied
+;;    (all-or-nothing; the call still returns the count, 1)
 
 ;; Using function with start and end parameters
 ;; The function receives position info; use upcase to keep same length
@@ -1641,9 +1818,16 @@ Text property layers is a **unique feature** of tp.el that requires specific fun
 
 #### `define-tp` / `define-tps` - Define Custom Text Properties
 
+> Since 0.3.0 the prefix-conforming aliases `tp-define-layer` (for
+> `define-tp`), `tp-define-group` (for `define-tps`) and
+> `tp-define-palette` (for `define-tp-palette`) are the canonical names
+> going forward — they make the macros discoverable via `C-h f tp-...`.
+> The historical names are permanent aliases and will never be removed;
+> this README's examples keep using them.
+
 ##### `define-tp` - Define Single Custom Text Property (Layer)
 
-Define a custom text property. The name does not need to be quoted. The ARGLIST is **mandatory in every format**: `()` for non-parameterized layers (including the reactive keyword format), `(ARG)` for parameterized layers. Supports three formats:
+Define a custom text property. The name does not need to be quoted. The ARGLIST is **mandatory in every format**: `()` for non-parameterized layers (including the reactive keyword format), `(ARG1 ARG2 ...)` with any number of parameter symbols for parameterized layers. Supports three formats:
 
 **Format 1 - Non-parameterized (empty argument list, simple properties):**
 
@@ -1656,7 +1840,7 @@ Define a custom text property. The name does not need to be quoted. The ARGLIST 
 (tp-set 0 5 '(tp-bold t) "emacs")
 ```
 
-**Format 2 - Parameterized (with single argument):**
+**Format 2 - Parameterized (with one or more arguments):**
 
 ```elisp
 (define-tp tp-space (pixel)
@@ -1666,6 +1850,43 @@ Define a custom text property. The name does not need to be quoted. The ARGLIST 
 (tp-set "emacs" 'tp-space 2)
 (tp-set 0 5 '(tp-space 2) "emacs")
 ```
+
+Since 0.3.0 the arglist may declare **any number of parameters**. The call
+specs accept the arguments flat — `(LAYER ARG1 ... ARGN)` — or wrapped in
+one list — `(LAYER (ARG1 ... ARGN))` — and both work in `tp-set` and
+`tp-put-layer`:
+
+```elisp
+(define-tp tp-colors (fg bg)
+  `(face (:foreground ,fg :background ,bg)))
+
+;; Whole-string form: arguments follow the layer name
+(tp-set "hello" 'tp-colors "red" "blue")
+;; => #("hello" 0 5 (face (:foreground "red" :background "blue")))
+
+;; Region form, wrapped argument list plus extra properties
+(let ((str (copy-sequence "hello")))
+  (tp-set 0 5 '(tp-colors ("red" "blue") help-echo "tip") str)
+  (list (tp-at 0 'face str) (tp-at 0 'help-echo str)))
+;; => ((:foreground "red" :background "blue") "tip")
+
+;; tp-put-layer spec
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-put-layer 1 10 '(tp-colors "white" "black") 0)
+  (tp-at 1 'face))
+;; => (:foreground "white" :background "black")
+
+;; Wrong-arity calls signal a clear error naming the layer and both counts
+(tp-set "hello" 'tp-colors "red")
+;; error: tp layer tp-colors takes 2 argument(s), got 1
+```
+
+Parameterized groups (`define-tps`) accept multiple parameters the same
+way; the `(GROUP ARG1 ... ARGN)` and `(GROUP (ARG1 ... ARGN))` specs work
+in the `tp-set` family. Note: `$`-symbols in parameterized bodies resolve
+to their variables' current values at expansion time — parameterized
+layers are **not** reactive.
 
 **Format 3 - With reactive features (:props, :data, :compute, :watch, :transform):**
 
@@ -1697,7 +1918,7 @@ takes a function.
 
 ##### `define-tps` - Define Custom Text Property Group (Layer Group)
 
-Define multiple related custom text properties. The name does not need to be quoted. As with `define-tp`, the ARGLIST is **mandatory**: `()` for non-parameterized groups, `(ARG)` for parameterized ones. Properties in the group can be used individually or with the group name to set multiple layers.
+Define multiple related custom text properties. The name does not need to be quoted. As with `define-tp`, the ARGLIST is **mandatory**: `()` for non-parameterized groups, `(ARG1 ARG2 ...)` for parameterized ones (any number of parameters since 0.3.0). Properties in the group can be used individually or with the group name to set multiple layers.
 
 **Format 1 - Non-parameterized (empty argument list):**
 
@@ -1876,6 +2097,91 @@ reactive engine uses it to locate and re-render their regions.
 
 ---
 
+#### `tp-layer-props-with-args` / `tp-group-props-with-args` / `tp-layer-arglist`
+
+```elisp
+(tp-layer-props-with-args LAYER-NAME ARGS &optional INCLUDE-TP-NAME)
+(tp-group-props-with-args GROUP-NAME ARGS &optional INCLUDE-TP-NAME)
+(tp-layer-arglist LAYER-NAME)
+```
+
+Introspection for **parameterized** layers and groups (new in 0.3.0):
+
+- **`tp-layer-props-with-args`** expands a parameterized layer with ARGS,
+  a list of values bound positionally to the layer's parameters. Extra
+  values are ignored; fewer values than parameters signal a wrong-arity
+  error. Returns a fresh copy (mutating it cannot corrupt the registry),
+  or nil for non-parameterized or undefined layers. The existing
+  single-argument `tp-layer-props-with-arg` (note the one-character name
+  difference) remains as a thin `(list ARG)` wrapper.
+- **`tp-group-props-with-args`** is the group counterpart, returning the
+  list of expanded per-layer plists; `tp-group-props-with-arg` remains
+  as the single-argument convenience.
+- **`tp-layer-arglist`** returns a copy of the layer's parameter list,
+  or nil when LAYER-NAME is not a parameterized layer.
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (define-tp tp-colors (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (tp-layer-props-with-args 'tp-colors '("red" "blue")))
+;; => (face (:foreground "red" :background "blue"))
+
+;; The parameter list itself
+(tp-layer-arglist 'tp-colors)
+;; => (fg bg)
+
+;; Groups expand to one plist per layer
+(progn
+  (define-tps tp-badge (fg bg)
+    `(tp-colors ,fg ,bg)
+    '(face bold))
+  (tp-group-props-with-args 'tp-badge '("white" "black")))
+;; => ((face (:foreground "white" :background "black")) (face bold))
+
+;; Too few arguments signal the same clear arity error as tp-set
+(tp-layer-props-with-args 'tp-colors '("red"))
+;; error: tp layer tp-colors takes 2 argument(s), got 1
+```
+
+---
+
+#### `tp-describe-layer` - Describe a Layer
+
+```elisp
+(tp-describe-layer NAME)   ; interactive
+```
+
+Pop a help buffer describing layer NAME (with completion over all
+registered layers when called interactively). The buffer shows the
+storage format (flat / unified / parameterized / reactive), the raw
+stored body, the expanded properties (or a placeholder for parameterized
+layers, which need arguments), the parameter list, the reactive
+variables the layer depends on, whether a transform is registered, and
+the group that generated the layer, if any.
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (define-tp tp-colors (fg bg)
+    `(face (:foreground ,fg :background ,bg)))
+  (tp-describe-layer 'tp-colors))
+;; Pops a *Help* buffer:
+;;   tp-colors is a tp layer.
+;;
+;;   Storage format: parameterized
+;;   Arguments:      (fg bg)
+;;   Stored body:    `(face (:foreground ,fg :background ,bg))
+;;   Expanded props: parameterized layer: expand with `tp-layer-props-with-args'
+;;   Reactive deps:  none
+;;   Transform:      no
+```
+
+---
+
 #### `tp-undefine-layer` / `tp-undefine-group`
 
 ```elisp
@@ -1958,14 +2264,30 @@ This is useful when you want to remove all reactive bindings but keep the layer 
 
 ### Property Layer Placement
 
+> ⚠️ **String forms of stack operations mutate in place.** Unlike `tp-set`,
+> which returns a **new** propertized string, the string form of every stack
+> mutator (`tp-put-layer`, `tp-push-layer`, `tp-pop-layer`, `tp-delete-layer`,
+> `tp-move-layer`, `tp-raise-layer`, `tp-lower-layer`, `tp-rotate-layer`,
+> `tp-pin-layer`, `tp-switch-layer`, `tp-hide-layer`, `tp-show-layer`,
+> `tp-merge-layers`, `tp-flatten-layers`, `tp-add-to-layers`,
+> `tp-add-to-all-layers`) modifies STRING **destructively**. Never pass a
+> string literal or a shared string you do not own — use `copy-sequence`
+> first. Unifying this with `tp-set`'s copy semantics is on the 0.4 ledger.
+
+**Return values (0.3.0):** `tp-put-layer` / `tp-push-layer` return OBJECT
+when one was given (the string itself in string forms), else
+`(START . END)`. Every other stack mutator returns the **number of property
+runs it modified**; a missing layer name or index never signals — unmatched
+runs are silently left alone, and a return value of 0 means nothing matched.
+
 #### `tp-put-layer` - Set Layer at Index
 
 ```elisp
 ;; Buffer/string region
-(tp-put-layer START END LAYER IDX OBJECT)
+(tp-put-layer START END LAYER IDX OBJECT NOERROR)
 
 ;; Entire string
-(tp-put-layer STRING LAYER IDX)
+(tp-put-layer STRING LAYER IDX NOERROR)
 ```
 
 Set layer(s) at a specific index position in the layer stack.
@@ -1979,11 +2301,17 @@ LAYER accepts several specs:
 - a layer name defined with `define-tp`: `'highlight`
 - an inline property plist (no `define-tp` needed): `'(face bold help-echo "tip")`
 - a list of layer names (the first name ends up on top): `'(layer-a layer-b)`
-- a parameterized layer call: `'(tp-color "red")`
+- a parameterized layer call: `'(tp-color "red")` — multi-argument layers
+  work too: `'(tp-colors "white" "black")`
 
 **Stack model:** only the top layer's properties are the visible text
 properties; lower layers are stored in the `tp-layers` text property until
 they are raised, rotated, or flattened.
+
+**NOERROR (new in 0.3.0):** a LAYER naming an undefined layer or group
+normally signals an error. With NOERROR non-nil the call returns nil
+instead and modifies nothing — handy when applying layers that may not be
+defined yet. `tp-push-layer` accepts the same trailing NOERROR.
 
 **Examples:**
 
@@ -2051,6 +2379,12 @@ they are raised, rotated, or flattened.
     (tp-put-layer 1 10 '(tp-color "red") 0)
     (tp-at 1 'face)))
 ;; => (:foreground "red")
+
+;; NOERROR - an undefined layer name returns nil instead of signaling
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-put-layer 1 10 'no-such-layer 0 nil t))
+;; => nil  ; nothing modified
 ```
 
 ---
@@ -2059,13 +2393,16 @@ they are raised, rotated, or flattened.
 
 ```elisp
 ;; Buffer/string region
-(tp-push-layer START END LAYER OBJECT)
+(tp-push-layer START END LAYER OBJECT NOERROR)
 
 ;; Entire string
-(tp-push-layer STRING LAYER)
+(tp-push-layer STRING LAYER NOERROR)
 ```
 
 Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
+NOERROR (new in 0.3.0) works as in
+[`tp-put-layer`](#tp-put-layer---set-layer-at-index): an undefined LAYER
+returns nil instead of signaling.
 
 **Examples:**
 
@@ -2317,17 +2654,72 @@ Raise a layer by N positions. Positive N moves toward top, negative moves toward
 
 ---
 
-#### `tp-rotate-layer` - Cycle Layers
+#### `tp-lower-layer` - Mirror of `tp-raise-layer`
 
 ```elisp
 ;; Buffer/string region
-(tp-rotate-layer START END OBJECT)
+(tp-lower-layer START END IDX/LAYER-NAME N OBJECT)
 
 ;; Entire string
-(tp-rotate-layer STRING)
+(tp-lower-layer STRING IDX/LAYER-NAME N)
 ```
 
-Rotate layers - top goes to bottom, next becomes visible.
+Lower a layer by N positions (new in 0.3.0). The mirror image of
+`tp-raise-layer`: positive N moves the layer down toward the bottom,
+negative N moves it up. N defaults to 1, and the resulting position is
+clamped to the stack. Returns the number of property runs modified.
+
+**Examples:**
+
+```elisp
+;; Lower the top layer by one position
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; Stack: layer3 (top), layer2, layer1 (bottom)
+    (tp-lower-layer 1 10 'layer3 1)
+    ;; Stack: layer2 (top), layer3, layer1 (bottom)
+    (list (tp-layer-top 1 10) (tp-layer-list 1 10))))
+;; => (layer2 (layer2 layer3 layer1))
+```
+
+---
+
+#### `tp-rotate-layer` - Cycle Layers
+
+```elisp
+;; Buffer/string region (canonical order, OBJECT last - new in 0.3.0)
+(tp-rotate-layer START END DIRECTION &optional COUNT OBJECT)
+
+;; Entire string
+(tp-rotate-layer STRING DIRECTION COUNT)
+
+;; Buffer/string region (legacy order, kept working forever)
+(tp-rotate-layer START END OBJECT)
+```
+
+Rotate layers by COUNT steps, preserving their relative order.
+
+- **DIRECTION** is `down` or nil to move the top layer to the bottom (the
+  historical behavior), or `up` to bring the bottom layer to the top; any
+  other value signals an error.
+- **COUNT** is the number of rotation steps, defaulting to 1; a COUNT below
+  1 rotates nothing. Hidden layers rotate with the rest of the stack.
+- Returns the number of property runs modified.
+
+The two region orders are told apart by the third argument: the symbols
+`up` / `down` are never valid OBJECTs, so `(tp-rotate-layer 1 5 'up)`
+unambiguously selects the canonical `(START END DIRECTION [COUNT]
+[OBJECT])` order — no nil OBJECT placeholder needed. Any other third
+argument (a buffer, a string, or nil for the current buffer) selects the
+legacy `(START END OBJECT [DIRECTION] [COUNT])` order, which keeps working.
 
 **Examples:**
 
@@ -2346,6 +2738,37 @@ Rotate layers - top goes to bottom, next becomes visible.
     ;; Stack: base (top) -> highlight (bottom)
     (tp-layer-top 1 10)))
 ;; => base
+
+;; Canonical order: `up' brings the bottom layer to the top
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    ;; Stack: layer3 (top), layer2, layer1 (bottom)
+    (tp-rotate-layer 1 10 'up)
+    (tp-layer-list 1 10)))
+;; => (layer1 layer3 layer2)
+
+;; COUNT rotates several steps at once
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(face italic))
+  (define-tp layer3 () '(face underline))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-push-layer 1 10 'layer3)
+    (tp-rotate-layer 1 10 'down 2)
+    (tp-layer-list 1 10)))
+;; => (layer1 layer3 layer2)
 ```
 
 ---
@@ -2360,7 +2783,10 @@ Rotate layers - top goes to bottom, next becomes visible.
 (tp-pin-layer STRING IDX/LAYER-NAME)
 ```
 
-Move a specific layer to the top (make it visible).
+Move a layer to the top of the stack. **One-shot**: despite the name,
+nothing stays pinned — this is a single move to index 0, and nothing
+prevents a later `tp-push-layer` or `tp-put-layer` from covering the moved
+layer again.
 
 **Examples:**
 
@@ -2415,6 +2841,111 @@ Swap positions of two layers.
 
 ---
 
+### Property Layer Visibility
+
+#### `tp-hide-layer` / `tp-show-layer` - Hide and Show Layers
+
+```elisp
+;; Buffer/string region
+(tp-hide-layer START END NAME OBJECT)
+(tp-show-layer START END NAME OBJECT)
+
+;; Entire string
+(tp-hide-layer STRING NAME)
+(tp-show-layer STRING NAME)
+```
+
+Hide a layer without removing it, and make it render again (new in 0.3.0).
+NAME identifies the layer: a layer name symbol or an integer index into the
+full stack, hidden layers included (0 = top, -1 = bottom).
+
+**The visibility model:**
+
+- A hidden layer **stays in the stack**: it still counts for
+  `tp-layer-count`, appears in `tp-layer-list` and `tp-layer-stack-at`, and
+  can be moved, raised, or lowered — but it does not render. The text shows
+  the properties of the topmost **non-hidden** layer instead.
+- Hiding the currently visible top layer therefore reveals the next visible
+  layer below it.
+- When **every** layer is hidden the text renders bare (only the
+  `tp-layers` bookkeeping property remains — not even `tp-name` renders)
+  while all layers stay queryable.
+- A hidden layer **keeps receiving reactive updates** while hidden, so
+  `tp-show-layer` always reveals current values (see
+  [Layer-Buffer Registry & Lifecycle](#layer-buffer-registry--lifecycle)).
+- `tp-flatten-layers` merges only visible layers, and `tp-merge-layers`
+  excludes hidden matched layers' properties — hiding can never leak (see
+  [Property Layer Merging](#property-layer-merging)).
+- Hiddenness is stored as a `tp-hidden` flag inside the layer's plist in
+  `tp-layers` stack storage, so `tp-hidden` is a reserved property name
+  inside layers, like `tp-name`.
+
+Both functions return the number of property runs modified. A NAME matching
+no layer never signals, and hiding an already-hidden layer (or showing a
+visible one) is a silent no-op — 0 means nothing changed.
+
+**Examples:**
+
+```elisp
+;; Hiding the top layer reveals the one below; the stack is intact
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (list :visible (tp-at 1 'tp-name)
+          :face (tp-at 1 'face)
+          :count (tp-layer-count 1 10)
+          :layers (tp-layer-list 1 10))))
+;; => (:visible base :face default :count 2 :layers (highlight base))
+
+;; With every layer hidden the text renders bare
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'base)
+    (list :face (tp-at 1 'face) :count (tp-layer-count 1 10))))
+;; => (:face nil :count 2)
+
+;; tp-show-layer restores the layer's rendering
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-show-layer 1 10 'highlight)
+    (tp-at 1 'face)))
+;; => (:background "yellow")
+
+;; Return value: number of modified runs; a missing name is a silent 0
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (list (tp-hide-layer 1 10 'base)
+          (tp-hide-layer 1 10 'base)          ; already hidden
+          (tp-hide-layer 1 10 'nonexistent)))) ; no such layer
+;; => (1 0 0)
+```
+
+---
+
 ### Property Layer Merging
 
 #### `tp-merge-layers` - Merge Multiple Layers
@@ -2428,6 +2959,14 @@ Swap positions of two layers.
 ```
 
 Merge specified layers into a new layer. Earlier layers in the list take precedence.
+
+**Hidden layers (0.3.0):** hidden matched layers are merged away with the
+rest but contribute **no** properties to the merged layer, so a merge can
+never render what was hidden. When *every* matched layer is hidden, the
+merged layer keeps their merged properties but carries the `tp-hidden` flag
+itself — the data is preserved without un-hiding anything, and
+`tp-show-layer` on the merged layer renders it. Returns the number of
+property runs modified (0 = no listed layer matched).
 
 **Examples:**
 
@@ -2457,6 +2996,22 @@ Merge specified layers into a new layer. Earlier layers in the list take precede
     (tp-merge-layers 1 10 'merged '(0 1))
     (tp-layer-count 1 10)))
 ;; => 1
+
+;; A hidden layer's properties never leak into the merge
+(progn
+  (tp-layer-reset)
+  (define-tp layer1 () '(face bold))
+  (define-tp layer2 () '(help-echo "tip"))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'layer1)
+    (tp-push-layer 1 10 'layer2)
+    (tp-hide-layer 1 10 'layer2)
+    (tp-merge-layers 1 10 'merged '(layer1 layer2))
+    (list :face (tp-at 1 'face)
+          :help (tp-at 1 'help-echo)
+          :name (tp-at 1 'tp-name))))
+;; => (:face bold :help nil :name merged)  ; layer2 was hidden
 ```
 
 ---
@@ -2472,6 +3027,13 @@ Merge specified layers into a new layer. Earlier layers in the list take precede
 ```
 
 Flatten all layers into a single layer with the given name.
+
+**Hidden layers (0.3.0):** hidden layers are **discarded**, mirroring
+image-editor flatten semantics — only the visible layers' properties merge
+into the result, so flattening can never render what was hidden. When
+*every* layer of a run is hidden, the run's properties are cleared entirely
+(bare text), consistent with the all-hidden rendering of `tp-hide-layer`.
+Returns the number of property runs modified (0 = no run had layers).
 
 **Examples:**
 
@@ -2499,6 +3061,20 @@ Flatten all layers into a single layer with the given name.
     (tp-flatten-layers 1 10 nil)
     (tp-at 1 'tp-name)))
 ;; => nil
+
+;; Hidden layers are discarded by flatten
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-flatten-layers 1 10 'flat)
+    (list (tp-at 1 'face) (tp-at 1 'tp-name))))
+;; => (default flat)  ; highlight's background is gone
 ```
 
 ---
@@ -2585,7 +3161,10 @@ Check if layer exists in region.
 (tp-layer-top START END &optional OBJECT)
 ```
 
-Get name of the top (visible) layer.
+Get name of the top layer. The topmost layer is reported in **stack
+order**, even when it is hidden (see
+[`tp-hide-layer`](#tp-hide-layer--tp-show-layer---hide-and-show-layers));
+use `tp-layer-stack-at` to distinguish hidden layers from visible ones.
 
 **Examples:**
 
@@ -2600,6 +3179,63 @@ Get name of the top (visible) layer.
     (tp-push-layer 1 10 'layer2)
     (tp-layer-top 1 10)))
 ;; => layer2
+```
+
+---
+
+#### `tp-layer-stack-at` - Full Stack at a Position
+
+```elisp
+(tp-layer-stack-at POS &optional OBJECT)
+```
+
+Return the full ordered layer stack at one position (new in 0.3.0), as a
+list with one element per layer, topmost first, where each element is a
+cons `(NAME . PROPS)`:
+
+- **NAME** is the layer's `tp-name` symbol, or nil for an unnamed layer.
+- **PROPS** is the layer's property plist without its `tp-name` entry. A
+  hidden layer is distinguishable by a `tp-hidden` entry with value t in
+  PROPS; visible layers never carry one.
+
+Hidden layers are included at their stack position. Returns nil for bare
+text. POS is in OBJECT's native coordinates (0-based for strings, 1-based
+for buffers); OBJECT is a string, a buffer, or nil for the current buffer.
+
+**Examples:**
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-layer-stack-at 1)))
+;; => ((highlight . (face (:background "yellow")))
+;;     (base . (face default)))
+
+;; Hidden layers carry a `tp-hidden' entry in PROPS
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (tp-hide-layer 1 10 'highlight)
+    (tp-layer-stack-at 1)))
+;; => ((highlight . (tp-hidden t face (:background "yellow")))
+;;     (base . (face default)))
+
+;; Bare text has no stack
+(with-temp-buffer
+  (insert "Hello")
+  (tp-layer-stack-at 1))
+;; => nil
 ```
 
 ---
@@ -2619,7 +3255,9 @@ Add or merge properties to specific layers in a region or string.
 - **IDX-OR-LAYER-NAME-LIST** is a list of layer indices (integers) or layer names (symbols). For indices: 0 means top layer, -1 means bottom layer.
 - Properties are deeply merged into the specified layers (nested plists are merged, not replaced).
 - OBJECT defaults to current buffer for region form.
-- For strings, returns a NEW string (original is not modified). For buffers, returns nil.
+- Like the other stack mutators (and unlike `tp-set`), the string form
+  modifies STRING **in place** and returns that same mutated string. For
+  buffers, returns nil.
 
 **Examples:**
 
@@ -2654,7 +3292,9 @@ Add or merge properties to all layers in a region or string.
 
 - Properties are deeply merged into all existing layers.
 - OBJECT defaults to current buffer for region form.
-- For strings, returns a NEW string (original is not modified). For buffers, returns nil.
+- Like the other stack mutators (and unlike `tp-set`), the string form
+  modifies STRING **in place** and returns that same mutated string. For
+  buffers, returns nil.
 
 **Examples:**
 
@@ -2674,7 +3314,7 @@ Add or merge properties to all layers in a region or string.
 #### `tp-intervals` - Get Text Property Intervals
 
 ```elisp
-(tp-intervals START END &optional OBJECT)
+(tp-intervals START END &optional OBJECT ABSOLUTE)
 ```
 
 Get all text property intervals from START to END in OBJECT.
@@ -2682,8 +3322,12 @@ Get all text property intervals from START to END in OBJECT.
 - Returns a list of (START END PROPERTIES) for each interval, including
   gap intervals with no properties, whose PROPERTIES is nil.
 - For buffer input, START and END are 1-based buffer positions but the
-  returned positions are **0-based offsets relative to START**. For strings,
-  positions are absolute 0-based indices.
+  returned positions are by default **0-based offsets relative to START**
+  (the legacy convention). With ABSOLUTE non-nil (new in 0.3.0) they are
+  native 1-based buffer positions instead, directly reusable in other tp
+  calls (`tp-set`, `tp-remove`, ...) without offset arithmetic. For
+  strings, positions are always absolute 0-based indices; ABSOLUTE changes
+  nothing.
 - Uses `object-intervals` (requires Emacs 28.1+).
 - OBJECT can be a buffer or string; nil defaults to current buffer.
 
@@ -2697,6 +3341,24 @@ Get all text property intervals from START to END in OBJECT.
   (tp-intervals 1 12))
 ;; => ((0 5 (face bold)) (5 6 nil) (6 11 (face italic)))
 ;;    positions are offsets from START; (5 6 nil) is the unpropertized gap
+
+;; ABSOLUTE - native buffer coordinates
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals 1 12 nil t))
+;; => ((1 6 (face bold)) (6 7 nil) (7 12 (face italic)))
+
+;; ABSOLUTE positions feed straight back into other tp calls
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (dolist (iv (tp-intervals 1 12 nil t))
+    (when (eq (plist-get (nth 2 iv) 'face) 'bold)
+      (tp-add (nth 0 iv) (nth 1 iv) '(help-echo "bold text"))))
+  (tp-at 1 'help-echo))
+;; => "bold text"
 ```
 
 ---
@@ -2704,13 +3366,21 @@ Get all text property intervals from START to END in OBJECT.
 #### `tp-intervals-map` - Apply Function to Intervals
 
 ```elisp
-(tp-intervals-map FUNCTION START END &optional OBJECT)
+(tp-intervals-map FUNCTION START END &optional OBJECT ABSOLUTE)
 ```
 
 Apply FUNCTION to all intervals between START and END in OBJECT.
 
-- FUNCTION receives four arguments: interval-start, interval-end, top-props (visible layer properties), and below-props-lst (list of hidden layers).
-- Intervals with no properties are visited too, with nil top-props (positions follow the same offset convention as `tp-intervals`).
+- FUNCTION receives four arguments: interval-start, interval-end,
+  top-props (the directly rendered properties, with the `tp-layers` entry
+  removed), and below-props-lst (the `tp-layers` value: the stored layer
+  plists buried below the rendered top layer — while any layer is hidden
+  it holds the whole ordered stack; see
+  [`tp-layer-stack-at`](#tp-layer-stack-at---full-stack-at-a-position) for
+  the decoded view).
+- Intervals with no properties are visited too, with nil top-props
+  (positions follow the same coordinate convention as `tp-intervals`,
+  including the ABSOLUTE argument, new in 0.3.0).
 - OBJECT can be a buffer or string; nil defaults to current buffer.
 - Returns list of function results (nil results are removed).
 
@@ -2726,6 +3396,17 @@ Apply FUNCTION to all intervals between START and END in OBJECT.
      (list start end (plist-get props 'face)))
    1 12))
 ;; => ((0 5 bold) (5 6 nil) (6 11 italic))
+
+;; ABSOLUTE - FUNCTION receives native buffer positions
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-set 1 6 '(face bold))
+  (tp-set 7 12 '(face italic))
+  (tp-intervals-map
+   (lambda (start end props belows)
+     (list start end (plist-get props 'face)))
+   1 12 nil t))
+;; => ((1 6 bold) (6 7 nil) (7 12 italic))
 ```
 
 ---
@@ -2852,13 +3533,46 @@ parameterized `tp-palette` layer (as in `(tp-set "emacs" 'tp-palette 'info)`).
 - **`tp-palette-alist`** (variable) — alist of `(NAME . PLIST)` palette
   definitions; the single source of truth for palette lookups. Each PLIST
   maps `:fg`, `:bg`, and `:border` to colors.
-- **`define-tp-palette`** — register (or update) a palette:
+- **`define-tp-palette`** — register (or update) a palette (since 0.3.0
+  also available as the prefix-conforming alias `tp-define-palette`):
 
   ```elisp
   (define-tp-palette my-brand
     :fg ("#0969da" . "#58a6ff")     ; ("light" . "dark")
     :bg ("#ddf4ff" . "#1f3d5c"))
   ```
+
+- **`tp-palette-color`** (new in 0.3.0) — **the** palette accessor: get a
+  palette's `:fg` / `:bg` / `:border` color, resolved for the current
+  light/dark theme. Returns nil for a missing palette or key:
+
+  ```elisp
+  (tp-palette-color 'info :fg)
+  ;; => "#0969da" on a light theme, "#58a6ff" on a dark theme
+  (tp-palette-color 'no-such-palette :fg)
+  ;; => nil
+  ```
+
+- **`tp-palette-has-p`** (new in 0.3.0) — **the** palette predicate: with
+  just SYMBOL, test whether it names a registered palette; with KIND one of
+  `:fg` / `:bg` / `:border`, additionally require that key in its
+  definition (a defined key may still resolve to no color for the current
+  theme — use `tp-palette-color` when the resolved color matters):
+
+  ```elisp
+  (list (tp-palette-has-p 'info)
+        (tp-palette-has-p 'info :border)
+        (tp-palette-has-p 'no-such-palette))
+  ;; => (t t nil)
+  ```
+
+  The older per-key conveniences remain as compatible wrappers:
+  `tp-palette-fg-color` / `tp-palette-bg-color` / `tp-palette-border-color`
+  (fixed-KEY variants of `tp-palette-color`), `tp-palette-p` (nil-KIND
+  `tp-palette-has-p`), and the suffixed-name predicates `tp-palette-fg-p` /
+  `tp-palette-bg-p` / `tp-palette-fbg-p` / `tp-palette-border-p`, which
+  answer a different question: whether a *variant name* like `info-fg`
+  denotes a registered palette (the `tp-palette` layer's convention).
 
 - **`tp-palette-show`** — interactive command that displays a gallery buffer
   of every registered palette and its `-fg` / `-bg` / `-fbg` / `-border`
@@ -3195,6 +3909,135 @@ Benefits of batched updates:
 - Reduces redundant buffer modifications
 - Improves performance when changing multiple variables
 - Ensures consistent state when multiple variables are interdependent
+
+### Layer-Buffer Registry & Lifecycle
+
+Since 0.3.0 the reactive engine keeps a **layer→buffer registry**: every
+buffer-mutating write path that stamps a layer (the `tp-set` family, the
+stack mutators, the match/regexp appliers) registers the target buffer as
+showing that layer, and a reactive update visits **only the registered
+buffers** instead of scanning the whole `(buffer-list)`. Killed buffers are
+pruned automatically. When a layer has no registry entry at all, one
+**learning full scan** falls back to the old behavior and registers every
+buffer where the layer is actually found.
+
+Updates reach a layer's regions even while the layer is **hidden** or
+**buried** below other layers in a stack: the stored `tp-layers` entry is
+updated in place, so `tp-show-layer` (or raising the layer) always reveals
+current values.
+
+#### `tp-reactive-layer-buffers` - Inspect the Registry
+
+```elisp
+(tp-reactive-layer-buffers LAYER-NAME)
+```
+
+Return the live buffers registered as showing LAYER-NAME — a list (possibly
+empty, meaning "known: no buffer shows this layer") — or the symbol
+`unknown` when the layer has no registry entry at all:
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (defvar reg-color "red")
+  (define-tp reg-layer ()
+    :props '(face (:foreground $reg-color)))
+  (tp-reactive-layer-buffers 'reg-layer))
+;; => unknown  ; never applied to any buffer yet
+
+(with-temp-buffer
+  (rename-buffer "demo-buffer" t)
+  (insert "Hello")
+  (tp-push-layer 1 6 'reg-layer)
+  (mapcar #'buffer-name (tp-reactive-layer-buffers 'reg-layer)))
+;; => ("demo-buffer")
+```
+
+#### `tp-reactive-track-buffer` - Close the String-Insert Gap
+
+```elisp
+(tp-reactive-track-buffer &optional BUFFER)   ; interactive
+```
+
+**Known gap:** inserting an *already-propertized string* into a buffer
+bypasses the buffer operations that register buffers, so that buffer is
+missing from the registry until a learning full scan finds it. Call
+`tp-reactive-track-buffer` after such an insert: it scans BUFFER (default:
+the current buffer) for layer regions — rendered top layers as well as
+layers buried or hidden inside `tp-layers` stack storage — registers the
+buffer for each, and returns the layer names found in buffer order:
+
+```elisp
+(let ((s (tp-set "hello" 'reg-layer)))   ; propertized string, detached
+  (with-temp-buffer
+    (insert s)                           ; bypasses registration
+    (tp-reactive-track-buffer)))
+;; => (reg-layer)  ; buffer now registered for reg-layer
+```
+
+#### `tp-gc-anonymous-layers` - Collect Unused Anonymous Layers
+
+```elisp
+(tp-gc-anonymous-layers)   ; interactive
+```
+
+[Anonymous reactive layers](#anonymous-reactive-layers) are interned: an
+`equal` props spec reuses its registry entry instead of minting a new layer
+on every `tp-set`. `tp-gc-anonymous-layers` undefines every interned
+anonymous layer that no registered live buffer still displays (buried and
+hidden layers count as alive) and returns the collected layer names:
+
+```elisp
+(defvar tmp-color "green")
+(let ((buf (generate-new-buffer "*gc-demo*")))
+  (with-current-buffer buf
+    (insert "Hello")
+    (tp-set 1 6 '(face (:foreground $tmp-color))))  ; anonymous layer
+  (kill-buffer buf)
+  (tp-gc-anonymous-layers))
+;; => (tp-anon-1)  ; the collected names (the counter varies)
+```
+
+**Conservative `unknown` semantics:** a layer whose registry state is
+`unknown` — never seen in any buffer through the registering paths, for
+example referenced only by detached strings — is deliberately **kept**. A
+layer becomes collectable only after it was registered for at least one
+buffer and none of the registered buffers still shows it (e.g. all killed).
+Call `tp-reactive-track-buffer` after inserting propertized strings so
+their buffers are registered too.
+
+#### Minimal-Diff `tp-text` Re-Rendering
+
+Reactive `tp-text` replacements edit only the **differing span** of the old
+and new text (inserting before deleting), so point and markers in unchanged
+text keep their positions; point inside the edited span lands at the edit
+start. An update to an **identical** value is a true no-op: no text edit,
+no property churn, and the buffer-modified flag is untouched.
+
+```elisp
+(progn
+  (tp-layer-reset)
+  (defvar counter-val "0")
+  (define-tp counter-label ()
+    :props '(tp-text $counter-val))
+  (with-temp-buffer
+    (insert "count: 0 items")
+    (tp-set 8 9 'counter-label)
+    (let ((m (copy-marker 10)))          ; marker on the "i" of "items"
+      (setq counter-val "9")             ; only the digit is edited
+      (list (buffer-substring-no-properties 1 (point-max))
+            (char-after m)))))
+;; => ("count: 9 items" ?i)  ; the marker still points at its character
+
+;; Identical-value updates do not touch the buffer at all
+(with-temp-buffer
+  (insert "count: 9 items")
+  (tp-set 8 9 'counter-label)
+  (set-buffer-modified-p nil)
+  (setq counter-val "9")                 ; same text as displayed
+  (buffer-modified-p))
+;; => nil
+```
 
 ### Debug Mode
 
