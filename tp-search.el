@@ -49,7 +49,9 @@ is a regexp.  APPLY-FN is called with (START END PROPS OBJECT) for
 each match.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.  Matching behaves as if
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped (matching the buffer path's historical narrow-to-region
+behavior, now uniform across object types).  Matching behaves as if
 OBJECT consisted only of that portion (the buffer path narrows, the
 string path matches against the substring), so no match crosses the
 boundaries.
@@ -57,7 +59,9 @@ When SUBEXP is non-nil, it names a capture group of PATTERN: the
 properties and returned regions cover (match-beginning SUBEXP) to
 \(match-end SUBEXP) of each match, and a match in which that group
 does not participate contributes nothing.  The scan still advances
-past the whole match.
+past the whole match.  A SUBEXP larger than PATTERN's group count
+\(per `regexp-opt-depth') signals an error instead of silently
+matching nothing.
 For strings, returns a NEW string with properties applied
 \(non-destructive).
 For buffers, modifies in-place and returns list of regions.
@@ -66,6 +70,14 @@ Zero-width matches (an empty literal pattern, or a regexp that can
 match the empty string) are recorded and the scan advances one
 position past them, so the search always terminates."
   (let ((regexp (if literal (regexp-quote pattern) pattern)))
+    ;; Reversed bounds are swapped, not signaled: the buffer path's
+    ;; narrow-to-region always did this, so the string path follows.
+    (when (and start end (> start end))
+      (cl-rotatef start end))
+    ;; A group number beyond the pattern's group count could never
+    ;; match; make the typo loud instead of a silent no-op.
+    (when (and subexp (> subexp (regexp-opt-depth regexp)))
+      (error "Regexp %S has no group %d" pattern subexp))
     (cond
      ;; String object
      ((stringp object)
@@ -247,12 +259,13 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.  Matching behaves as if
-OBJECT consisted only of that portion, so no match crosses the
-boundaries.
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.  Matching behaves as if OBJECT consisted only of that
+portion, so no match crosses the boundaries.
 
 Returns:
-- For strings: the modified string
+- For strings: a NEW string with properties applied (the original
+  string is not modified)
 - For buffers: list of (START . END) pairs for all matches."
   (tp--match-apply pattern (tp--ensure-props plist) #'tp-set object
                    start end))
@@ -269,12 +282,14 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
 
 Unlike `tp-match-set', this completely replaces all existing properties.
 
 For strings, returns a NEW string (original is not modified).
-For buffers, modifies in-place and returns list of regions."
+For buffers, modifies in-place and returns list of (START . END)
+regions."
   (tp--match-apply pattern (tp--ensure-props plist)
                    #'tp--reset-apply
                    object start end))
@@ -303,9 +318,14 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
 
-Unlike `tp-match-set', this deeply merges nested properties."
+Unlike `tp-match-set', this deeply merges nested properties.
+
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place and returns list of (START . END)
+regions."
   (tp--match-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply
                    object start end))
 
@@ -322,16 +342,18 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.  Matching behaves as if
-OBJECT consisted only of that portion, so no match crosses the
-boundaries.
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.  Matching behaves as if OBJECT consisted only of that
+portion, so no match crosses the boundaries.
 When SUBEXP is non-nil, it names a capture group of PATTERN (1 for
 the first group, like font-lock highlights): properties apply to that
 group of each match instead of the whole match, and a match in which
-the group does not participate contributes nothing.
+the group does not participate contributes nothing.  A SUBEXP larger
+than PATTERN's group count signals an error.
 
 Returns:
-- For strings: the modified string
+- For strings: a NEW string with properties applied (the original
+  string is not modified)
 - For buffers: list of (START . END) pairs for all matches."
   (tp--regexp-apply pattern (tp--ensure-props plist) #'tp-set object
                     start end subexp))
@@ -348,15 +370,18 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
 When SUBEXP is non-nil, properties apply to that capture group of
 each match instead of the whole match; a match in which the group
-does not participate contributes nothing.
+does not participate contributes nothing.  A SUBEXP larger than
+PATTERN's group count signals an error.
 
 Unlike `tp-regexp-set', this completely replaces all existing properties.
 
 For strings, returns a NEW string (original is not modified).
-For buffers, modifies in-place and returns list of regions."
+For buffers, modifies in-place and returns list of (START . END)
+regions."
   (tp--regexp-apply pattern (tp--ensure-props plist)
                     #'tp--reset-apply
                     object start end subexp))
@@ -373,12 +398,18 @@ or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
 START and END restrict matching to the [START, END) portion of
 OBJECT, in native coordinates (0-based for strings, 1-based for
-buffers); nil means the object's bounds.
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
 When SUBEXP is non-nil, properties apply to that capture group of
 each match instead of the whole match; a match in which the group
-does not participate contributes nothing.
+does not participate contributes nothing.  A SUBEXP larger than
+PATTERN's group count signals an error.
 
-Unlike `tp-regexp-set', this deeply merges nested properties."
+Unlike `tp-regexp-set', this deeply merges nested properties.
+
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place and returns list of (START . END)
+regions."
   (tp--regexp-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply
                     object start end subexp))
 

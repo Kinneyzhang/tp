@@ -684,5 +684,46 @@ never registered the buffer (REG-1)."
     (tp-layer-reset)
     (setq tp-search-reg1b-color nil)))
 
+;;; SRC-1: reversed START/END bounds are swapped on both object paths
+
+(ert-deftest tp-search-test-reversed-bounds-string-swaps ()
+  "String-path START > END is swapped instead of signaling out-of-range."
+  (let ((res (tp-match-set "o" '(face bold) "foo" 2 1)))
+    (should (eq (get-text-property 1 'face res) 'bold))
+    (should-not (get-text-property 2 'face res)))
+  ;; Swapped bounds behave exactly like the same bounds in order.
+  (should (equal-including-properties
+           (tp-regexp-set "o+" '(face bold) "foo" 3 1)
+           (tp-regexp-set "o+" '(face bold) "foo" 1 3))))
+
+(ert-deftest tp-search-test-reversed-bounds-buffer-swaps ()
+  "Buffer-path START > END keeps its historical swap behavior."
+  (with-temp-buffer
+    (insert "foo")
+    (should (equal (tp-match-set "o" '(face bold) nil 3 2)
+                   '((2 . 3))))
+    (should (eq (get-text-property 2 'face) 'bold))
+    (should-not (get-text-property 3 'face))))
+
+;;; SRC-2: SUBEXP beyond the pattern's group count signals clearly
+
+(ert-deftest tp-search-test-subexp-beyond-group-count-errors ()
+  "A SUBEXP larger than the pattern's group count errors on both paths."
+  (should-error (tp-regexp-set "abc" '(face bold)
+                               (copy-sequence "abc") nil nil 5))
+  (with-temp-buffer
+    (insert "abc")
+    (should-error (tp-regexp-add "a\\(b\\)c" '(face bold) nil nil nil 2))
+    ;; Nothing was applied before the error.
+    (should-not (get-text-property 1 'face))))
+
+(ert-deftest tp-search-test-subexp-non-participating-group-quiet ()
+  "A legal group that never participates still returns nil quietly."
+  (with-temp-buffer
+    (insert "xbc")
+    (should (null (tp-regexp-set "\\(a\\)bc\\|xbc" '(face bold)
+                                 nil nil nil 1)))
+    (should-not (get-text-property 1 'face))))
+
 (provide 'tp-search-tests)
 ;;; tp-search-tests.el ends here
