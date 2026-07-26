@@ -1429,6 +1429,68 @@ First element is top layer, rest are in tp-layers."
       (cons top belows)
     belows))
 
+;;; Layer stack storage codec
+;;
+;; The encoding/decoding of a layer stack into raw text properties
+;; lives here, beside `tp--build-layer-props' / `tp--layer-stack-to-list',
+;; so both the stack operations (tp-stack.el) and the reactive
+;; re-render engine (tp-render.el) can read and write stack storage
+;; without duplicating format knowledge or requiring each other.
+
+(defun tp--stack-hidden-p (layer)
+  "Return non-nil when the layer plist LAYER is flagged hidden.
+A layer is hidden when its plist carries a non-nil `tp-hidden' entry;
+see `tp-hide-layer'."
+  (and (plist-get layer 'tp-hidden) t))
+
+(defun tp--stack-props-to-list (props)
+  "Return the ordered layer stack stored in raw text properties PROPS.
+The result is a list of layer plists, top layer first, including
+hidden layers (flagged with a non-nil `tp-hidden' entry) at their
+stack position.  Returns nil for bare text.
+
+This is the inverse of `tp--stack-build-props': when any entry of the
+`tp-layers' bookkeeping property is hidden, that property holds the
+whole ordered stack and the direct properties are only a render cache
+of the topmost non-hidden layer; otherwise the direct properties are
+the top layer and `tp-layers' holds the layers below it.  Direct
+property edits made outside the stack API (for example `tp-set') are
+therefore discarded by the next stack operation while any layer is
+hidden."
+  (let* ((idx (-elem-index 'tp-layers props))
+         (top (if idx
+                  (-remove-at-indices (list idx (1+ idx)) props)
+                props))
+         (belows (plist-get props 'tp-layers)))
+    (if (seq-some #'tp--stack-hidden-p belows)
+        belows
+      (tp--layer-stack-to-list top belows))))
+
+(defun tp--stack-build-props (layer-list)
+  "Build text properties from LAYER-LIST (top layer first).
+Like `tp--build-layer-props', but the `tp-layers' entry is only added
+when there are below-layers, so single-layer stacks do not carry a
+garbage (tp-layers nil) property.  Consumers must therefore tolerate
+an absent `tp-layers' property (both `plist-get' and
+`tp--stack-map-region' do).
+
+When any layer in LAYER-LIST is hidden (non-nil `tp-hidden' entry,
+see `tp-hide-layer'), the storage switches to full-stack mode: the
+direct properties are those of the topmost non-hidden layer (or no
+layer properties at all when every layer is hidden) and the
+`tp-layers' property holds the complete ordered LAYER-LIST.
+`tp--stack-props-to-list' reverses either representation."
+  (cond
+   ((null layer-list) nil)
+   ((seq-some #'tp--stack-hidden-p layer-list)
+    (append (seq-find (lambda (layer)
+                        (not (tp--stack-hidden-p layer)))
+                      layer-list)
+            (list 'tp-layers layer-list)))
+   ((null (cdr layer-list)) (copy-sequence (car layer-list)))
+   (t (append (car layer-list)
+              (list 'tp-layers (cdr layer-list))))))
+
 (defun tp--describe-layer-data (name)
   "Collect description data for layer NAME as a plist.
 Returns nil when NAME is not registered in `tp-layer-alist'.
