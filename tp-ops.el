@@ -384,10 +384,14 @@ Returns a new propertized string."
 (defun tp-set (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Set text properties on string or buffer region.
 
-Supports four calling conventions:
-1. (tp-set START END PROPS) - current buffer
-2. (tp-set START END PROPS BUFFER/STRING) - specific object
-3. (tp-set STRING PROP VAL ...) - entire string
+Supports five calling conventions:
+1. (tp-set START END PROPS) - region of the current buffer
+2. (tp-set START END PROPS OBJECT) - region of a buffer or string
+3. (tp-set STRING PROP VAL ...) - entire string, flat prop/value pairs
+4. (tp-set STRING LAYER-NAME [ARG]) - entire string, a defined
+   layer/group, optionally with its argument
+5. (tp-set STRING LAYER-NAME ARG PROP VAL ...) - entire string, a
+   parameterized layer/group plus extra flat properties
 
 PROPS can be a plist or a layer/group name symbol.
 Preserves existing properties not specified in PROPS.
@@ -438,6 +442,16 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
 (defun tp-reset (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Completely replace all text properties with PROPS.
 Like `tp-set' but replaces ALL existing properties.
+
+Supports the same five calling conventions as `tp-set':
+1. (tp-reset START END PROPS) - region of the current buffer
+2. (tp-reset START END PROPS OBJECT) - region of a buffer or string
+3. (tp-reset STRING PROP VAL ...) - entire string, flat pairs
+4. (tp-reset STRING LAYER-NAME [ARG]) - entire string, defined
+   layer/group
+5. (tp-reset STRING LAYER-NAME ARG PROP VAL ...) - layer plus extra
+   flat properties
+
 For tp-text, embedded text properties are preserved (props override
 if there's a conflict).
 
@@ -476,6 +490,16 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
 (defun tp-add (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Add or update text properties with deep merging.
 Unlike `tp-set', deeply merges nested properties.
+
+Supports the same five calling conventions as `tp-set':
+1. (tp-add START END PROPS) - region of the current buffer
+2. (tp-add START END PROPS OBJECT) - region of a buffer or string
+3. (tp-add STRING PROP VAL ...) - entire string, flat pairs
+4. (tp-add STRING LAYER-NAME [ARG]) - entire string, defined
+   layer/group
+5. (tp-add STRING LAYER-NAME ARG PROP VAL ...) - layer plus extra
+   flat properties
+
 For face-family properties (see `tp-face-properties': face,
 font-lock-face, mouse-face), symbol faces are prepended to the
 existing face list and face plists are deep-merged.
