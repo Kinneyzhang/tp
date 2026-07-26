@@ -41,6 +41,7 @@
 (defvar tp-rt-r2-text nil)
 (defvar tp-rt-r2m-text nil)
 (defvar tp-rt-r2n-text nil)
+(defvar tp-rt-r2s-text nil)
 (defvar tp-rt-r3a-color nil)
 (defvar tp-rt-r3b-color nil)
 (defvar tp-rt-r3c-color nil)
@@ -563,6 +564,84 @@
         (should (eq (char-after m-suffix) ?f))
         (set-marker m-prefix nil)
         (set-marker m-suffix nil)))))
+
+;;; TXT-1: the suffix-boundary marker must track its character
+
+(defun tp-rt--txt1-marker-after-edit (old new marker-offset)
+  "Run a minimal-diff replacement of OLD by NEW with a boundary marker.
+Insert \"HEAD \" OLD \" TAIL\" in a temp buffer, tag OLD with a
+tp-name, put an insertion-type-nil marker at OLD's start plus
+MARKER-OFFSET, replace via `tp--replace-reactive-text-in-buffer' and
+return (MARKER-POSITION CHAR-AT-MARKER ORIGINAL-CHAR)."
+  (with-temp-buffer
+    (insert "HEAD ")
+    (let ((m-start (point)))
+      (insert old " TAIL")
+      (put-text-property m-start (+ m-start (length old))
+                         'tp-name 'tp-rt-txt1-layer)
+      (let* ((mpos (+ m-start marker-offset))
+             (mchar (char-after mpos))
+             (mk (copy-marker mpos)))
+        (tp--replace-reactive-text-in-buffer 'tp-rt-txt1-layer new nil)
+        (prog1 (list (marker-position mk) (char-after mk) mchar)
+          (set-marker mk nil))))))
+
+(ert-deftest tp-render-test-minimal-diff-suffix-start-marker-tracks ()
+  "A marker on the FIRST character of the preserved suffix tracks it.
+TXT-1: delete-then-insert collapsed such a marker onto the edit
+start, stranding it before the inserted text; insert-then-delete
+shifts it right with its character.  Grow, same-length (the clearest
+docstring violation) and shrink edits are all covered."
+  ;; Grow: "0" -> "42"; marker on the space before "items" (offset 8).
+  (pcase-let ((`(,pos ,got ,want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 0 items" "count: 42 items" 8)))
+    (should (eq got want))
+    (should (= pos 15)))                ; 14 shifted right by 1
+  ;; Same length: "0" -> "9"; the marker's correct position is
+  ;; numerically unchanged.
+  (pcase-let ((`(,pos ,got ,want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 0 items" "count: 9 items" 8)))
+    (should (eq got want))
+    (should (= pos 14)))
+  ;; Shrink: "42" -> "0".
+  (pcase-let ((`(,pos ,got ,want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 42 items" "count: 0 items" 9)))
+    (should (eq got want))
+    (should (= pos 14))))
+
+(ert-deftest tp-render-test-minimal-diff-deleted-char-marker-at-edit-end ()
+  "A marker whose character was deleted ends at the END of the edit.
+The documented side effect of inserting before deleting; previously
+such markers collapsed to the edit start.  Either way they stay
+inside the replacement span."
+  ;; "100" -> "42": marker on the middle "0" (strictly inside the
+  ;; edited span) ends after the inserted "42".
+  (pcase-let ((`(,pos ,_got ,_want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 100 items" "count: 42 items" 8)))
+    ;; Edit span starts at buffer position 13 ("100"), insert "42":
+    ;; the marker lands at the end of the inserted text.
+    (should (= pos 15))))
+
+(ert-deftest tp-render-test-minimal-diff-suffix-marker-real-path ()
+  "The suffix-start marker tracks through a real setq-driven update."
+  (tp-rt-with-cleanup (tp-rt-r2s-layer) (tp-rt-r2s-text)
+    (setq tp-rt-r2s-text "count: 0 items")
+    (define-tp tp-rt-r2s-layer () '(tp-text $tp-rt-r2s-text))
+    (with-temp-buffer
+      (insert "count: 0 items")
+      (tp-set 1 15 'tp-rt-r2s-layer)
+      (let ((m (copy-marker 9)))        ; the space before "items"
+        (setq tp-rt-r2s-text "count: 42 items")
+        (should (equal (buffer-substring-no-properties (point-min)
+                                                       (point-max))
+                       "count: 42 items"))
+        (should (eq (char-after m) ?\s))
+        (should (= (marker-position m) 10))
+        (set-marker m nil)))))
 
 (ert-deftest tp-render-test-minimal-diff-identical-update-is-noop ()
   "An identical-text reactive replacement leaves the buffer unmodified."
