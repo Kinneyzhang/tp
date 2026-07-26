@@ -147,6 +147,54 @@ still picked up by the next update's full scan."
               (tp-reactive--register-layer-buffer layer-name buf))
             (tp--render-visit-buffer buf fn)))))))
 
+(defun tp--merge-props-into-stack-entry (entry props)
+  "Return stack-storage plist ENTRY with its keys updated from PROPS.
+Every key of PROPS except `tp-name' and `tp-layers' replaces ENTRY's
+value for that key (or extends ENTRY when the key is new), so ENTRY's
+`tp-hidden' flag and identity survive the update.  Returns a fresh
+plist; ENTRY itself is not modified."
+  (let ((new-entry (copy-sequence entry)))
+    (cl-loop for (key val) on props by #'cddr
+             unless (memq key '(tp-name tp-layers))
+             do (setq new-entry (plist-put new-entry key val)))
+    new-entry))
+
+(defun tp--write-layer-through-stack-storage (layer-name props)
+  "Write PROPS through to LAYER-NAME's entries in `tp-layers' storage.
+A reactive re-render rewrites a layer's direct (rendered) properties,
+but the same layer can also sit inside the `tp-layers' stack-storage
+property of a run: buried below another layer, or hidden (see
+`tp-hide-layer'), in which case the direct properties are only a
+render cache and the stored entry is what the next stack operation
+rebuilds from.  For every run of the current buffer whose `tp-layers'
+holds an entry whose `tp-name' equals LAYER-NAME, replace the layer's
+own keys in that entry with their values from PROPS - preserving the
+entry's `tp-hidden' flag and stack position - and rewrite the run via
+`tp--stack-props-to-list' / `tp--stack-build-props', which also
+refreshes the topmost-visible render cache in full-stack storage
+mode.  Runs already storing the current values are left untouched, so
+an update that changes nothing does not mark the buffer as modified."
+  (let ((pos (point-min))
+        (max (point-max)))
+    (while (< pos max)
+      (let ((next (or (next-property-change pos nil max) max))
+            (stored (get-text-property pos 'tp-layers)))
+        (when (and stored
+                   (cl-some (lambda (entry)
+                              (equal (plist-get entry 'tp-name) layer-name))
+                            stored))
+          (let* ((stack (tp--stack-props-to-list (text-properties-at pos)))
+                 (new-stack
+                  (mapcar (lambda (entry)
+                            (if (equal (plist-get entry 'tp-name) layer-name)
+                                (tp--merge-props-into-stack-entry entry props)
+                              entry))
+                          stack)))
+            (unless (equal new-stack stack)
+              (set-text-properties pos next
+                                   (tp--stack-build-props new-stack)))))
+        (setq pos next)))))
+
 (defun tp--update-layer-regions (layer-name &optional where override-alist)
   "Update text regions that have LAYER-NAME applied.
 Re-applies the layer's current properties to every region tagged with
@@ -154,6 +202,12 @@ the layer's `tp-name'.  The layer's OWN property keys are replaced
 with their current values (so refresh is idempotent: a face variable
 changing from bold to italic yields italic, not (italic bold)), while
 properties contributed by other sources are left untouched.
+
+The update also writes through to `tp-layers' stack storage (see
+`tp--write-layer-through-stack-storage'): copies of the layer that
+are hidden or buried below another layer are refreshed in place, so a
+later stack operation or `tp-show-layer' renders current values
+instead of a stale snapshot.
 
 WHERE specifies which buffers to update:
   - If WHERE is a buffer, only update that buffer (setq-local case).
@@ -179,7 +233,11 @@ variable values are honored."
                     (cl-loop for (key val) on props by #'cddr
                              do (put-text-property start end key val))
                     nil)
-                  'tp-name layer-name)))))))
+                  'tp-name layer-name)
+                 ;; Write through to stack storage so hidden or buried
+                 ;; copies of the layer do not go stale (HID-1).
+                 (tp--write-layer-through-stack-storage layer-name
+                                                        props)))))))
     (tp--map-layer-buffers layer-name where update-buffer)))
 
 (defun tp--find-tp-text-reactive-var (layer-name)
@@ -304,6 +362,65 @@ it will be applied to the text before updating."
                       layer-name new-text props)))))))))
     (tp--map-layer-buffers layer-name where update-buffer)))
 
+(defun tp--edit-region-minimal-diff (m-start m-end plain-text skip-props)
+  "Make [M-START, M-END) of the current buffer read PLAIN-TEXT.
+Only the differing span of the region is edited: the common prefix
+and suffix of the old and new text are left untouched, so point and
+markers sitting in unchanged text keep their positions (point inside
+the edited span ends up at the start of the edit).  Does nothing when
+the region already reads PLAIN-TEXT, so an identical-text update does
+not mark the buffer as modified.
+Properties present at M-START whose keys the plist SKIP-PROPS does
+not contain are re-applied over the edited span (a nil SKIP-PROPS
+carries every existing property); the untouched prefix and suffix
+keep their own properties as is."
+  (let ((old-text (buffer-substring-no-properties m-start m-end)))
+    (unless (equal old-text plain-text)
+      ;; Text content differs: trim the common prefix and suffix and
+      ;; edit only the span that actually differs, so point and
+      ;; markers in the unchanged parts survive the update.
+      (let* ((old-len (length old-text))
+             (new-len (length plain-text))
+             (min-len (min old-len new-len))
+             (prefix 0)
+             (suffix 0))
+        (while (and (< prefix min-len)
+                    (eq (aref old-text prefix) (aref plain-text prefix)))
+          (setq prefix (1+ prefix)))
+        (while (and (< suffix (- min-len prefix))
+                    (eq (aref old-text (- old-len suffix 1))
+                        (aref plain-text (- new-len suffix 1))))
+          (setq suffix (1+ suffix)))
+        (let ((edit-start (+ m-start prefix))
+              (edit-end (- m-end suffix))
+              (insert-text (substring plain-text prefix (- new-len suffix)))
+              (existing-props (text-properties-at m-start)))
+          (when (< edit-start edit-end)
+            (delete-region edit-start edit-end))
+          (when (> (length insert-text) 0)
+            (goto-char edit-start)
+            (insert insert-text))
+          ;; Carry over existing properties whose keys SKIP-PROPS does
+          ;; not name onto the newly inserted span; the untouched
+          ;; prefix and suffix keep their own properties as is.
+          (let ((mid-end (+ edit-start (length insert-text))))
+            (cl-loop for (key val) on existing-props by #'cddr
+                     do (unless (plist-member skip-props key)
+                          (put-text-property edit-start mid-end key
+                                             val)))))))))
+
+(defun tp--pos-holds-layer-in-storage-only-p (pos layer-name)
+  "Return non-nil when POS holds LAYER-NAME only inside `tp-layers'.
+True when the `tp-layers' stack-storage property at POS has an entry
+whose `tp-name' equals LAYER-NAME while the direct `tp-name' at POS
+is a different layer or absent (a hidden layer in all-hidden storage,
+or a layer buried below another rendered layer)."
+  (and (not (equal (get-text-property pos 'tp-name) layer-name))
+       (cl-some (lambda (entry)
+                  (equal (plist-get entry 'tp-name) layer-name))
+                (get-text-property pos 'tp-layers))
+       t))
+
 (defun tp--replace-reactive-text-in-buffer (layer-name new-text props)
   "Replace text in current buffer for reactive text with LAYER-NAME.
 NEW-TEXT is the new text to replace with.
@@ -319,46 +436,24 @@ embedded interval, so a multi-interval propertized reactive string
 keeps its per-character styling.  Existing text properties whose keys
 are set neither by PROPS nor by NEW-TEXT's embedded props are
 preserved, so one layer's text update does not erase other layers'
-contributions on the same region."
+contributions on the same region.
+Regions where the layer sits only inside `tp-layers' stack storage -
+hidden (see `tp-hide-layer') or buried below another rendered layer -
+are updated as well: text content is physical (hide/show toggles
+properties, never text), so the model value still replaces the text
+there, but the layer's props are not applied directly; instead its
+stored stack entry, including the refreshed `tp-text', is written
+through, so `tp-show-layer' or a reveal by a later stack operation
+renders current values."
   (goto-char (point-min))
   (let ((match (text-property-search-forward 'tp-name layer-name t))
         (plain-text (substring-no-properties new-text)))
+    ;; Pass 1: regions where the layer is the rendered top layer
+    ;; (direct `tp-name').
     (while match
       (let* ((m-start (prop-match-beginning match))
-             (m-end (prop-match-end match))
-             (old-text (buffer-substring-no-properties m-start m-end)))
-        (unless (equal old-text plain-text)
-          ;; Text content differs: trim the common prefix and suffix and
-          ;; edit only the span that actually differs, so point and
-          ;; markers in the unchanged parts survive the update.
-          (let* ((old-len (length old-text))
-                 (new-len (length plain-text))
-                 (min-len (min old-len new-len))
-                 (prefix 0)
-                 (suffix 0))
-            (while (and (< prefix min-len)
-                        (eq (aref old-text prefix) (aref plain-text prefix)))
-              (setq prefix (1+ prefix)))
-            (while (and (< suffix (- min-len prefix))
-                        (eq (aref old-text (- old-len suffix 1))
-                            (aref plain-text (- new-len suffix 1))))
-              (setq suffix (1+ suffix)))
-            (let ((edit-start (+ m-start prefix))
-                  (edit-end (- m-end suffix))
-                  (insert-text (substring plain-text prefix (- new-len suffix)))
-                  (existing-props (text-properties-at m-start)))
-              (when (< edit-start edit-end)
-                (delete-region edit-start edit-end))
-              (when (> (length insert-text) 0)
-                (goto-char edit-start)
-                (insert insert-text))
-              ;; Carry over existing properties whose keys this layer does
-              ;; not set onto the newly inserted span; the untouched
-              ;; prefix and suffix keep their own properties as is.
-              (let ((mid-end (+ edit-start (length insert-text))))
-                (cl-loop for (key val) on existing-props by #'cddr
-                         do (unless (plist-member props key)
-                              (put-text-property edit-start mid-end key val)))))))
+             (m-end (prop-match-end match)))
+        (tp--edit-region-minimal-diff m-start m-end plain-text props)
         ;; Apply the layer's props, merged per embedded interval of NEW-TEXT.
         ;; Keys are replaced (not accumulated); unrelated keys are untouched.
         (tp--apply-reactive-text-props new-text props m-start)
@@ -366,7 +461,27 @@ contributions on the same region."
         ;; suffix still carries the layer's `tp-name', and restarting the
         ;; search inside it would re-match this region.
         (goto-char (+ m-start (length plain-text))))
-      (setq match (text-property-search-forward 'tp-name layer-name t)))))
+      (setq match (text-property-search-forward 'tp-name layer-name t)))
+    ;; Pass 2: regions where the layer sits only inside stack storage.
+    ;; Replace their text too, carrying ALL existing properties (the
+    ;; visible top layer's render cache and the `tp-layers' storage)
+    ;; over the edited span; the hidden/buried layer's own props are
+    ;; not applied directly.
+    (let ((pos (point-min)))
+      (while (< pos (point-max))
+        (if (tp--pos-holds-layer-in-storage-only-p pos layer-name)
+            (let ((region-end pos))
+              (while (and (< region-end (point-max))
+                          (tp--pos-holds-layer-in-storage-only-p
+                           region-end layer-name))
+                (setq region-end (or (next-property-change region-end)
+                                     (point-max))))
+              (tp--edit-region-minimal-diff pos region-end plain-text nil)
+              (setq pos (+ pos (length plain-text))))
+          (setq pos (or (next-property-change pos) (point-max))))))
+    ;; Write the updated props - including the refreshed `tp-text' -
+    ;; through to the layer's entries in stack storage (HID-1).
+    (tp--write-layer-through-stack-storage layer-name props)))
 
 (defun tp--tp-text-replace (start end final-text result-props object preserve-props)
   "Replace [START, END) of OBJECT with FINAL-TEXT, handling props.

@@ -862,6 +862,135 @@ not just the first."
     (should (null (tp-at 1 'face)))
     (should (equal (tp-at 1 'help-echo) "tip"))))
 
+;;; HID-1/XM-01: reactive updates must write through to tp-layers storage
+
+(defvar tp-st-xm01-a-color nil)
+(defvar tp-st-xm01-b-color nil)
+(defvar tp-st-xm01-c-color nil)
+(defvar tp-st-xm01-rt-color nil)
+(defvar tp-st-xm01-t-text nil)
+(defvar tp-st-xm01-x-color nil)
+
+(ert-deftest tp-stack-test-reactive-update-reaches-hidden-layer ()
+  "XM-01 A3: an update received while a layer is hidden renders after show.
+The hidden layer has no direct `tp-name', so the update must find and
+refresh its entry inside `tp-layers' stack storage."
+  (tp-stack-tests--with-env
+    (setq tp-st-xm01-a-color "red")
+    (define-tp tp-st-xm01-lay-a ()
+      :props '(face (:foreground $tp-st-xm01-a-color)))
+    (insert "AAAAAA")
+    (tp-push-layer 1 7 'tp-st-xm01-lay-a)
+    (tp-hide-layer 1 7 'tp-st-xm01-lay-a)
+    (setq tp-st-xm01-a-color "blue")
+    (tp-show-layer 1 7 'tp-st-xm01-lay-a)
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))))
+
+(ert-deftest tp-stack-test-stack-op-never-reverts-reactive-update ()
+  "XM-01 B1-B4: stack ops rebuild from CURRENT values, never stale ones.
+With another layer hidden the storage switches to full-stack mode
+where `tp-layers' is authoritative; a reactive update must refresh
+the stored snapshot so a no-op stack operation cannot revert the
+rendered value, and re-setting the SAME value (a watcher no-op) never
+needs to repair anything."
+  (tp-stack-tests--with-env
+    (setq tp-st-xm01-b-color "red")
+    (define-tp tp-st-xm01-lay-b ()
+      :props '(face (:foreground $tp-st-xm01-b-color)))
+    (define-tp tp-st-xm01-lay-bg () '(face (:background "gray")))
+    (insert "BBBBBB")
+    (tp-push-layer 1 7 'tp-st-xm01-lay-bg)
+    (tp-push-layer 1 7 'tp-st-xm01-lay-b)
+    (tp-hide-layer 1 7 'tp-st-xm01-lay-bg) ; -> full-stack storage mode
+    (setq tp-st-xm01-b-color "blue")
+    ;; B1: the visible reactive top renders the new value...
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))
+    ;; ...and the stored stack snapshot agrees (write-through).
+    (let ((entry (assq 'tp-st-xm01-lay-b (tp-layer-stack-at 1))))
+      (should (equal (plist-get (cdr entry) 'face) '(:foreground "blue"))))
+    ;; B2: a no-op stack operation must not revert the update.
+    (tp-move-layer 1 7 'tp-st-xm01-lay-b 0)
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))
+    ;; B3: re-setting the same value is a watcher no-op; the buffer is
+    ;; already correct (before the fix it stayed stuck on the old value).
+    (setq tp-st-xm01-b-color "blue")
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))
+    ;; B4: a third value still updates normally.
+    (setq tp-st-xm01-b-color "green")
+    (should (equal (get-text-property 1 'face) '(:foreground "green")))))
+
+(ert-deftest tp-stack-test-hidden-top-round-trip-keeps-reactive-value ()
+  "XM-01/HID-1: show+hide of an UNRELATED layer keeps the reactive value.
+Static top hidden, reactive layer rendered below: after a variable
+change, a show/hide round trip of the top rebuilds from storage and
+must not revert the reactive layer to a stale snapshot."
+  (tp-stack-tests--with-env
+    (setq tp-st-xm01-rt-color "red")
+    (define-tp tp-st-xm01-lay-rt ()
+      :props '(face (:foreground $tp-st-xm01-rt-color)))
+    (define-tp tp-st-xm01-lay-cover () '(face (:background "yellow")))
+    (insert "Hello")
+    (tp-push-layer 1 6 'tp-st-xm01-lay-rt)
+    (tp-push-layer 1 6 'tp-st-xm01-lay-cover)
+    (tp-hide-layer 1 6 'tp-st-xm01-lay-cover)
+    (setq tp-st-xm01-rt-color "blue")
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))
+    (tp-show-layer 1 6 'tp-st-xm01-lay-cover)
+    (tp-hide-layer 1 6 'tp-st-xm01-lay-cover)
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))))
+
+(ert-deftest tp-stack-test-pop-reveals-current-reactive-value ()
+  "XM-01 C2: a below-top reactive layer revealed by tp-pop-layer is current.
+The buried layer's entry lives inside `tp-layers'; the update must
+refresh it there so the reveal renders current values."
+  (tp-stack-tests--with-env
+    (setq tp-st-xm01-c-color "red")
+    (define-tp tp-st-xm01-lay-c ()
+      :props '(face (:foreground $tp-st-xm01-c-color)))
+    (define-tp tp-st-xm01-lay-top () '(face (:foreground "black")))
+    (insert "DDDDDD")
+    (tp-push-layer 1 7 'tp-st-xm01-lay-c)
+    (tp-push-layer 1 7 'tp-st-xm01-lay-top)
+    (setq tp-st-xm01-c-color "blue")
+    (tp-pop-layer 1 7)
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))))
+
+(ert-deftest tp-stack-test-reactive-tp-text-reaches-hidden-layer ()
+  "XM-01 T1: a reactive tp-text update reaches a hidden layer's text.
+Text content is physical - hide/show toggles properties, never text -
+so the model value replaces the text while the layer is hidden, and
+`tp-show-layer' then renders current props over current text."
+  (tp-stack-tests--with-env
+    (setq tp-st-xm01-t-text "AAA")
+    (define-tp tp-st-xm01-lay-t ()
+      :props '(tp-text $tp-st-xm01-t-text face (:foreground "purple")))
+    (insert "AAA")
+    (tp-push-layer 1 4 'tp-st-xm01-lay-t)
+    (tp-hide-layer 1 4 'tp-st-xm01-lay-t)
+    (setq tp-st-xm01-t-text "ZZZ")
+    (tp-show-layer 1 4 'tp-st-xm01-lay-t)
+    (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                   "ZZZ"))
+    (should (equal (get-text-property 1 'tp-text) "ZZZ"))
+    (should (equal (get-text-property 1 'face) '(:foreground "purple")))))
+
+(ert-deftest tp-stack-test-mixed-visible-hidden-regions-stay-in-sync ()
+  "XM-01 X1: visible and hidden regions of one layer both end up current.
+Before the fix one buffer could render two different values of the
+same variable at once (split-brain)."
+  (tp-stack-tests--with-env
+    (setq tp-st-xm01-x-color "red")
+    (define-tp tp-st-xm01-lay-x ()
+      :props '(face (:foreground $tp-st-xm01-x-color)))
+    (insert "XXXXXXXXXX")
+    (tp-push-layer 1 5 'tp-st-xm01-lay-x)
+    (tp-push-layer 6 11 'tp-st-xm01-lay-x)
+    (tp-hide-layer 6 11 'tp-st-xm01-lay-x)
+    (setq tp-st-xm01-x-color "blue")
+    (tp-show-layer 6 11 'tp-st-xm01-lay-x)
+    (should (equal (get-text-property 1 'face) '(:foreground "blue")))
+    (should (equal (get-text-property 6 'face) '(:foreground "blue")))))
+
 ;;; REG-1: every stack write must register its buffer in the reactive registry
 
 (defvar tp-st-reg1-color nil)
