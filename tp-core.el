@@ -29,9 +29,6 @@
   :prefix "tp-"
   :group 'development)
 
-(defvar tp--anonymous-layer-counter 0
-  "Counter for generating unique anonymous layer names.")
-
 (defcustom tp-debug-mode nil
   "When non-nil, enable debug logging for reactive updates.
 Debug messages are logged to the *tp-debug* buffer and optionally
@@ -109,11 +106,6 @@ FORMAT-STRING and ARGS are passed to `format'."
   "Show the *tp-debug* buffer."
   (interactive)
   (pop-to-buffer (get-buffer-create "*tp-debug*")))
-
-(defun tp--generate-anonymous-layer-name ()
-  "Generate a unique symbol for anonymous reactive layers."
-  (setq tp--anonymous-layer-counter (1+ tp--anonymous-layer-counter))
-  (intern (format "tp-anon-%d" tp--anonymous-layer-counter)))
 
 (defmacro tp-with-current-buffer (buffer-or-name &rest body)
   "Execute BODY in BUFFER-OR-NAME with `inhibit-read-only' bound to t."

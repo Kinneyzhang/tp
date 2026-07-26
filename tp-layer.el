@@ -51,6 +51,23 @@ named elements) are recorded here; layers merely referenced by name
 are not.  Used to clean up orphaned layers when a group is redefined
 or undefined.")
 
+;; The counter below INTENTIONALLY survives `tp-layer-reset' (which
+;; clears `tp--anonymous-layer-registry' but not this): detached
+;; strings can outlive a reset while still carrying `tp-anon-N'
+;; property values, so the counter must keep increasing monotonically
+;; - a post-reset anonymous layer must never be minted under a name a
+;; stale string still holds.  Do not "fix" this by resetting it.
+(defvar tp--anonymous-layer-counter 0
+  "Counter for generating unique anonymous layer names.
+Never reset - not even by `tp-layer-reset' - so freshly minted
+`tp-anon-N' names cannot collide with names living on in detached
+strings (see the comment above).")
+
+(defun tp--generate-anonymous-layer-name ()
+  "Generate a unique symbol for anonymous reactive layers."
+  (setq tp--anonymous-layer-counter (1+ tp--anonymous-layer-counter))
+  (intern (format "tp-anon-%d" tp--anonymous-layer-counter)))
+
 (defvar tp--anonymous-layer-registry nil
   "Alist interning anonymous reactive layers: (PROPS-SPEC . LAYER-NAME).
 PROPS-SPEC is the original (unresolved) props spec passed to
