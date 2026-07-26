@@ -254,9 +254,11 @@ documentation of NAME and PLIST.")
 ;;; Utilities
 
 (defun tp-theme-dark-p ()
+  "Return non-nil when the current frame's background mode is dark."
   (eq (frame-parameter nil 'background-mode) 'dark))
 
 (defun tp-theme-light-p ()
+  "Return non-nil when the current frame's background mode is light."
   (eq (frame-parameter nil 'background-mode) 'light))
 
 (defun tp-parse-color (color)
@@ -293,10 +295,48 @@ back to the light color."
   "Get color value for KEY from the palette named SYMBOL.
 SYMBOL is looked up in `tp-palette-alist'.  KEY should be one of
 :fg, :bg, or :border.  Return nil if SYMBOL names no registered
-palette or its definition doesn't contain KEY."
+palette or its definition doesn't contain KEY.
+The public entry point delegating here is `tp-palette-color'."
   (let ((plist (alist-get symbol tp-palette-alist)))
     (when (tp-palette--plistp plist)
       (tp-parse-color (plist-get plist key)))))
+
+(defun tp-palette-color (symbol key)
+  "Return the KEY color of the palette named SYMBOL, theme-resolved.
+SYMBOL is looked up in `tp-palette-alist'; KEY is one of :fg, :bg or
+:border.  The stored color spec is resolved for the current theme by
+`tp-parse-color', so a (LIGHT . DARK) cons yields the side matching
+the frame's background mode.  Returns nil when SYMBOL names no
+registered palette, its definition has no KEY entry, or the entry
+resolves to no color for the current theme.
+
+This is the generic palette accessor; `tp-palette-fg-color',
+`tp-palette-bg-color' and `tp-palette-border-color' are per-key
+conveniences equivalent to calling it with a fixed KEY.  See also
+`tp-palette-has-p' to test for a palette or key without resolving a
+color."
+  (tp-palette--get-color symbol key))
+
+(defun tp-palette-has-p (symbol &optional kind)
+  "Return non-nil when SYMBOL names a palette that defines KIND.
+With nil KIND, test only that SYMBOL names a palette registered in
+`tp-palette-alist' (like `tp-palette-p').  Otherwise KIND is one of
+:fg, :bg or :border, and the palette's definition must contain that
+key.  A defined key may still resolve to no color for the current
+theme (for example a (LIGHT . nil) cons in dark mode); use
+`tp-palette-color' when the resolved color itself matters.
+
+Note that the suffix predicates `tp-palette-fg-p', `tp-palette-bg-p',
+`tp-palette-fbg-p' and `tp-palette-border-p' answer a different
+question: whether SYMBOL is a suffixed variant name like `info-fg'
+naming a registered palette (the `tp-palette' layer's convention).
+This predicate takes the palette name itself."
+  (let ((entry (assoc symbol tp-palette-alist)))
+    (cond ((null entry) nil)
+          ((null kind) t)
+          (t (and (tp-palette--plistp (cdr entry))
+                  (plist-member (cdr entry) kind)
+                  t)))))
 
 (defun tp-palette-fg-color (symbol)
   "Get the foreground color from palette SYMBOL.
@@ -317,33 +357,52 @@ Returns nil if SYMBOL is unbound or doesn't contain :border."
   (tp-palette--get-color symbol :border))
 
 (defun tp-palette-p (symbol)
+  "Return non-nil when SYMBOL names a registered palette.
+The value is SYMBOL's entry in `tp-palette-alist'.  See also the
+generalized `tp-palette-has-p'."
   (assoc symbol tp-palette-alist))
 
 (defun tp-palette-fg-p (symbol)
+  "Return non-nil when SYMBOL is a NAME-fg variant of a palette NAME.
+Tests the suffixed naming convention of the `tp-palette' layer, not
+the palette contents; see `tp-palette-has-p' for the latter."
   (save-match-data
     (let ((str (symbol-name symbol)))
       (and (string-match "\\(.+\\)-fg$" str)
            (tp-palette-p (intern (match-string 1 str)))))))
 
 (defun tp-palette-bg-p (symbol)
+  "Return non-nil when SYMBOL is a NAME-bg variant of a palette NAME.
+Tests the suffixed naming convention of the `tp-palette' layer, not
+the palette contents; see `tp-palette-has-p' for the latter."
   (save-match-data
     (let ((str (symbol-name symbol)))
       (and (string-match "\\(.+\\)-bg$" str)
            (tp-palette-p (intern (match-string 1 str)))))))
 
 (defun tp-palette-fbg-p (symbol)
+  "Return non-nil when SYMBOL is a NAME-fbg variant of a palette NAME.
+Tests the suffixed naming convention of the `tp-palette' layer (fg
+plus bg), not the palette contents."
   (save-match-data
     (let ((str (symbol-name symbol)))
       (and (string-match "\\(.+\\)-fbg$" str)
            (tp-palette-p (intern (match-string 1 str)))))))
 
 (defun tp-palette-border-p (symbol)
+  "Return non-nil when SYMBOL is a NAME-border variant of a palette NAME.
+Tests the suffixed naming convention of the `tp-palette' layer, not
+the palette contents; see `tp-palette-has-p' for the latter."
   (save-match-data
     (let ((str (symbol-name symbol)))
       (and (string-match "\\(.+\\)-border$" str)
            (tp-palette-p (intern (match-string 1 str)))))))
 
 (defun tp-palette-pure (symbol)
+  "Return the palette name behind SYMBOL, stripping variant suffixes.
+SYMBOL may be a registered palette name or one of its -fg/-bg/-fbg/
+-border variants (see the `tp-palette' layer); signal an error for
+anything else."
   (pcase symbol
     ((pred tp-palette-p) symbol)
     ((pred tp-palette-fg-p)

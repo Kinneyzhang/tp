@@ -234,6 +234,51 @@ tp-builtins restores the shipped layer definitions."
   (should-not (tp-parse-color nil))
   (should-error (tp-parse-color 42)))
 
+;;; API-CONC-01: the two palette primaries
+
+(ert-deftest tp-builtins-test-palette-color-generic-accessor ()
+  "tp-palette-color is the theme-resolving generic accessor."
+  (tp-builtins-test--with-background-mode 'light
+    (should (equal (tp-palette-color 'info :fg) "#0969da"))
+    (should (equal (tp-palette-color 'info :fg)
+                   (tp-palette-fg-color 'info)))
+    (should (equal (tp-palette-color 'info :bg)
+                   (tp-palette-bg-color 'info)))
+    (should (equal (tp-palette-color 'info :border)
+                   (tp-palette-border-color 'info)))
+    (should-not (tp-palette-color 'no-such-palette :fg))
+    ;; heatmap-g0 defines only :fg.
+    (should-not (tp-palette-color 'heatmap-g0 :bg)))
+  (tp-builtins-test--with-background-mode 'dark
+    (should (equal (tp-palette-color 'info :fg) "#58a6ff"))))
+
+(ert-deftest tp-builtins-test-palette-has-p ()
+  "tp-palette-has-p tests palette registration and per-key presence."
+  (should (tp-palette-has-p 'info))
+  (should (tp-palette-has-p 'info :fg))
+  (should (tp-palette-has-p 'info :bg))
+  (should (tp-palette-has-p 'info :border))
+  (should (tp-palette-has-p 'heatmap-g0 :fg))
+  (should-not (tp-palette-has-p 'heatmap-g0 :bg))
+  (should-not (tp-palette-has-p 'heatmap-g0 :border))
+  (should-not (tp-palette-has-p 'no-such-palette))
+  (should-not (tp-palette-has-p 'no-such-palette :fg))
+  ;; Unlike the suffix predicates, has-p takes the palette name
+  ;; itself, not a NAME-fg variant symbol.
+  (should-not (tp-palette-has-p 'info-fg))
+  (should (tp-palette-fg-p 'info-fg)))
+
+;;; DOC-STR-02: tp-suffix-symbol privatized behind an obsolete alias
+
+(ert-deftest tp-builtins-test-suffix-symbol-obsolete-alias ()
+  "tp-suffix-symbol keeps working as an obsolete compatibility alias."
+  (should (eq (tp--suffix-symbol 'info "-fg") 'info-fg))
+  (should (eq (with-suppressed-warnings ((obsolete tp-suffix-symbol))
+                (tp-suffix-symbol 'info "-fg"))
+              'info-fg))
+  (should (eq (car (get 'tp-suffix-symbol 'byte-obsolete-info))
+              'tp--suffix-symbol)))
+
 ;;; API-NAME-02: prefix-conforming tp-define-palette alias
 
 (ert-deftest tp-builtins-test-define-palette-alias ()
