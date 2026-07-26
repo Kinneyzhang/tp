@@ -101,12 +101,41 @@ finds it or `tp-reactive-track-buffer' is called on it."
           (puthash layer-name live tp--layer-buffers))
         live))))
 
+(defun tp-reactive--buffer-layer-names (&optional buffer)
+  "Return the layer names present in BUFFER, in buffer order.
+BUFFER defaults to the current buffer; a dead BUFFER yields nil.
+Stack-aware: a layer counts as present when its name is the direct
+`tp-name' text property of a run (the rendered top layer) or the
+`tp-name' of any layer plist inside the run's `tp-layers'
+stack-storage property (layers buried below the top, or hidden - see
+tp-stack.el).  The `tp-layers' value is read as a plain list of
+plists, so this helper stays below the stack module.  Names are
+deduplicated with `equal'.  This is the shared scan behind
+`tp-reactive-track-buffer' and the anonymous-layer GC's liveness
+test `tp--buffer-has-layer-region-p'."
+  (let ((buf (or buffer (current-buffer)))
+        (found nil))
+    (when (buffer-live-p buf)
+      (tp--map-intervals
+       buf nil nil
+       (lambda (_start _end props)
+         (let ((direct (plist-get props 'tp-name)))
+           (when (and direct (not (member direct found)))
+             (push direct found)))
+         (dolist (layer (plist-get props 'tp-layers))
+           (let ((name (plist-get layer 'tp-name)))
+             (when (and name (not (member name found)))
+               (push name found)))))))
+    (nreverse found)))
+
 ;;;###autoload
 (defun tp-reactive-track-buffer (&optional buffer)
   "Scan BUFFER for layer regions and register it in the buffer registry.
-BUFFER defaults to the current buffer.  Walk BUFFER's `tp-name' text
-property intervals and register BUFFER for every layer name found, so
-reactive updates visit it without a full `buffer-list' scan.
+BUFFER defaults to the current buffer.  Walk BUFFER's text-property
+runs and register BUFFER for every layer name found - rendered top
+layers (direct `tp-name') as well as layers inside `tp-layers' stack
+storage (buried below another layer, or hidden) - so reactive updates
+visit it without a full `buffer-list' scan.
 
 Call this after inserting an already-propertized string into a
 buffer: string application bypasses the buffer operations that
@@ -114,24 +143,14 @@ register buffers (see `tp-reactive-layer-buffers'), and this command
 closes that gap.  Return the list of layer names registered, in
 buffer order."
   (interactive)
-  (let ((buf (or buffer (current-buffer)))
-        (found nil))
-    (with-current-buffer buf
-      (save-excursion
-        (let ((pos (point-min))
-              (max (point-max)))
-          (while (< pos max)
-            (let ((name (get-text-property pos 'tp-name))
-                  (next (or (next-single-property-change pos 'tp-name nil max)
-                            max)))
-              (when (and name (not (member name found)))
-                (tp-reactive--register-layer-buffer name buf)
-                (push name found))
-              (setq pos next))))))
+  (let* ((buf (or buffer (current-buffer)))
+         (found (tp-reactive--buffer-layer-names buf)))
+    (dolist (name found)
+      (tp-reactive--register-layer-buffer name buf))
     (when (called-interactively-p 'interactive)
       (message "tp: tracking %d layer(s) in %s"
                (length found) (buffer-name buf)))
-    (nreverse found)))
+    found))
 
 (defvar tp--batch-update-active nil
   "When non-nil, we are inside a `tp-with-batch-updates' form.")

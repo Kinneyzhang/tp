@@ -641,5 +641,116 @@
         (tp-undefine-layer name))
       (setq tp-rt-r3c-color nil))))
 
+;;; GC-1: buried and hidden layers are ALIVE for GC and track-buffer
+
+(defvar tp-rt-gc1-color nil)
+(defvar tp-rt-gc1b-color nil)
+(defvar tp-rt-gc1c-color nil)
+
+(ert-deftest tp-render-test-gc-keeps-layer-buried-under-push ()
+  "GC keeps an anonymous layer buried below a pushed top layer.
+The buried layer's tp-name lives inside `tp-layers' storage, not as a
+direct property; the stack-aware liveness scan must still see it, and
+reactivity must survive a later pop (GC-1)."
+  (setq tp-rt-gc1-color "blue")
+  (let ((buf (generate-new-buffer " tp-rt-gc1"))
+        (name nil))
+    (unwind-protect
+        (progn
+          (define-tp tp-rt-gc1-top () '(face bold))
+          (with-current-buffer buf
+            (insert "0123456789")
+            (tp-set 1 6 '(face (:foreground $tp-rt-gc1-color)))
+            (setq name (get-text-property 1 'tp-name))
+            (should name)
+            (tp-push-layer 1 6 'tp-rt-gc1-top)
+            ;; Now buried: direct tp-name is the pushed top's.
+            (should (eq (get-text-property 1 'tp-name) 'tp-rt-gc1-top))
+            ;; The buffer is live and still holds the layer: GC must
+            ;; keep it.
+            (should-not (memq name (tp-gc-anonymous-layers)))
+            (should (assoc name tp-layer-alist))
+            ;; Reactivity survives: pop and update.
+            (tp-pop-layer 1 6)
+            (setq tp-rt-gc1-color "red")
+            (should (equal (get-text-property 1 'face)
+                           '(:foreground "red")))))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (tp-undefine-layer 'tp-rt-gc1-top)
+      (setq tp-rt-gc1-color nil))))
+
+(ert-deftest tp-render-test-gc-keeps-hidden-layer ()
+  "GC keeps an anonymous layer hidden via tp-hide-layer.
+An all-hidden run carries no direct tp-name at all; the layer lives
+only inside `tp-layers' storage yet is queryable and re-showable, so
+GC must not collect it and show+setq must still re-render (GC-1,
+XM-02)."
+  (setq tp-rt-gc1b-color "green")
+  (let ((buf (generate-new-buffer " tp-rt-gc1b"))
+        (name nil))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "abcdefghij")
+          (tp-set 1 6 '(face (:foreground $tp-rt-gc1b-color)))
+          (setq name (get-text-property 1 'tp-name))
+          (should name)
+          (tp-hide-layer 1 6 name)
+          (should-not (get-text-property 1 'tp-name))
+          ;; Live buffer still holds the hidden layer: keep it.
+          (should-not (memq name (tp-gc-anonymous-layers)))
+          (should (assoc name tp-layer-alist))
+          ;; Show and update: reactivity must be intact.
+          (tp-show-layer 1 6 name)
+          (setq tp-rt-gc1b-color "purple")
+          (should (equal (get-text-property 1 'face)
+                         '(:foreground "purple"))))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (setq tp-rt-gc1b-color nil))))
+
+(ert-deftest tp-render-test-track-buffer-finds-buried-and-hidden-layers ()
+  "tp-reactive-track-buffer registers layers buried or hidden in storage.
+A propertized string carrying a stacked (buried) layer and an
+all-hidden string are inserted into a fresh buffer; the track scan
+must register every layer name, not just the rendered top ones
+\(GC-1, XM-04)."
+  (setq tp-rt-gc1c-color "gold")
+  (let ((buf (generate-new-buffer " tp-rt-gc1c"))
+        (name nil))
+    (unwind-protect
+        (progn
+          (define-tp tp-rt-gc1c-top () '(face bold))
+          (define-tp tp-rt-gc1c-hidden () '(face italic))
+          (let ((s (with-temp-buffer
+                     (insert "trackme")
+                     (tp-set 1 6 '(face (:foreground $tp-rt-gc1c-color)))
+                     (setq name (get-text-property 1 'tp-name))
+                     (tp-push-layer 1 6 'tp-rt-gc1c-top)
+                     (buffer-string)))
+                (h (let ((h (copy-sequence " hideme")))
+                     (tp-push-layer h 'tp-rt-gc1c-hidden)
+                     (tp-hide-layer h 'tp-rt-gc1c-hidden)
+                     h)))
+            (with-current-buffer buf
+              (insert s)
+              (insert h)
+              (let ((found (tp-reactive-track-buffer)))
+                ;; Rendered top, buried layer, and all-hidden layer.
+                (should (memq 'tp-rt-gc1c-top found))
+                (should (memq name found))
+                (should (memq 'tp-rt-gc1c-hidden found)))
+              (should (memq buf (tp-reactive-layer-buffers name)))
+              (should (memq buf (tp-reactive-layer-buffers
+                                 'tp-rt-gc1c-hidden))))))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (tp-undefine-layer 'tp-rt-gc1c-top)
+      (tp-undefine-layer 'tp-rt-gc1c-hidden)
+      (setq tp-rt-gc1c-color nil))))
+
 (provide 'tp-render-tests)
 ;;; tp-render-tests.el ends here

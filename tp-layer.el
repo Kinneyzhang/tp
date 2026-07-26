@@ -69,6 +69,55 @@ and record it in `tp--anonymous-layer-registry'."
         (push (cons (copy-tree props) name) tp--anonymous-layer-registry)
         name)))
 
+(defun tp--buffer-has-layer-region-p (layer-name &optional buffer)
+  "Return non-nil when BUFFER has a region carrying LAYER-NAME.
+BUFFER defaults to the current buffer; a dead BUFFER yields nil.
+Stack-aware: the layer counts as present when it is the rendered top
+layer (direct `tp-name' text property) or sits anywhere inside the
+`tp-layers' stack-storage property - buried below another layer, or
+hidden (see `tp-hide-layer') - so liveness checks never miss a layer
+a live buffer still holds.  Built on the shared scan
+`tp-reactive--buffer-layer-names'."
+  (and (member layer-name (tp-reactive--buffer-layer-names buffer)) t))
+
+;;;###autoload
+(defun tp-gc-anonymous-layers ()
+  "Collect anonymous layers that no live buffer displays anymore.
+Walk `tp--anonymous-layer-registry' and, for every interned anonymous
+layer whose buffer registry has real knowledge (see
+`tp-reactive-layer-buffers'), check whether any registered live
+buffer still contains a region carrying the layer - as the rendered
+top layer or anywhere inside `tp-layers' stack storage, so buried and
+hidden layers count as alive (see `tp--buffer-has-layer-region-p').
+Layers displayed nowhere are undefined via `tp-undefine-layer', which
+also drops their reactive dependencies, transforms and registry
+entries.
+
+Layers whose registry state is `unknown' are conservatively kept:
+they were never seen in any buffer through the registering paths,
+and detached strings may still reference them.  A layer becomes
+collectable only after it was registered for at least one buffer and
+none of the registered buffers still shows it (for example after the
+buffers were killed); call `tp-reactive-track-buffer' after
+inserting propertized strings so their buffers are registered too.
+
+Return the list of collected layer names."
+  (interactive)
+  (let ((collected nil))
+    ;; Snapshot the names first: `tp-undefine-layer' mutates the
+    ;; anonymous-layer registry while we iterate.
+    (dolist (name (mapcar #'cdr tp--anonymous-layer-registry))
+      (let ((bufs (tp-reactive-layer-buffers name)))
+        (when (and (not (eq bufs 'unknown))
+                   (not (cl-some (lambda (buf)
+                                   (tp--buffer-has-layer-region-p name buf))
+                                 bufs)))
+          (tp-undefine-layer name)
+          (push name collected))))
+    (when (called-interactively-p 'interactive)
+      (message "tp: collected %d anonymous layer(s)" (length collected)))
+    (nreverse collected)))
+
 (defvar tp--layer-expansion-stack nil
   "Layer names currently being expanded, innermost first.
 Dynamically bound during `tp-layer-props' / `tp-layer-props-with-arg'
