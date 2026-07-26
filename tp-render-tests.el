@@ -661,6 +661,64 @@ inside the replacement span."
                      "emacs"))
       (should (eq (get-text-property 1 'face) 'bold)))))
 
+;;; ARCH-4: the pending queue must survive neither reset nor errors
+
+(defvar tp-rt-a4-face nil)
+(defvar tp-rt-a4-color nil)
+
+(ert-deftest tp-render-test-reactive-reset-clears-pending-queue ()
+  "tp-reactive-reset drops queued batch re-renders (ARCH-4).
+Stranded entries would otherwise survive the reset and replay against
+freshly (re)defined layers on the next flush."
+  (unwind-protect
+      (progn
+        (tp--queue-batch-update 'tp-rt-a4-ghost 'tp-rt-a4-ghost-var nil nil)
+        (should tp--batch-update-pending)
+        (tp-reactive-reset)
+        (should (null tp--batch-update-pending)))
+    (setq tp--batch-update-pending nil)))
+
+(ert-deftest tp-render-test-error-escaping-update-flushes-nested-queue ()
+  "An error escaping a re-render cannot strand nested queued updates.
+A modification hook that writes a second reactive variable and then
+signals used to strand the nested entry in the global queue - the
+flush tail sat outside any unwind-protect.  The flush now runs as the
+update unwinds, so the nested variable's re-render still lands and
+the queue is drained (ARCH-4)."
+  (setq tp-rt-a4-face 'bold
+        tp-rt-a4-color "red")
+  (unwind-protect
+      (progn
+        (define-tp tp-rt-a4-layer-a () '(face $tp-rt-a4-face))
+        (define-tp tp-rt-a4-layer-b ()
+          '(face (:foreground $tp-rt-a4-color)))
+        (with-temp-buffer
+          (insert "Hello world")
+          (tp-set 1 6 'tp-rt-a4-layer-a)
+          (tp-set 7 12 'tp-rt-a4-layer-b)
+          (let ((armed t))
+            (add-hook 'before-change-functions
+                      (lambda (_beg _end)
+                        (when armed
+                          (setq armed nil)
+                          ;; Nested reactive write from within the
+                          ;; re-render: goes to the global queue.
+                          (setq tp-rt-a4-color "green")
+                          (error "boom from modification hook")))
+                      nil t)
+            (should-error (setq tp-rt-a4-face 'italic))
+            ;; The nested entry was flushed on the way out, not
+            ;; stranded...
+            (should (null tp--batch-update-pending))
+            ;; ...and its re-render landed despite the error.
+            (should (equal (get-text-property 7 'face)
+                           '(:foreground "green"))))))
+    (tp-undefine-layer 'tp-rt-a4-layer-a)
+    (tp-undefine-layer 'tp-rt-a4-layer-b)
+    (setq tp-rt-a4-face nil
+          tp-rt-a4-color nil
+          tp--batch-update-pending nil)))
+
 ;;; R3 (0.3.0): anonymous-layer garbage collection
 
 (ert-deftest tp-render-test-gc-collects-unreferenced-anonymous-layer ()

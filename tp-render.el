@@ -668,43 +668,49 @@ installed as `tp--reactive-update-function'."
     (if tp--reactive-updating
         ;; Nested change fired from within an update: queue, don't recurse.
         (tp--queue-batch-update layer-name symbol where tp-text-affected)
-      (let ((tp--reactive-updating t))
-        ;; Update computed properties for this layer
-        (let ((updated-override
-               (tp--update-layer-computed layer-name override-alist)))
-          ;; Update only the reactive properties in the layer definition.
-          ;; Buffer-local changes must not leak into the global definition;
-          ;; the buffer re-render below resolves against the buffer-local
-          ;; values instead.
-          (when (and reactive-props (not (bufferp where)))
-            (let ((resolved-props (tp--resolve-reactive-symbols
-                                   reactive-props updated-override))
-                  (current-props (cdr (assoc layer-name tp-layer-alist))))
-              (when current-props
-                ;; Deep merge the resolved reactive props into the current
-                ;; layer props to preserve nested plist values (like face)
-                (tp--set-layer-props
-                 layer-name
-                 (tp--deep-merge-plist current-props resolved-props)))))
-          ;; Update text regions with this layer (or defer if batching)
-          (if tp--batch-update-active
-              ;; Batching: defer the buffer update
-              (progn
-                (tp-debug-log "  Deferring buffer update for %s (batch mode)"
-                              layer-name)
-                (tp--queue-batch-update layer-name symbol where
-                                        tp-text-affected))
-            ;; Normal: update immediately
-            (tp-debug-log "  Updating layer %s (tp-text affected: %s)"
-                          layer-name (if tp-text-affected "yes" "no"))
-            (if tp-text-affected
-                (tp--update-reactive-text layer-name where updated-override)
-              (tp--update-layer-regions layer-name where updated-override)))))
-      ;; Re-renders queued by nested variable writes during this update are
-      ;; flushed now that the outermost update has finished.
-      (unless tp--batch-update-active
-        (when tp--batch-update-pending
-          (tp--flush-batch-updates))))))
+      (unwind-protect
+          (let ((tp--reactive-updating t))
+            ;; Update computed properties for this layer
+            (let ((updated-override
+                   (tp--update-layer-computed layer-name override-alist)))
+              ;; Update only the reactive properties in the layer definition.
+              ;; Buffer-local changes must not leak into the global definition;
+              ;; the buffer re-render below resolves against the buffer-local
+              ;; values instead.
+              (when (and reactive-props (not (bufferp where)))
+                (let ((resolved-props (tp--resolve-reactive-symbols
+                                       reactive-props updated-override))
+                      (current-props (cdr (assoc layer-name tp-layer-alist))))
+                  (when current-props
+                    ;; Deep merge the resolved reactive props into the current
+                    ;; layer props to preserve nested plist values (like face)
+                    (tp--set-layer-props
+                     layer-name
+                     (tp--deep-merge-plist current-props resolved-props)))))
+              ;; Update text regions with this layer (or defer if batching)
+              (if tp--batch-update-active
+                  ;; Batching: defer the buffer update
+                  (progn
+                    (tp-debug-log "  Deferring buffer update for %s (batch mode)"
+                                  layer-name)
+                    (tp--queue-batch-update layer-name symbol where
+                                            tp-text-affected))
+                ;; Normal: update immediately
+                (tp-debug-log "  Updating layer %s (tp-text affected: %s)"
+                              layer-name (if tp-text-affected "yes" "no"))
+                (if tp-text-affected
+                    (tp--update-reactive-text layer-name where updated-override)
+                  (tp--update-layer-regions layer-name where updated-override)))))
+        ;; Re-renders queued by nested variable writes during this update
+        ;; are flushed now that the outermost update has finished.  The
+        ;; flush runs under unwind-protect so an error escaping the
+        ;; re-render (for example from a modification hook) cannot strand
+        ;; queued entries in the global queue (ARCH-4); the reentrancy
+        ;; guard has been unbound by now, so the flush re-renders
+        ;; normally.
+        (unless tp--batch-update-active
+          (when tp--batch-update-pending
+            (tp--flush-batch-updates)))))))
 
 (defun tp--reactive-flush-entry (layer-name where tp-text-affected)
   "Re-render LAYER-NAME's regions in WHERE (or all buffers when nil).

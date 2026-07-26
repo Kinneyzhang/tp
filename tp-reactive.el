@@ -483,6 +483,10 @@ it to allow re-definition to change initial values."
   (setq tp-layer-watchers nil)
   (setq tp-layer-computed nil)
   (setq tp-layer-data nil)
+  ;; Drop queued re-renders too: entries stranded by an error escaping
+  ;; an update would otherwise survive the reset and replay against
+  ;; freshly (re)defined layers on the next flush (ARCH-4).
+  (setq tp--batch-update-pending nil)
   (clrhash tp--layer-buffers))
 
 (provide 'tp-reactive)
