@@ -84,9 +84,18 @@ Supports multiple calling conventions:
             finish end-or-prop
             props props-or-val)
       ;; Check if 4th arg (first of rest) is a buffer or string
-      (when (and rest (or (bufferp (car rest))
-                          (stringp (car rest))))
-        (setq object (car rest))))
+      (let ((extra rest))
+        (when (and extra (or (bufferp (car extra))
+                             (stringp (car extra))))
+          (setq object (car extra)
+                extra (cdr extra)))
+        ;; Anything left over is not a valid region-form argument.
+        ;; In particular, flat PROP/VAL pairs like (tp-set 1 4 'face 'bold)
+        ;; are only supported in the whole-string form; region form takes
+        ;; a plist.  Signal immediately instead of silently discarding.
+        (when extra
+          (error "Region form takes a properties plist: (tp-set START END '(PROP VAL ...) &optional OBJECT); flat PROP/VAL arguments like %S are only supported in the whole-string form"
+                 (car extra)))))
      (t (error "Invalid first argument: %S" start-or-string)))
     ;; Unwrap double-wrapped properties
     (when (and (listp props) (listp (car-safe props)))
@@ -131,7 +140,8 @@ Returns a new propertized string."
               (while (< pos end)
                 (let* ((current-val (get-text-property pos key result))
                        (new-val (cond
-                                 ((eq key 'face) (tp--prepend-face val current-val))
+                                 ((memq key tp-face-properties)
+                                  (tp--prepend-face val current-val))
                                  ((and (listp val) (keywordp (car-safe val))
                                        (listp current-val) (keywordp (car-safe current-val)))
                                   (tp--deep-merge-plist current-val val))
@@ -245,7 +255,9 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
 (defun tp-add (start-or-string &optional end-or-prop props-or-val &rest rest)
   "Add or update text properties with deep merging.
 Unlike `tp-set', deeply merges nested properties.
-For `face' property, symbol faces are prepended to existing face list.
+For face-family properties (see `tp-face-properties': face,
+font-lock-face, mouse-face), symbol faces are prepended to the
+existing face list and face plists are deep-merged.
 For tp-text, embedded text properties are merged with props.
 
 **String Modification Behavior:**
@@ -290,7 +302,8 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
                for (key val) on props by #'cddr
                do (let* ((current-val (plist-get current-props key))
                          (new-val (cond
-                                   ((eq key 'face) (tp--prepend-face val current-val))
+                                   ((memq key tp-face-properties)
+                                    (tp--prepend-face val current-val))
                                    ((and (listp val) (keywordp (car-safe val))
                                          (listp current-val) (keywordp (car-safe current-val)))
                                     (tp--deep-merge-plist current-val val))
@@ -308,7 +321,8 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
                for (key val) on props by #'cddr
                do (let* ((current-val (plist-get current-props key))
                          (new-val (cond
-                                   ((eq key 'face) (tp--prepend-face val current-val))
+                                   ((memq key tp-face-properties)
+                                    (tp--prepend-face val current-val))
                                    ((and (listp val) (keywordp (car-safe val))
                                          (listp current-val) (keywordp (car-safe current-val)))
                                     (tp--deep-merge-plist current-val val))
@@ -321,7 +335,13 @@ Returns: For buffers, (START . END) cons. For strings, the result string."
   "Get text property value(s) with support for nested sub-properties.
 Returns list of (START END VALUE) intervals.
 Use `tp-at' for single position queries.
-OBJECT defaults to current buffer."
+OBJECT defaults to current buffer.
+
+Calling conventions:
+  (tp-get STRING [PROPERTY [SUB-KEYS...]])   - entire string
+  (tp-get STRING START END [PROPERTY ...])   - range within STRING
+  (tp-get START END [PROPERTY ...] [OBJECT]) - region form
+String positions are 0-based; buffer positions are 1-based."
   (cond
    ;; (tp-get STRING ...) - entire string
    ;; Returns list of (START END VALUE) intervals for all property values
@@ -342,6 +362,18 @@ OBJECT defaults to current buffer."
                 (push (list pos next-pos current-props) intervals))
               (setq pos next-pos)))
           (nreverse intervals)))
+       ;; (tp-get str START END [PROPERTY [SUB-KEYS...]]) - range within
+       ;; the string, consistent with the buffer region form.  Positions
+       ;; are 0-based as everywhere else for strings.
+       ((numberp end-or-property)
+        (let ((range-start end-or-property)
+              (range-end (car args)))
+          (unless (numberp range-end)
+            (error "tp-get: string range form requires a numeric END after START, got %S"
+                   range-end))
+          ;; Delegate to the region form with the string as OBJECT.
+          (apply #'tp-get range-start range-end
+                 (append (cdr args) (list str)))))
        ;; (tp-get str '(face :foreground)) - property path as list
        ((listp end-or-property)
         (setq property (car end-or-property))
@@ -668,8 +700,12 @@ Returns: For buffers, nil. For entire string forms, a new string."
         (tp--remove-sub-from-string str start end end-or-prop prop-or-sub))
        ;; (tp-remove str 'face 'help-echo ...) - multiple properties
        ((symbolp end-or-prop)
-        (let ((props-to-remove (cl-remove-if-not #'symbolp
-                                                 (list end-or-prop prop-or-sub rest))))
+        ;; Splice REST so the 3rd and later properties are kept, and
+        ;; drop nils (nil is a symbol and would otherwise ride along
+        ;; when PROP-OR-SUB is not given).
+        (let ((props-to-remove (cl-remove-if-not
+                                (lambda (p) (and p (symbolp p)))
+                                (cons end-or-prop (cons prop-or-sub rest)))))
           (tp--remove-props-from-string str start end props-to-remove)))
        ;; (tp-remove str '(face :underline)) - nested property spec
        ((listp end-or-prop)
@@ -691,91 +727,82 @@ PROPS-TO-REMOVE can include layer names, which will be expanded to include
 all properties that the layer adds.
 For face properties from layers, subtracts the layer's face contribution
 instead of removing the entire face property.
+Operates per property interval, so every interval keeps its own
+remaining properties (intervals are never overwritten with properties
+sampled at START).
 Returns a new string (original is not modified)."
-  (let* ((len (length str))
-         (start (max 0 start))
-         (end (min end len))
-         (before (when (> start 0)
-                   (substring str 0 start)))
-         (middle-text (substring-no-properties str start end))
-         (after (when (< end len)
-                  (substring str end len)))
-         (existing-props (text-properties-at start str))
-         ;; Remaining face after layer subtractions
-         (remaining-face nil)
-         ;; Track if face was modified by layer subtraction
-         (face-was-modified nil)
-         ;; Collect all properties to remove entirely (non-face or non-layer)
-         (props-to-remove-entirely nil))
-    ;; Process each property to remove
-    (dolist (prop props-to-remove)
-      (if (tp--is-layer-name-p prop)
-          ;; Layer name - get its face contribution and subtract from face
-          (let* ((layer-prop-value (plist-get existing-props prop))
-                 (layer-face (tp--get-layer-face-contribution prop layer-prop-value)))
-            ;; Subtract layer's face from the current face
-            (when layer-face
-              (let ((current-face (or remaining-face (plist-get existing-props 'face))))
-                (setq remaining-face
-                      (tp--subtract-face-from-face-value current-face layer-face))
-                ;; Mark that we processed the face (even if result is nil)
-                (setq face-was-modified t)))
-            ;; Add the layer property itself to remove list
-            (push prop props-to-remove-entirely)
-            ;; Also add tp-name if it matches
-            (when (eq (plist-get existing-props 'tp-name) prop)
-              (push 'tp-name props-to-remove-entirely)))
-        ;; Non-layer property - remove entirely
-        (push prop props-to-remove-entirely)))
-    ;; Build final properties
-    (let* ((final-props
-            (let ((result nil))
-              (cl-loop for (key val) on existing-props by #'cddr
-                       do (cond
-                           ;; Face property with layer subtraction
-                           ((and (eq key 'face) face-was-modified)
-                            (when remaining-face
-                              (setq result (plist-put result key remaining-face))))
-                           ;; Property to remove entirely
-                           ((memq key props-to-remove-entirely)
-                            nil) ; skip
-                           ;; Keep other properties
-                           (t (setq result (plist-put result key val)))))
-              result))
-           (middle-propertized (if final-props
-                                   (apply #'propertize middle-text final-props)
-                                 middle-text)))
-      (concat before middle-propertized after))))
+  (let ((result (copy-sequence str)))
+    (tp--map-intervals
+     str start end
+     (lambda (istart iend existing-props)
+       (let (;; Remaining face after layer subtractions (this interval)
+             (remaining-face nil)
+             ;; Track if face was modified by layer subtraction
+             (face-was-modified nil)
+             ;; Collect all properties to remove entirely (non-face or non-layer)
+             (props-to-remove-entirely nil))
+         ;; Process each property to remove against this interval's props
+         (dolist (prop props-to-remove)
+           (if (tp--is-layer-name-p prop)
+               ;; Layer name - get its face contribution and subtract from face
+               (let* ((layer-prop-value (plist-get existing-props prop))
+                      (layer-face (tp--get-layer-face-contribution prop layer-prop-value)))
+                 ;; Subtract layer's face from the current face
+                 (when layer-face
+                   (let ((current-face (or remaining-face
+                                           (plist-get existing-props 'face))))
+                     (setq remaining-face
+                           (tp--subtract-face-from-face-value current-face layer-face))
+                     ;; Mark that we processed the face (even if result is nil)
+                     (setq face-was-modified t)))
+                 ;; Add the layer property itself to remove list
+                 (push prop props-to-remove-entirely)
+                 ;; Also add tp-name if it matches
+                 (when (eq (plist-get existing-props 'tp-name) prop)
+                   (push 'tp-name props-to-remove-entirely)))
+             ;; Non-layer property - remove entirely
+             (push prop props-to-remove-entirely)))
+         ;; Build this interval's final properties
+         (let ((final-props
+                (let ((res nil))
+                  (cl-loop for (key val) on existing-props by #'cddr
+                           do (cond
+                               ;; Face property with layer subtraction
+                               ((and (eq key 'face) face-was-modified)
+                                (when remaining-face
+                                  (setq res (plist-put res key remaining-face))))
+                               ;; Property to remove entirely
+                               ((memq key props-to-remove-entirely)
+                                nil) ; skip
+                               ;; Keep other properties
+                               (t (setq res (plist-put res key val)))))
+                  res)))
+           (set-text-properties istart iend final-props result)))))
+    result))
 
 (defun tp--remove-sub-from-string (str start end property sub-key)
   "Create a new string from STR with SUB-KEY removed from PROPERTY.
 Returns a new string (original is not modified).
-Handles complex face values that contain a mix of symbols and plists."
-  (let* ((len (length str))
-         (start (max 0 start))
-         (end (min end len))
-         (before (when (> start 0)
-                   (substring str 0 start)))
-         (middle-text (substring-no-properties str start end))
-         (after (when (< end len)
-                  (substring str end len)))
-         ;; Get existing properties and modify the property
-         (existing-props (text-properties-at start str))
-         (prop-value (plist-get existing-props property))
-         ;; Use the new helper to handle complex face values
-         (new-value (when prop-value
-                      (tp--remove-sub-from-face-value prop-value sub-key)))
-         (final-props (let ((result nil))
-                        (cl-loop for (key val) on existing-props by #'cddr
-                                 do (setq result (plist-put result key
-                                                            (if (eq key property)
-                                                                new-value
-                                                              val))))
-                        result))
-         (middle-propertized (if final-props
-                                 (apply #'propertize middle-text final-props)
-                               middle-text)))
-    (concat before middle-propertized after)))
+Handles complex face values that contain a mix of symbols and plists.
+Operates per property interval, so every interval keeps its own
+remaining properties."
+  (let ((result (copy-sequence str)))
+    (tp--map-intervals
+     str start end
+     (lambda (istart iend existing-props)
+       (let* ((prop-value (plist-get existing-props property))
+              ;; Use the helper to handle complex face values
+              (new-value (when prop-value
+                           (tp--remove-sub-from-face-value prop-value sub-key)))
+              (final-props (let ((res nil))
+                             (cl-loop for (key val) on existing-props by #'cddr
+                                      do (setq res (plist-put res key
+                                                              (if (eq key property)
+                                                                  new-value
+                                                                val))))
+                             res)))
+         (set-text-properties istart iend final-props result))))
+    result))
 
 (defun tp--remove-property-from-string (str start end property-spec)
   "Create a new string from STR with PROPERTY-SPEC removed from START to END.
@@ -789,32 +816,30 @@ Returns a new string (original is not modified)."
           (sub-key (cadr property-spec))
           (nested-keys (caddr property-spec)))
       (cond
-       ;; Nested sub-property removal
+       ;; Nested sub-property removal - per interval so every interval
+       ;; keeps its own remaining properties
        ((and sub-key nested-keys)
-        ;; For complex nested removal, we need to handle this specially
-        (let* ((len (length str))
-               (start (max 0 start))
-               (end (min end len))
-               (before (when (> start 0)
-                         (substring str 0 start)))
-               (middle-text (substring-no-properties str start end))
-               (after (when (< end len)
-                        (substring str end len)))
-               (existing-props (text-properties-at start str))
-               (prop-value (plist-get existing-props property))
-               (new-value (when (and prop-value (listp prop-value))
-                            (tp--remove-nested-sub-keys prop-value sub-key nested-keys)))
-               (final-props (let ((result nil))
-                              (cl-loop for (key val) on existing-props by #'cddr
-                                       do (setq result (plist-put result key
-                                                                  (if (eq key property)
-                                                                      new-value
-                                                                    val))))
-                              result))
-               (middle-propertized (if final-props
-                                       (apply #'propertize middle-text final-props)
-                                     middle-text)))
-          (concat before middle-propertized after)))
+        (let ((result (copy-sequence str)))
+          (tp--map-intervals
+           str start end
+           (lambda (istart iend existing-props)
+             (let* ((prop-value (plist-get existing-props property))
+                    (new-value (if (and prop-value (listp prop-value))
+                                   (tp--remove-nested-sub-keys
+                                    prop-value sub-key nested-keys)
+                                 ;; Not a plist-shaped value (e.g. a bare
+                                 ;; face symbol) - the nested spec does
+                                 ;; not apply; keep the value unchanged.
+                                 prop-value))
+                    (final-props (let ((res nil))
+                                   (cl-loop for (key val) on existing-props by #'cddr
+                                            do (setq res (plist-put res key
+                                                                    (if (eq key property)
+                                                                        new-value
+                                                                      val))))
+                                   res)))
+               (set-text-properties istart iend final-props result))))
+          result))
        ;; Simple sub-property removal
        (sub-key
         (tp--remove-sub-from-string str start end property sub-key))
@@ -853,10 +878,21 @@ Returns a new plist (does not modify the original)."
 ;;;###autoload
 (defun tp-clear (&optional start end object)
   "Clear all text properties from START to END in OBJECT.
-If START and END are not provided, clear the entire buffer."
+OBJECT is a string or buffer; nil means the current buffer.
+If START and END are not provided, they default to the whole of
+OBJECT: 0/(length OBJECT) for strings, `point-min'/`point-max' of
+OBJECT for buffers (the current buffer when OBJECT is nil)."
   (interactive)
-  (let ((beg (or start (point-min)))
-        (finish (or end (point-max))))
+  (let ((beg (or start
+                 (cond ((stringp object) 0)
+                       ((bufferp object)
+                        (with-current-buffer object (point-min)))
+                       (t (point-min)))))
+        (finish (or end
+                    (cond ((stringp object) (length object))
+                          ((bufferp object)
+                           (with-current-buffer object (point-max)))
+                          (t (point-max))))))
     (set-text-properties beg finish nil object)))
 
 (provide 'tp-ops)

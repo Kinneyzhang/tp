@@ -23,31 +23,51 @@
 (require 'tp-ops)
 (require 'tp-palette)
 
+(defvar tp-display-buffer-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "q" #'quit-window)
+    map)
+  "Keymap for `tp-display-buffer-mode'.")
+
+(define-minor-mode tp-display-buffer-mode
+  "Minor mode enabled in tp read-only display buffers.
+It binds \\`q' to `quit-window' in its own buffer-local minor-mode
+keymap, leaving the major-mode keymap (which is shared by every
+buffer of that major mode) untouched."
+  :lighter nil
+  :keymap tp-display-buffer-mode-map)
+
+(eval-and-compile
+  (defun tp--display-buffer-form (buffer-or-name body display-fn)
+    "Build the shared expansion of the display-buffer macros.
+BUFFER-OR-NAME and BODY are the macro arguments; DISPLAY-FN is
+the symbol of the function used to display the populated buffer."
+    (let ((buffer (gensym "tp-buffer-")))
+      `(let ((,buffer (get-buffer-create ,buffer-or-name)))
+         (tp-with-current-buffer ,buffer
+           (erase-buffer)
+           ,@body
+           (tp-display-buffer-mode 1)
+           (read-only-mode 1))
+         (,display-fn ,buffer)))))
+
 (defmacro tp-pop-to-buffer (buffer-or-name &rest body)
+  "Show BUFFER-OR-NAME with `pop-to-buffer' after filling it by BODY.
+The buffer is created if needed and erased, then BODY runs inside
+it with `inhibit-read-only' non-nil.  The buffer is finally made
+read-only with `tp-display-buffer-mode' enabled, so \\`q' quits
+its window."
   (declare (indent defun))
-  `(let ((buffer (get-buffer-create ,buffer-or-name)))
-     (tp-with-current-buffer buffer
-       (erase-buffer)
-       ,@body
-       (local-set-key "q" (lambda ()
-                            (interactive)
-                            (local-unset-key "q")
-                            (quit-window)))
-       (read-only-mode 1))
-     (pop-to-buffer buffer)))
+  (tp--display-buffer-form buffer-or-name body 'pop-to-buffer))
 
 (defmacro tp-switch-to-buffer (buffer-or-name &rest body)
+  "Show BUFFER-OR-NAME with `switch-to-buffer' after filling it by BODY.
+The buffer is created if needed and erased, then BODY runs inside
+it with `inhibit-read-only' non-nil.  The buffer is finally made
+read-only with `tp-display-buffer-mode' enabled, so \\`q' quits
+its window."
   (declare (indent defun))
-  `(let ((buffer (get-buffer-create ,buffer-or-name)))
-     (tp-with-current-buffer buffer
-       (erase-buffer)
-       ,@body
-       (local-set-key "q" (lambda ()
-                            (interactive)
-                            (local-unset-key "q")
-                            (quit-window)))
-       (read-only-mode 1))
-     (switch-to-buffer buffer)))
+  (tp--display-buffer-form buffer-or-name body 'switch-to-buffer))
 
 (define-tp tp-palette (palette)
   (let* ((pure-palette (tp-palette-pure palette))
@@ -124,24 +144,34 @@
   `(face (:strike-through ,color)))
 
 (define-tp tp-link ()
-  (let ((color (tp-palette-fg-color 'info)))
-    `( tp-underline ,color
-       tp-palette info-fg
-       mouse-face highlight
-       pointer hand)))
+  ;; No color is resolved here: the body of a zero-arg layer is
+  ;; evaluated once, when this file is loaded, so any color computed
+  ;; here would be frozen forever (wrong after a theme switch, or in a
+  ;; daemon session started before any frame exists).  Instead the
+  ;; nested parameterized layer `tp-palette' resolves the info
+  ;; foreground lazily at application time, and `:underline t'
+  ;; underlines with that same foreground color.
+  '( face (:underline t)
+     tp-palette info-fg
+     mouse-face highlight
+     pointer hand))
 
-(define-tp tp-space (width)
-  `(display (space :width ,width)))
+(define-tp tp-space (pixel)
+  `(display (space :width (,pixel))))
 
 (define-tp tp-headline (props)
+  ;; PROPS is either a number - a float scaling factor or an integer
+  ;; absolute height in units of 1/10 pt, both valid face :height
+  ;; values - implying bold, or a (:height H :bold B) plist.
   (let (height boldp)
-    (cond ((floatp props)
+    (cond ((numberp props)
            (setq height props boldp t))
-          ((plistp props)
+          ((tp-palette--plistp props)
            (setq height (plist-get props :height)
-                 boldp (plist-get props :bold))))
-    `(face (:height ,height
-                    ,@(when boldp '(:weight bold))))))
+                 boldp (plist-get props :bold)))
+          (t (error "Invalid tp-headline spec: %S" props)))
+    `(face (,@(when height (list :height height))
+            ,@(when boldp '(:weight bold))))))
 
 (define-tp tp-action (sexp)
   ;; SEXP is a function or plist

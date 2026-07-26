@@ -1,11 +1,11 @@
-;;; tp-ert-tests.el --- ERT tests for tp.el -*- lexical-binding: t -*-
+;;; tp-tests.el --- ERT tests for tp.el -*- lexical-binding: t -*-
 
-;; Copyright (C) 2024
+;; Copyright (C) 2024-2026
 
 ;;; Commentary:
 
 ;; Comprehensive test suite for tp.el using ERT (Emacs Lisp Regression Testing).
-;; Run with: emacs --batch -l tp.el -l tp-ert-tests.el -f ert-run-tests-batch-and-exit
+;; Run with: emacs --batch -L . -l tp.el -l tp-tests.el -f ert-run-tests-batch-and-exit
 
 ;;; Code:
 
@@ -23,13 +23,16 @@
 ;;; ============================================================
 
 (defmacro tp-test-with-temp-buffer (&rest body)
-  "Execute BODY in a temporary buffer with tp.el loaded."
+  "Execute BODY in a temporary buffer with a clean tp state.
+All layer registries, transforms and reactive watchers are cleared
+before BODY runs and again afterwards (teardown), so state cannot
+leak between tests regardless of how BODY exits."
   (declare (indent 0))
-  `(with-temp-buffer
-     (setq tp-layer-alist nil)
-     (setq tp-layer-groups nil)
-     (tp-reactive-reset)
-     ,@body))
+  `(unwind-protect
+       (with-temp-buffer
+         (tp-layer-reset)
+         ,@body)
+     (tp-layer-reset)))
 
 ;;; ============================================================
 ;;; Basic Text Property Functions Tests
@@ -4109,5 +4112,5 @@ can be tracked and removed."
     ;; tp-delete property should be removed
     (should (null (get-text-property 0 'tp-delete result)))))
 
-(provide 'tp-ert-tests)
-;;; tp-ert-tests.el ends here
+(provide 'tp-tests)
+;;; tp-tests.el ends here

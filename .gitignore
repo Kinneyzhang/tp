@@ -14,3 +14,6 @@ dash.el
 # Syncthing conflict files
 *.sync-conflict-*
 .syncthing.*
+
+# Claude worktrees
+.claude/

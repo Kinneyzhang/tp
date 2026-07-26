@@ -78,6 +78,11 @@ being created.")
 NAME should be a symbol."
   (memq name tp--builtin-text-properties))
 
+(defconst tp-face-properties '(face font-lock-face mouse-face)
+  "Text properties whose values follow face merging semantics.
+These properties hold face specs (symbols, plists or lists thereof)
+and are merged with face-aware logic instead of plain replacement.")
+
 (defun tp-debug-log (format-string &rest args)
   "Log a debug message if `tp-debug-mode' is enabled.
 FORMAT-STRING and ARGS are passed to `format'."
@@ -218,12 +223,16 @@ and PLIST is the merged plist of all face attributes."
           (setq i (1+ i)))
          ;; Inline keyword - consume key and value
          ((keywordp elem)
-          (let ((key elem)
-                (val (nth (1+ i) face-list)))
-            (setq plist (if plist
-                            (plist-put plist key val)
-                          (list key val)))
-            (setq i (+ i 2))))
+          (if (< (1+ i) len)
+              (let ((key elem)
+                    (val (nth (1+ i) face-list)))
+                (setq plist (if plist
+                                (plist-put plist key val)
+                              (list key val)))
+                (setq i (+ i 2)))
+            ;; Trailing bare keyword with no value: malformed input.
+            ;; Ignore it rather than inventing a bogus (KEY nil) pair.
+            (setq i (1+ i))))
          ;; Face symbol
          ((symbolp elem)
           (push elem symbols)
@@ -330,7 +339,7 @@ For simplicity, only considers properties at position 0 of STR."
                                          (cond
                                           ;; Face properties need special merging
                                           ;; Pass embedded val as face1 (base), existing as face2 (override)
-                                          ((memq key '(face font-lock-face mouse-face))
+                                          ((memq key tp-face-properties)
                                            (tp--merge-face-values val existing))
                                           ;; Other properties - props value takes precedence
                                           (t existing))))
@@ -343,7 +352,21 @@ For simplicity, only considers properties at position 0 of STR."
 FACE1 is the earlier value, FACE2 is the later value.
 For face plists (like (:foreground \"red\")), merge with later overriding.
 For symbol faces, create a list with FACE2 taking precedence.
-Returns the merged face value."
+Returns the merged face value.
+
+Role: this is the merge engine for face values that arrive together in
+a SINGLE call's property spec - `tp--merge-duplicate-keys' reduces
+repeated face/font-lock-face/mouse-face keys through it, and
+`tp--merge-string-props-into-plist' uses it to fold a string's embedded
+face into caller props.  Argument order is (EARLIER LATER); LATER wins.
+
+Note: `tp--prepend-face' is a sibling engine used by `tp-add' to merge
+an INCOMING face value into one already present on the text.  Its
+argument order is swapped ((NEW EXISTING)), and the two engines have
+drifted for mixed lists: `tp--prepend-face' parses a mixed
+symbol/plist list and merges plist components, whereas this function
+conses a plist override onto a non-plist list without parsing.  Do not
+substitute one for the other without checking those cases."
   (cond
    ;; No earlier face - just use later face
    ((null face1) face2)
@@ -460,7 +483,7 @@ Example:
             (let ((merged-val
                    (cond
                     ;; Face properties - use special face merging
-                    ((memq key '(face font-lock-face mouse-face))
+                    ((memq key tp-face-properties)
                      (cl-reduce #'tp--merge-face-values values))
                     ;; Other properties - later overrides earlier
                     (t (car (last values))))))
@@ -595,7 +618,20 @@ Examples:
 If NEW-FACE is a plist (like (:foreground \"red\")), deeply merge it.
 If NEW-FACE is a symbol or list of faces, prepend it to create a face list.
 For mixed lists containing both symbols and plists, plists are merged correctly.
-Duplicate faces are not added."
+Duplicate faces are not added.
+
+Role: this is the merge engine `tp-add' uses to fold an INCOMING face
+value into the face value already present on the text, for every
+property in `tp-face-properties'.  Argument order is (NEW EXISTING);
+NEW wins.
+
+Note: `tp--merge-face-values' is a sibling engine (argument order
+swapped: (EARLIER LATER)) used when duplicate face keys appear within
+a single call's property spec.  The two have drifted for mixed
+symbol/plist lists - this function parses such lists and merges their
+plist components, `tp--merge-face-values' conses a plist override onto
+a non-plist list without parsing.  Do not substitute one for the other
+without checking those cases."
   (cond
    ;; No existing face - just use new face
    ((null existing-face) new-face)
@@ -664,11 +700,6 @@ Duplicate faces are not added."
           merged-symbols)))
      (t new-face)))
    (t new-face)))
-
-(defconst tp-face-properties '(face font-lock-face mouse-face)
-  "Text properties whose values follow face merging semantics.
-These properties hold face specs (symbols, plists or lists thereof)
-and are merged with face-aware logic instead of plain replacement.")
 
 (defun tp--map-intervals (object start end function &optional property)
   "Iterate property intervals of OBJECT between START and END, clipped.

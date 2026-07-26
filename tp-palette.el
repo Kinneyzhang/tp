@@ -17,15 +17,30 @@
 
 ;;; Code:
 
-(defvar tp-palette-alist nil)
+(require 'subr-x)                       ; string-trim-right
+
+(defalias 'tp-palette--plistp
+  (if (fboundp 'plistp)
+      #'plistp
+    (lambda (object)
+      (let ((len (proper-list-p object)))
+        (and len (zerop (% len 2)) t))))
+  "Return non-nil if OBJECT is a property list.
+Compatibility shim: `plistp' was only added in Emacs 29.1, while
+the library supports Emacs 28.1.")
+
+(defvar tp-palette-alist nil
+  "Alist of (NAME . PLIST) palette definitions.
+This is the single source of truth for palette lookups.")
 
 (defmacro define-tp-palette (name &rest plist)
+  "Register a color palette named NAME, defined by PLIST.
+PLIST maps the keys :fg, :bg and :border to colors in any format
+accepted by `tp-parse-color' (usually a (LIGHT . DARK) cons).
+The palette is stored in `tp-palette-alist'; re-evaluating a
+definition updates the stored palette in place."
   (declare (indent defun))
-  (let ((var (intern (concat "tp-palette-" (symbol-name name)))))
-    `(progn
-       (setf (alist-get ',name tp-palette-alist)
-             '(,@plist))
-       (defvar ,var '(,@plist)))))
+  `(setf (alist-get ',name tp-palette-alist) '(,@plist)))
 
 (define-tp-palette button-primary
   :fg ("#ffffff" . "#ffffff") :bg ("#007bff" . "#007bff"))
@@ -236,19 +251,25 @@
   (eq (frame-parameter nil 'background-mode) 'light))
 
 (defun tp-parse-color (color)
-  "e.g.1 (tp-parse-color \"red\")
-e.g.2 (tp-parse-color '(\"red\" . \"green\"))
-e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
+  "Resolve COLOR to a color string for the current theme.
+COLOR may be:
+- a color string, returned as is: \"red\"
+- a (LIGHT . DARK) cons: (\"red\" . \"green\"); either side may be
+  nil, meaning no color for that mode
+- a (:light LIGHT :dark DARK) plist: (:light \"red\" :dark \"green\")
+Return nil when COLOR is nil, or when the side selected by the
+current theme is nil.  When the theme cannot be determined, fall
+back to the light color."
   (cond ((stringp color) color)
         ((and (consp color)
-              (stringp (car color))
-              (stringp (cdr color)))
+              (or (stringp (car color)) (null (car color)))
+              (or (stringp (cdr color)) (null (cdr color))))
          (cond
           ((tp-theme-light-p) (car color))
           ((tp-theme-dark-p) (cdr color))
           ;; Default to light color when background-mode is unknown
           (t (car color))))
-        ((and (plistp color)
+        ((and (tp-palette--plistp color)
               (or (plist-member color :light)
                   (plist-member color :dark)))
          (cond
@@ -260,16 +281,13 @@ e.g.3 (tp-parse-color '(:light \"red\" :dark \"green\"))"
         (t (error "Invalid format of color %S" color))))
 
 (defun tp-palette--get-color (symbol key)
-  "Get color value for KEY from palette SYMBOL.
-SYMBOL should be a symbol bound to a palette plist.
-KEY should be one of :fg, :bg, or :border.
-Returns nil if SYMBOL is unbound or doesn't contain KEY."
-  (setq symbol (intern (concat "tp-palette-"
-                               (symbol-name symbol))))
-  (when (and (symbolp symbol) (boundp symbol))
-    (let ((plist (symbol-value symbol)))
-      (when (plistp plist)
-        (tp-parse-color (plist-get plist key))))))
+  "Get color value for KEY from the palette named SYMBOL.
+SYMBOL is looked up in `tp-palette-alist'.  KEY should be one of
+:fg, :bg, or :border.  Return nil if SYMBOL names no registered
+palette or its definition doesn't contain KEY."
+  (let ((plist (alist-get symbol tp-palette-alist)))
+    (when (tp-palette--plistp plist)
+      (tp-parse-color (plist-get plist key)))))
 
 (defun tp-palette-fg-color (symbol)
   "Get the foreground color from palette SYMBOL.
