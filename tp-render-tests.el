@@ -34,6 +34,17 @@
 (defvar tp-rt-b18-text nil)
 (defvar tp-rt-b19-amount nil)
 (defvar tp-rt-b19s-amount nil)
+(defvar tp-rt-r1-color nil)
+(defvar tp-rt-r1b-color nil)
+(defvar tp-rt-r1c-color nil)
+(defvar tp-rt-r1d-color nil)
+(defvar tp-rt-r2-text nil)
+(defvar tp-rt-r2m-text nil)
+(defvar tp-rt-r2n-text nil)
+(defvar tp-rt-r2s-text nil)
+(defvar tp-rt-r3a-color nil)
+(defvar tp-rt-r3b-color nil)
+(defvar tp-rt-r3c-color nil)
 
 (defmacro tp-rt-with-cleanup (layers vars &rest body)
   "Run BODY, then undefine LAYERS and reset VARS to nil (teardown)."
@@ -359,6 +370,524 @@
       (should (equal tp-rt-b19s-amount "5.00"))
       (should (equal (get-text-property 0 'tp-text result) "5.00"))
       (should (eq (get-text-property 0 'face result) 'bold)))))
+
+;;; R1 (0.3.0): reactive buffer registry replaces the buffer-list scan
+
+(ert-deftest tp-render-test-registry-update-visits-only-registered ()
+  "A reactive update walks only registered buffers, not `buffer-list'."
+  (tp-rt-with-cleanup (tp-rt-r1-layer) (tp-rt-r1-color)
+    (setq tp-rt-r1-color "red")
+    (define-tp tp-rt-r1-layer () '(face (:foreground $tp-rt-r1-color)))
+    (let ((buf-a (generate-new-buffer " tp-rt-r1-a"))
+          (buf-b (generate-new-buffer " tp-rt-r1-b"))
+          (visited nil))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf-a
+              (insert "Hello")
+              (tp-set 1 6 'tp-rt-r1-layer))
+            (with-current-buffer buf-b (insert "Hello"))
+            ;; Applying through tp-ops registered the buffer
+            (should (equal (tp-reactive-layer-buffers 'tp-rt-r1-layer)
+                           (list buf-a)))
+            ;; Count per-buffer visits of the update walk
+            (let ((orig (symbol-function 'tp--render-visit-buffer)))
+              (cl-letf (((symbol-function 'tp--render-visit-buffer)
+                         (lambda (buf fn)
+                           (push buf visited)
+                           (funcall orig buf fn))))
+                (setq tp-rt-r1-color "blue")))
+            ;; Only the registered buffer was visited
+            (should (equal visited (list buf-a)))
+            (with-current-buffer buf-a
+              (should (equal (plist-get (get-text-property 1 'face)
+                                        :foreground)
+                             "blue"))))
+        (kill-buffer buf-a)
+        (kill-buffer buf-b)))))
+
+(ert-deftest tp-render-test-registry-prunes-on-kill-buffer ()
+  "Killing a buffer removes it from the layer-buffer registry."
+  (tp-rt-with-cleanup (tp-rt-r1b-layer) (tp-rt-r1b-color)
+    (setq tp-rt-r1b-color "red")
+    (define-tp tp-rt-r1b-layer () '(face (:foreground $tp-rt-r1b-color)))
+    (let ((buf (generate-new-buffer " tp-rt-r1b")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              (insert "Hello")
+              (tp-set 1 6 'tp-rt-r1b-layer))
+            (should (equal (tp-reactive-layer-buffers 'tp-rt-r1b-layer)
+                           (list buf)))
+            (kill-buffer buf)
+            ;; The kill-buffer hook pruned the raw registry entry ...
+            (should-not (memq buf (gethash 'tp-rt-r1b-layer
+                                           tp--layer-buffers)))
+            ;; ... and the accessor answers "known: none", NOT `unknown'.
+            (should (null (tp-reactive-layer-buffers 'tp-rt-r1b-layer)))
+            (should-not (eq (tp-reactive-layer-buffers 'tp-rt-r1b-layer)
+                            'unknown)))
+        (when (buffer-live-p buf) (kill-buffer buf))))))
+
+(ert-deftest tp-render-test-registry-unknown-full-scan-learns ()
+  "An `unknown' layer falls back to a full scan and learns its buffers."
+  (tp-rt-with-cleanup (tp-rt-r1c-layer) (tp-rt-r1c-color)
+    (setq tp-rt-r1c-color "red")
+    (define-tp tp-rt-r1c-layer () '(face (:foreground $tp-rt-r1c-color)))
+    (let ((buf (generate-new-buffer " tp-rt-r1c")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              (insert "Hello")
+              (tp-set 1 6 'tp-rt-r1c-layer))
+            ;; Simulate a buffer that got the layer outside the
+            ;; registering paths: erase the registry knowledge.
+            (remhash 'tp-rt-r1c-layer tp--layer-buffers)
+            (should (eq (tp-reactive-layer-buffers 'tp-rt-r1c-layer)
+                        'unknown))
+            ;; The update still reaches the buffer (conservative fallback)
+            (setq tp-rt-r1c-color "blue")
+            (with-current-buffer buf
+              (should (equal (plist-get (get-text-property 1 'face)
+                                        :foreground)
+                             "blue")))
+            ;; ... and the scan registered the buffer it found (learning)
+            (should (equal (tp-reactive-layer-buffers 'tp-rt-r1c-layer)
+                           (list buf))))
+        (kill-buffer buf)))))
+
+(ert-deftest tp-render-test-track-buffer-closes-string-insert-gap ()
+  "`tp-reactive-track-buffer' registers a buffer filled by string insert."
+  (tp-rt-with-cleanup (tp-rt-r1d-layer) (tp-rt-r1d-color)
+    (setq tp-rt-r1d-color "red")
+    (define-tp tp-rt-r1d-layer () '(face (:foreground $tp-rt-r1d-color)))
+    (let ((buf-a (generate-new-buffer " tp-rt-r1d-a"))
+          (buf-b (generate-new-buffer " tp-rt-r1d-b")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf-a
+              (insert "Hello")
+              (tp-set 1 6 'tp-rt-r1d-layer))
+            ;; Inserting an already-propertized STRING bypasses the
+            ;; registering buffer operations.
+            (let ((s (tp-set "Hi" 'tp-rt-r1d-layer)))
+              (with-current-buffer buf-b (insert s)))
+            (should-not (memq buf-b
+                              (tp-reactive-layer-buffers 'tp-rt-r1d-layer)))
+            ;; The layer is known, so buf-b is NOT updated (the gap) ...
+            (setq tp-rt-r1d-color "blue")
+            (with-current-buffer buf-b
+              (should (equal (plist-get (get-text-property 1 'face)
+                                        :foreground)
+                             "red")))
+            ;; ... until tp-reactive-track-buffer closes it.
+            (should (equal (with-current-buffer buf-b
+                             (tp-reactive-track-buffer))
+                           '(tp-rt-r1d-layer)))
+            (should (memq buf-b
+                          (tp-reactive-layer-buffers 'tp-rt-r1d-layer)))
+            (setq tp-rt-r1d-color "green")
+            (with-current-buffer buf-b
+              (should (equal (plist-get (get-text-property 1 'face)
+                                        :foreground)
+                             "green")))
+            (with-current-buffer buf-a
+              (should (equal (plist-get (get-text-property 1 'face)
+                                        :foreground)
+                             "green"))))
+        (kill-buffer buf-a)
+        (kill-buffer buf-b)))))
+
+;;; R2 (0.3.0): minimal-diff tp-text replacement
+
+(ert-deftest tp-render-test-minimal-diff-point-in-prefix-stays ()
+  "Point in the common prefix survives a reactive text edit unmoved."
+  (tp-rt-with-cleanup (tp-rt-r2-layer) (tp-rt-r2-text)
+    (setq tp-rt-r2-text "abcdef")
+    (define-tp tp-rt-r2-layer () '(tp-text $tp-rt-r2-text))
+    (with-temp-buffer
+      (insert "abcdef")
+      (tp-set 1 7 'tp-rt-r2-layer)
+      (goto-char 2)                     ; inside the common prefix "ab"
+      (setq tp-rt-r2-text "abXYef")
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "abXYef"))
+      (should (= (point) 2)))))
+
+(ert-deftest tp-render-test-minimal-diff-point-in-suffix-stays ()
+  "Point in the common suffix stays glued to its character."
+  (tp-rt-with-cleanup (tp-rt-r2-layer) (tp-rt-r2-text)
+    (setq tp-rt-r2-text "abcdef")
+    (define-tp tp-rt-r2-layer () '(tp-text $tp-rt-r2-text))
+    (with-temp-buffer
+      (insert "abcdef")
+      (tp-set 1 7 'tp-rt-r2-layer)
+      (goto-char 6)                     ; on the "f" of the suffix "ef"
+      ;; Same-length edit: point must not move at all
+      (setq tp-rt-r2-text "abXYef")
+      (should (= (point) 6))
+      (should (eq (char-after) ?f))
+      ;; Length-changing edit: point stays glued to its character
+      (setq tp-rt-r2-text "abXYZWef")
+      (should (= (point) 8))
+      (should (eq (char-after) ?f)))))
+
+(ert-deftest tp-render-test-minimal-diff-point-inside-diff-clamps ()
+  "Point inside the differing span ends up at the edit start."
+  (tp-rt-with-cleanup (tp-rt-r2-layer) (tp-rt-r2-text)
+    (setq tp-rt-r2-text "abcdef")
+    (define-tp tp-rt-r2-layer () '(tp-text $tp-rt-r2-text))
+    (with-temp-buffer
+      (insert "abcdef")
+      (tp-set 1 7 'tp-rt-r2-layer)
+      (goto-char 4)                 ; on "d", inside the "cd" -> "XY" span
+      (setq tp-rt-r2-text "abXYef")
+      (should (= (point) 3)))))
+
+(ert-deftest tp-render-test-minimal-diff-markers-survive ()
+  "Markers in the unchanged prefix and suffix survive a text update."
+  (tp-rt-with-cleanup (tp-rt-r2m-layer) (tp-rt-r2m-text)
+    (setq tp-rt-r2m-text "abcdef")
+    (define-tp tp-rt-r2m-layer () '(tp-text $tp-rt-r2m-text))
+    (with-temp-buffer
+      (insert "abcdef")
+      (tp-set 1 7 'tp-rt-r2m-layer)
+      (let ((m-prefix (copy-marker 2))   ; on "b"
+            (m-suffix (copy-marker 6)))  ; on "f"
+        (setq tp-rt-r2m-text "abXYZef")  ; "cd" -> "XYZ", one char longer
+        (should (equal (buffer-substring-no-properties (point-min)
+                                                       (point-max))
+                       "abXYZef"))
+        (should (= (marker-position m-prefix) 2))
+        (should (eq (char-after m-prefix) ?b))
+        (should (= (marker-position m-suffix) 7))
+        (should (eq (char-after m-suffix) ?f))
+        (set-marker m-prefix nil)
+        (set-marker m-suffix nil)))))
+
+;;; TXT-1: the suffix-boundary marker must track its character
+
+(defun tp-rt--txt1-marker-after-edit (old new marker-offset)
+  "Run a minimal-diff replacement of OLD by NEW with a boundary marker.
+Insert \"HEAD \" OLD \" TAIL\" in a temp buffer, tag OLD with a
+tp-name, put an insertion-type-nil marker at OLD's start plus
+MARKER-OFFSET, replace via `tp--replace-reactive-text-in-buffer' and
+return (MARKER-POSITION CHAR-AT-MARKER ORIGINAL-CHAR)."
+  (with-temp-buffer
+    (insert "HEAD ")
+    (let ((m-start (point)))
+      (insert old " TAIL")
+      (put-text-property m-start (+ m-start (length old))
+                         'tp-name 'tp-rt-txt1-layer)
+      (let* ((mpos (+ m-start marker-offset))
+             (mchar (char-after mpos))
+             (mk (copy-marker mpos)))
+        (tp--replace-reactive-text-in-buffer 'tp-rt-txt1-layer new nil)
+        (prog1 (list (marker-position mk) (char-after mk) mchar)
+          (set-marker mk nil))))))
+
+(ert-deftest tp-render-test-minimal-diff-suffix-start-marker-tracks ()
+  "A marker on the FIRST character of the preserved suffix tracks it.
+TXT-1: delete-then-insert collapsed such a marker onto the edit
+start, stranding it before the inserted text; insert-then-delete
+shifts it right with its character.  Grow, same-length (the clearest
+docstring violation) and shrink edits are all covered."
+  ;; Grow: "0" -> "42"; marker on the space before "items" (offset 8).
+  (pcase-let ((`(,pos ,got ,want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 0 items" "count: 42 items" 8)))
+    (should (eq got want))
+    (should (= pos 15)))                ; 14 shifted right by 1
+  ;; Same length: "0" -> "9"; the marker's correct position is
+  ;; numerically unchanged.
+  (pcase-let ((`(,pos ,got ,want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 0 items" "count: 9 items" 8)))
+    (should (eq got want))
+    (should (= pos 14)))
+  ;; Shrink: "42" -> "0".
+  (pcase-let ((`(,pos ,got ,want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 42 items" "count: 0 items" 9)))
+    (should (eq got want))
+    (should (= pos 14))))
+
+(ert-deftest tp-render-test-minimal-diff-deleted-char-marker-at-edit-end ()
+  "A marker whose character was deleted ends at the END of the edit.
+The documented side effect of inserting before deleting; previously
+such markers collapsed to the edit start.  Either way they stay
+inside the replacement span."
+  ;; "100" -> "42": marker on the middle "0" (strictly inside the
+  ;; edited span) ends after the inserted "42".
+  (pcase-let ((`(,pos ,_got ,_want)
+               (tp-rt--txt1-marker-after-edit
+                "count: 100 items" "count: 42 items" 8)))
+    ;; Edit span starts at buffer position 13 ("100"), insert "42":
+    ;; the marker lands at the end of the inserted text.
+    (should (= pos 15))))
+
+(ert-deftest tp-render-test-minimal-diff-suffix-marker-real-path ()
+  "The suffix-start marker tracks through a real setq-driven update."
+  (tp-rt-with-cleanup (tp-rt-r2s-layer) (tp-rt-r2s-text)
+    (setq tp-rt-r2s-text "count: 0 items")
+    (define-tp tp-rt-r2s-layer () '(tp-text $tp-rt-r2s-text))
+    (with-temp-buffer
+      (insert "count: 0 items")
+      (tp-set 1 15 'tp-rt-r2s-layer)
+      (let ((m (copy-marker 9)))        ; the space before "items"
+        (setq tp-rt-r2s-text "count: 42 items")
+        (should (equal (buffer-substring-no-properties (point-min)
+                                                       (point-max))
+                       "count: 42 items"))
+        (should (eq (char-after m) ?\s))
+        (should (= (marker-position m) 10))
+        (set-marker m nil)))))
+
+(ert-deftest tp-render-test-minimal-diff-identical-update-is-noop ()
+  "An identical-text reactive replacement leaves the buffer unmodified."
+  (tp-rt-with-cleanup (tp-rt-r2n-layer) (tp-rt-r2n-text)
+    (setq tp-rt-r2n-text "emacs")
+    (define-tp tp-rt-r2n-layer () '(face bold tp-text $tp-rt-r2n-text))
+    (with-temp-buffer
+      (insert "emacs")
+      (tp-set 1 6 'tp-rt-r2n-layer)
+      (set-buffer-modified-p nil)
+      (save-excursion
+        (tp--replace-reactive-text-in-buffer
+         'tp-rt-r2n-layer "emacs" (tp-layer-props 'tp-rt-r2n-layer t)))
+      ;; No text edit and no property churn: the flag must stay clear
+      (should-not (buffer-modified-p))
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "emacs"))
+      (should (eq (get-text-property 1 'face) 'bold)))))
+
+;;; ARCH-4: the pending queue must survive neither reset nor errors
+
+(defvar tp-rt-a4-face nil)
+(defvar tp-rt-a4-color nil)
+
+(ert-deftest tp-render-test-reactive-reset-clears-pending-queue ()
+  "tp-reactive-reset drops queued batch re-renders (ARCH-4).
+Stranded entries would otherwise survive the reset and replay against
+freshly (re)defined layers on the next flush."
+  (unwind-protect
+      (progn
+        (tp--queue-batch-update 'tp-rt-a4-ghost 'tp-rt-a4-ghost-var nil nil)
+        (should tp--batch-update-pending)
+        (tp-reactive-reset)
+        (should (null tp--batch-update-pending)))
+    (setq tp--batch-update-pending nil)))
+
+(ert-deftest tp-render-test-error-escaping-update-flushes-nested-queue ()
+  "An error escaping a re-render cannot strand nested queued updates.
+A modification hook that writes a second reactive variable and then
+signals used to strand the nested entry in the global queue - the
+flush tail sat outside any unwind-protect.  The flush now runs as the
+update unwinds, so the nested variable's re-render still lands and
+the queue is drained (ARCH-4)."
+  (setq tp-rt-a4-face 'bold
+        tp-rt-a4-color "red")
+  (unwind-protect
+      (progn
+        (define-tp tp-rt-a4-layer-a () '(face $tp-rt-a4-face))
+        (define-tp tp-rt-a4-layer-b ()
+          '(face (:foreground $tp-rt-a4-color)))
+        (with-temp-buffer
+          (insert "Hello world")
+          (tp-set 1 6 'tp-rt-a4-layer-a)
+          (tp-set 7 12 'tp-rt-a4-layer-b)
+          (let ((armed t))
+            (add-hook 'before-change-functions
+                      (lambda (_beg _end)
+                        (when armed
+                          (setq armed nil)
+                          ;; Nested reactive write from within the
+                          ;; re-render: goes to the global queue.
+                          (setq tp-rt-a4-color "green")
+                          (error "boom from modification hook")))
+                      nil t)
+            (should-error (setq tp-rt-a4-face 'italic))
+            ;; The nested entry was flushed on the way out, not
+            ;; stranded...
+            (should (null tp--batch-update-pending))
+            ;; ...and its re-render landed despite the error.
+            (should (equal (get-text-property 7 'face)
+                           '(:foreground "green"))))))
+    (tp-undefine-layer 'tp-rt-a4-layer-a)
+    (tp-undefine-layer 'tp-rt-a4-layer-b)
+    (setq tp-rt-a4-face nil
+          tp-rt-a4-color nil
+          tp--batch-update-pending nil)))
+
+;;; R3 (0.3.0): anonymous-layer garbage collection
+
+(ert-deftest tp-render-test-gc-collects-unreferenced-anonymous-layer ()
+  "GC collects an anonymous layer whose only buffer was killed."
+  (setq tp-rt-r3a-color "red")
+  (let ((buf (generate-new-buffer " tp-rt-r3a"))
+        (name nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (insert "Hello")
+            (tp-set 1 6 '(face (:foreground $tp-rt-r3a-color)))
+            (setq name (get-text-property 1 'tp-name)))
+          (should name)
+          (should (assoc name tp-layer-alist))
+          (kill-buffer buf)
+          (should (memq name (tp-gc-anonymous-layers)))
+          (should-not (assoc name tp-layer-alist))
+          (should-not (rassq name tp--anonymous-layer-registry)))
+      (when (buffer-live-p buf) (kill-buffer buf))
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (setq tp-rt-r3a-color nil))))
+
+(ert-deftest tp-render-test-gc-keeps-layer-still-displayed ()
+  "GC keeps an anonymous layer that a live buffer still shows."
+  (setq tp-rt-r3b-color "red")
+  (let ((buf (generate-new-buffer " tp-rt-r3b"))
+        (name nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (insert "Hello")
+            (tp-set 1 6 '(face (:foreground $tp-rt-r3b-color)))
+            (setq name (get-text-property 1 'tp-name)))
+          (should name)
+          (should-not (memq name (tp-gc-anonymous-layers)))
+          (should (assoc name tp-layer-alist)))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (setq tp-rt-r3b-color nil))))
+
+(ert-deftest tp-render-test-gc-keeps-unknown-registry-layer ()
+  "GC keeps an anonymous layer whose registry state is `unknown'."
+  (setq tp-rt-r3c-color "red")
+  (let* ((s (tp-set "Hello" '(face (:foreground $tp-rt-r3c-color))))
+         (name (get-text-property 0 'tp-name s)))
+    (unwind-protect
+        (progn
+          (should name)
+          ;; Applied to a string only: the registry knows nothing
+          (should (eq (tp-reactive-layer-buffers name) 'unknown))
+          (should-not (memq name (tp-gc-anonymous-layers)))
+          (should (assoc name tp-layer-alist)))
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (setq tp-rt-r3c-color nil))))
+
+;;; GC-1: buried and hidden layers are ALIVE for GC and track-buffer
+
+(defvar tp-rt-gc1-color nil)
+(defvar tp-rt-gc1b-color nil)
+(defvar tp-rt-gc1c-color nil)
+
+(ert-deftest tp-render-test-gc-keeps-layer-buried-under-push ()
+  "GC keeps an anonymous layer buried below a pushed top layer.
+The buried layer's tp-name lives inside `tp-layers' storage, not as a
+direct property; the stack-aware liveness scan must still see it, and
+reactivity must survive a later pop (GC-1)."
+  (setq tp-rt-gc1-color "blue")
+  (let ((buf (generate-new-buffer " tp-rt-gc1"))
+        (name nil))
+    (unwind-protect
+        (progn
+          (define-tp tp-rt-gc1-top () '(face bold))
+          (with-current-buffer buf
+            (insert "0123456789")
+            (tp-set 1 6 '(face (:foreground $tp-rt-gc1-color)))
+            (setq name (get-text-property 1 'tp-name))
+            (should name)
+            (tp-push-layer 1 6 'tp-rt-gc1-top)
+            ;; Now buried: direct tp-name is the pushed top's.
+            (should (eq (get-text-property 1 'tp-name) 'tp-rt-gc1-top))
+            ;; The buffer is live and still holds the layer: GC must
+            ;; keep it.
+            (should-not (memq name (tp-gc-anonymous-layers)))
+            (should (assoc name tp-layer-alist))
+            ;; Reactivity survives: pop and update.
+            (tp-pop-layer 1 6)
+            (setq tp-rt-gc1-color "red")
+            (should (equal (get-text-property 1 'face)
+                           '(:foreground "red")))))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (tp-undefine-layer 'tp-rt-gc1-top)
+      (setq tp-rt-gc1-color nil))))
+
+(ert-deftest tp-render-test-gc-keeps-hidden-layer ()
+  "GC keeps an anonymous layer hidden via tp-hide-layer.
+An all-hidden run carries no direct tp-name at all; the layer lives
+only inside `tp-layers' storage yet is queryable and re-showable, so
+GC must not collect it and show+setq must still re-render (GC-1,
+XM-02)."
+  (setq tp-rt-gc1b-color "green")
+  (let ((buf (generate-new-buffer " tp-rt-gc1b"))
+        (name nil))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "abcdefghij")
+          (tp-set 1 6 '(face (:foreground $tp-rt-gc1b-color)))
+          (setq name (get-text-property 1 'tp-name))
+          (should name)
+          (tp-hide-layer 1 6 name)
+          (should-not (get-text-property 1 'tp-name))
+          ;; Live buffer still holds the hidden layer: keep it.
+          (should-not (memq name (tp-gc-anonymous-layers)))
+          (should (assoc name tp-layer-alist))
+          ;; Show and update: reactivity must be intact.
+          (tp-show-layer 1 6 name)
+          (setq tp-rt-gc1b-color "purple")
+          (should (equal (get-text-property 1 'face)
+                         '(:foreground "purple"))))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (setq tp-rt-gc1b-color nil))))
+
+(ert-deftest tp-render-test-track-buffer-finds-buried-and-hidden-layers ()
+  "tp-reactive-track-buffer registers layers buried or hidden in storage.
+A propertized string carrying a stacked (buried) layer and an
+all-hidden string are inserted into a fresh buffer; the track scan
+must register every layer name, not just the rendered top ones
+\(GC-1, XM-04)."
+  (setq tp-rt-gc1c-color "gold")
+  (let ((buf (generate-new-buffer " tp-rt-gc1c"))
+        (name nil))
+    (unwind-protect
+        (progn
+          (define-tp tp-rt-gc1c-top () '(face bold))
+          (define-tp tp-rt-gc1c-hidden () '(face italic))
+          (let ((s (with-temp-buffer
+                     (insert "trackme")
+                     (tp-set 1 6 '(face (:foreground $tp-rt-gc1c-color)))
+                     (setq name (get-text-property 1 'tp-name))
+                     (tp-push-layer 1 6 'tp-rt-gc1c-top)
+                     (buffer-string)))
+                (h (let ((h (copy-sequence " hideme")))
+                     (tp-push-layer h 'tp-rt-gc1c-hidden)
+                     (tp-hide-layer h 'tp-rt-gc1c-hidden)
+                     h)))
+            (with-current-buffer buf
+              (insert s)
+              (insert h)
+              (let ((found (tp-reactive-track-buffer)))
+                ;; Rendered top, buried layer, and all-hidden layer.
+                (should (memq 'tp-rt-gc1c-top found))
+                (should (memq name found))
+                (should (memq 'tp-rt-gc1c-hidden found)))
+              (should (memq buf (tp-reactive-layer-buffers name)))
+              (should (memq buf (tp-reactive-layer-buffers
+                                 'tp-rt-gc1c-hidden))))))
+      (kill-buffer buf)
+      (when (and name (assoc name tp-layer-alist))
+        (tp-undefine-layer name))
+      (tp-undefine-layer 'tp-rt-gc1c-top)
+      (tp-undefine-layer 'tp-rt-gc1c-hidden)
+      (setq tp-rt-gc1c-color nil))))
 
 (provide 'tp-render-tests)
 ;;; tp-render-tests.el ends here

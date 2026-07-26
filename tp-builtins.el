@@ -90,11 +90,25 @@ its window."
        `(face (,@(when border-color (list :box (list :color border-color))))))
       (_ (error "Invalid palette: %S" palette)))))
 
-(defun tp-suffix-symbol (symbol string)
+(defun tp--suffix-symbol (symbol string)
+  "Intern the symbol named by SYMBOL's name with STRING appended.
+For example (tp--suffix-symbol \\='info \"-fg\") returns `info-fg'.
+A generic helper with no tp semantics of its own, used by
+`tp-palette-show' to build the suffixed palette variant names."
   (intern (concat (symbol-name symbol) string)))
+
+(define-obsolete-function-alias 'tp-suffix-symbol
+  'tp--suffix-symbol "0.3.0")
 
 ;;;###autoload
 (defun tp-palette-show ()
+  "Display a gallery of every palette registered in `tp-palette-alist'.
+Shows the read-only buffer *tp-palette-gallery* listing, for each
+palette NAME, the symbols the `tp-palette' layer accepts: NAME itself
+\(foreground, background and border together) plus the NAME-fg,
+NAME-bg, NAME-fbg and NAME-border variants, each label rendered in
+the colors it selects for the current theme.  Press \\`q' to quit
+the gallery window."
   (interactive)
   (let ((alist (seq-reverse tp-palette-alist)))
     (tp-switch-to-buffer "*tp-palette-gallery*"
@@ -109,19 +123,19 @@ its window."
                     " "
                     (tp-set (concat name "-fg")
                             'tp-palette
-                            (tp-suffix-symbol symbol "-fg"))
+                            (tp--suffix-symbol symbol "-fg"))
                     " "
                     (tp-set (concat name "-bg")
                             'tp-palette
-                            (tp-suffix-symbol symbol "-bg"))
+                            (tp--suffix-symbol symbol "-bg"))
                     " "
                     (tp-set (concat name "-fbg")
                             'tp-palette
-                            (tp-suffix-symbol symbol "-fbg"))
+                            (tp--suffix-symbol symbol "-fbg"))
                     " "
                     (tp-set (concat name "-border")
                             'tp-palette
-                            (tp-suffix-symbol symbol "-border")))))
+                            (tp--suffix-symbol symbol "-border")))))
         alist "\n")))))
 
 (define-tp tp-fg (color)

@@ -34,6 +34,32 @@ leak between tests regardless of how BODY exits."
          ,@body)
      (tp-layer-reset)))
 
+;; Reactive test variables set with `setq' inside tests.  They must be
+;; dynamically bound (variable watchers depend on it), so plain
+;; `defvar' declarations are used.
+(defvar tp-test-first-name nil "Test variable for computed properties.")
+(defvar tp-test-last-name nil "Test variable for computed properties.")
+(defvar tp-test-full-name nil "Test variable for computed properties.")
+(defvar tp-test-dc-color nil "Test variable for data+compute layer.")
+(defvar tp-test-dc-first nil "Test variable for data+compute layer.")
+(defvar tp-test-dc-last nil "Test variable for data+compute layer.")
+(defvar tp-test-dc-full-name nil "Test variable for data+compute layer.")
+(defvar tp-test-init-color nil "Test variable for initial values.")
+(defvar tp-test-init-name nil "Test variable for initial values.")
+(defvar tp-test-init-other nil "Test variable for initial values.")
+(defvar tp-test-global-color nil "Test variable for global updates.")
+(defvar tp-test-redef-color nil "Test variable for layer re-definition.")
+(defvar tp-test-watch-var nil "Test variable for watch callbacks.")
+(defvar tp-test-compute-src nil "Test variable for compute source.")
+(defvar tp-test-compute-out nil "Test variable for compute output.")
+(defvar tp-test-group-color nil "Test variable for layer groups.")
+(defvar tp-test-name-part1 nil "Test variable for tp-text updates.")
+(defvar tp-test-name-part2 nil "Test variable for tp-text updates.")
+(defvar tp-test-batch-color nil "Test variable for batch updates.")
+(defvar tp-test-fg nil "Test variable for batch foreground.")
+(defvar tp-test-bg nil "Test variable for batch background.")
+(defvar tp-test-amount nil "Test variable for transform updates.")
+
 ;;; ============================================================
 ;;; Basic Text Property Functions Tests
 ;;; ============================================================
@@ -863,7 +889,7 @@ nothing and returns the available count."
     (tp-set 12 17 '(marker t) str)
     (let ((result nil))
       (tp--search-do
-       (lambda (match obj)
+       (lambda (match _obj)
          (push (car match) result))
        'marker nil str)
       (should (= (length result) 2))
@@ -878,7 +904,7 @@ nothing and returns the available count."
     (tp-set 13 18 '(marker t))
     (let ((result nil))
       (tp--search-do
-       (lambda (match obj)
+       (lambda (match _obj)
          (push (car match) result))
        'marker nil nil 1 18)
       (should (= (length result) 2))
@@ -955,7 +981,7 @@ nothing and returns the available count."
     (tp-set 5 8 '(marker t))
     (tp-set 9 12 '(marker t))
     (let ((positions nil))
-      (tp-search-map (lambda (txt start end idx)
+      (tp-search-map (lambda (_txt start end idx)
                        (push (list start end idx) positions)
                        (format "[%d]" idx))
                      'marker nil nil 1 12)
@@ -3212,7 +3238,7 @@ text content but different properties, the properties should be updated."
       ;; Should contain both the plist and symbol
       (should (member 'bold (if (listp face-val) face-val (list face-val))))
       ;; Should have foreground red
-      (should (or (eq face-val '(:foreground "red"))
+      (should (or (equal face-val '(:foreground "red"))
                   (and (listp face-val)
                        (cl-some (lambda (f)
                                   (and (listp f)

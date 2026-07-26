@@ -2,6 +2,148 @@
 
 All notable changes to the tp library are documented here.
 
+## 0.3.0 (2026-07-27)
+
+### Added
+
+Layer stack:
+
+- **Layer visibility**: `tp-hide-layer` / `tp-show-layer` — a hidden
+  layer stays in the stack (and keeps receiving reactive updates) but
+  does not render; hiding the visible top reveals the next visible
+  layer, and with every layer hidden the text renders bare.
+  `tp-flatten-layers` merges only visible layers; `tp-merge-layers`
+  excludes hidden matched layers' props.
+- `tp-lower-layer` (mirror of `tp-raise-layer`) and a
+  family-consistent `tp-rotate-layer` calling order
+  `(START END DIRECTION [COUNT] [OBJECT])`, selected unambiguously by
+  the symbols `up` / `down`; the legacy order keeps working.
+- `tp-layer-stack-at` — the full ordered stack at one position as
+  `(NAME . PROPS)` conses, hidden layers marked by a `tp-hidden`
+  entry.
+- Stack mutators return the number of property runs they modified
+  (including `tp-merge-layers` / `tp-flatten-layers`), and layer-name
+  lookups gained optional NOERROR arguments where they previously
+  signaled.
+- `tp-describe-layer` — interactive help-buffer description of a
+  layer: storage format, arglist, stored body, expanded props,
+  reactive deps, transform, owning group.
+
+Reactive engine:
+
+- **Layer→buffer registry**: reactive updates now visit only the
+  buffers registered as showing the affected layer instead of scanning
+  the whole `(buffer-list)`; every buffer-mutating write path
+  registers (tp-set family, stack mutators, match/regexp appliers),
+  killed buffers are pruned, and an unknown layer falls back to one
+  learning full scan. `tp-reactive-layer-buffers` exposes the
+  registry; `tp-reactive-track-buffer` closes the
+  insert-a-propertized-string gap.
+- **Minimal-diff `tp-text` re-render**: only the differing span is
+  edited (insert-before-delete), so point and markers in unchanged
+  text stay put and identical-text updates no longer touch the buffer
+  at all (buffer-modified flag preserved).
+- `tp-gc-anonymous-layers` — collects interned anonymous layers that
+  no registered live buffer still shows (stack-aware: buried and
+  hidden layers count as alive; string-only layers are conservatively
+  kept).
+
+Search and matching:
+
+- `tp-regexp-set/reset/add` accept SUBEXP: properties apply to that
+  capture group per match (non-participating groups contribute
+  nothing); SUBEXP beyond the pattern's group count signals a clear
+  error.
+- `tp-match-*` / `tp-regexp-*` accept START/END bounds with
+  as-if-only-that-portion semantics; reversed bounds are swapped.
+- `tp-forward` / `tp-backward` / `tp-forward-do` / `tp-backward-do`
+  accept PREDICATE and NOT-CURRENT, passed through to the
+  text-property-search machinery; defaults keep the 0.2.0 symmetric
+  equal-matching contract exactly.
+
+Layer definitions:
+
+- **Multi-argument parameterized layers**: `define-tp` / `define-tps`
+  arglists may declare any number of parameters;
+  `(LAYER ARG1 ... ARGN)` and wrapped `(LAYER (ARG1 ... ARGN))` specs
+  work in `tp-set` and `tp-put-layer`; new `tp-layer-props-with-args`
+  / `tp-group-props-with-args` / `tp-layer-arglist`. Wrong-arity
+  calls signal clear errors naming the layer and both counts.
+- Prefix-conforming aliases `tp-define-layer` / `tp-define-group` /
+  `tp-define-palette` for discoverability (`C-h f tp-…`).
+
+Core and palette:
+
+- `tp-intervals` / `tp-intervals-map` accept an optional ABSOLUTE
+  argument returning native buffer coordinates (feedable straight
+  back into `tp-set`); the range-relative default is unchanged.
+- `tp-palette-color` (generic theme-resolved accessor) and
+  `tp-palette-has-p` consolidate the palette query surface; all
+  existing query functions remain.
+
+### Fixed
+
+All six were found by an adversarial architecture/API review of the
+new 0.3.0 code and confirmed with minimal reproductions before fixing:
+
+- The reactive buffer registry only registered `tp-set`-family writes;
+  layers applied via `tp-push-layer`, `tp-match-set`, etc. never
+  re-rendered on variable updates.
+- Reactive updates wrote only the rendered top layer; hidden or
+  buried layers kept stale props (visible again on `tp-show-layer`).
+- `tp-gc-anonymous-layers` and `tp-reactive-track-buffer` scanned only
+  direct `tp-name` properties, so a layer buried in a stack (or
+  hidden) could be wrongly collected / missed.
+- `tp-flatten-layers` / `tp-merge-layers` rendered hidden layers'
+  properties despite `tp-hide-layer`'s documented contract.
+- Minimal-diff `tp-text` edits deleted before inserting, so markers at
+  the suffix boundary drifted to the wrong character.
+- An error escaping a reactive update could strand queued batch
+  entries (now drained under `unwind-protect`; `tp-reactive-reset`
+  clears the queue).
+
+### Changed
+
+- **Module boundaries tightened** (behavior identical under
+  `(require 'tp)`): the `tp-text` handler chain moved from tp-render
+  into tp-ops — partial loads now get working `tp-text` replacement —
+  and `tp-with-batch-updates` moved up into tp-render; two of the four
+  upward hook variables are gone
+  (`tp--tp-text-handler-function`, `tp--reactive-flush-function`).
+  The layer-stack storage codec and the anonymous-layer machinery now
+  live in tp-layer; tp-stack's phantom dependency on tp-ops is gone;
+  67 lines of dead code deleted. tp-core holds no mutable state.
+- String forms of all 16 stack mutators document that they modify the
+  string in place (unlike `tp-set`'s copy semantics); unifying this is
+  on the 0.4 ledger.
+
+### Deprecated
+
+- `tp-search-forward` / `tp-search-backward` (0.3.0) — thin wrappers
+  whose nil-PREDICATE default contradicts the rest of the library's
+  equal-matching; use `tp-forward` / `tp-backward`, or the Emacs
+  primitives for raw access.
+- `tp-suffix-symbol` (0.3.0) — internal helper now private as
+  `tp--suffix-symbol`; a compatibility alias remains.
+
+### Infrastructure
+
+- GitHub Actions CI: Emacs 28.1 / 29.4 / 30.1 matrix running
+  byte-compilation with warnings-as-errors, the full ERT suite, a
+  shuffled-order rerun of every test (`make test-shuffled`,
+  `tp-run-shuffled.el`; `SHUFFLE_SEED=N` reproduces an order), and the
+  README doctests.
+- The whole tree byte-compiles with zero warnings (57 fixed:
+  docstring rewraps and quoting, `defvar` declarations for reactive
+  test variables, prefixed doctest counters, one impossible `eq`
+  comparison corrected to `equal`).
+- Autoload cookies for the interactive commands (`tp-debug-show`,
+  `tp-debug-clear`, `tp-reactive-reset`, `tp-layer-reset`,
+  `tp-palette-show`, `tp-clear`) and the `define-tp` / `define-tps`
+  macros.
+- Two doctest assertions made property-order-insensitive (Emacs 28
+  prints text-property plists in a different order than 29+).
+
 ## 0.2.0 (2026-07-26)
 
 ### Architecture

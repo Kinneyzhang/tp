@@ -20,14 +20,48 @@
 (require 'cl-lib)
 (require 'text-property-search)
 (require 'tp-core)
+(require 'tp-reactive)
 (require 'tp-layer)
 (require 'tp-ops)
 
-(defun tp--pattern-apply-single (pattern properties apply-fn object literal)
+(defun tp--search-register-layer-buffer (props object)
+  "Record OBJECT in the reactive buffer registry for PROPS's layers.
+When OBJECT is a buffer or nil (the current buffer) and the applied
+PROPS carry a `tp-name' - directly, or inside a `tp-layers' entry
+from a group application - register that buffer under each layer name
+via `tp-reactive--register-layer-buffer', so reactive updates keep
+visiting buffers written through the pattern-apply paths.  String
+OBJECTs are not registered; see `tp-reactive-layer-buffers' for that
+gap."
+  (when (or (null object) (bufferp object))
+    (let ((buf (or object (current-buffer))))
+      (when-let ((name (plist-get props 'tp-name)))
+        (tp-reactive--register-layer-buffer name buf))
+      (dolist (layer (plist-get props 'tp-layers))
+        (when-let ((name (plist-get layer 'tp-name)))
+          (tp-reactive--register-layer-buffer name buf))))))
+
+(defun tp--pattern-apply-single (pattern properties apply-fn object literal
+                                         &optional start end subexp)
   "Apply APPLY-FN to matches of single PATTERN in OBJECT.
 When LITERAL is non-nil, PATTERN is matched literally; otherwise it
 is a regexp.  APPLY-FN is called with (START END PROPS OBJECT) for
 each match.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped (matching the buffer path's historical narrow-to-region
+behavior, now uniform across object types).  Matching behaves as if
+OBJECT consisted only of that portion (the buffer path narrows, the
+string path matches against the substring), so no match crosses the
+boundaries.
+When SUBEXP is non-nil, it names a capture group of PATTERN: the
+properties and returned regions cover (match-beginning SUBEXP) to
+\(match-end SUBEXP) of each match, and a match in which that group
+does not participate contributes nothing.  The scan still advances
+past the whole match.  A SUBEXP larger than PATTERN's group count
+\(per `regexp-opt-depth') signals an error instead of silently
+matching nothing.
 For strings, returns a NEW string with properties applied
 \(non-destructive).
 For buffers, modifies in-place and returns list of regions.
@@ -36,17 +70,37 @@ Zero-width matches (an empty literal pattern, or a regexp that can
 match the empty string) are recorded and the scan advances one
 position past them, so the search always terminates."
   (let ((regexp (if literal (regexp-quote pattern) pattern)))
+    ;; Reversed bounds are swapped, not signaled: the buffer path's
+    ;; narrow-to-region always did this, so the string path follows.
+    (when (and start end (> start end))
+      (cl-rotatef start end))
+    ;; A group number beyond the pattern's group count could never
+    ;; match; make the typo loud instead of a silent no-op.
+    (when (and subexp (> subexp (regexp-opt-depth regexp)))
+      (error "Regexp %S has no group %d" pattern subexp))
     (cond
      ;; String object
      ((stringp object)
-      ;; First, collect all match positions from the original string
-      (let ((matches nil)
-            (pos 0)
-            (limit (length object)))
-        (while (and (<= pos limit) (string-match regexp object pos))
+      ;; First, collect all match positions from the original string.
+      ;; Bounded searches run against the substring so matches cannot
+      ;; cross the [START, END) boundaries; positions are shifted back
+      ;; into whole-string coordinates afterwards.
+      (let* ((from (max (or start 0) 0))
+             (to (min (or end (length object)) (length object)))
+             (searchable (if (and (= from 0) (= to (length object)))
+                             object
+                           (substring object from to)))
+             (matches nil)
+             (pos 0)
+             (limit (- to from)))
+        (while (and (<= pos limit) (string-match regexp searchable pos))
           (let ((beg (match-beginning 0))
-                (end (match-end 0)))
-            (push (cons beg end) matches)
+                (end (match-end 0))
+                (sub-beg (match-beginning (or subexp 0)))
+                (sub-end (match-end (or subexp 0))))
+            ;; A group that does not participate contributes nothing.
+            (when sub-beg
+              (push (cons (+ from sub-beg) (+ from sub-end)) matches))
             (setq pos (if (= beg end) (1+ beg) end))))
         ;; Apply function to each match in order (reverse to get correct order)
         ;; Make a copy to ensure original string is not modified
@@ -62,26 +116,38 @@ position past them, so the search always terminates."
       (let ((buf (or object (current-buffer))))
         (tp-with-current-buffer buf
           (save-excursion
-            (goto-char (point-min))
-            (let (regions (keep-going t))
-              (while (and keep-going (re-search-forward regexp nil t))
-                (let ((beg (match-beginning 0))
-                      (end (match-end 0)))
-                  (when properties
-                    (funcall apply-fn beg end properties buf))
-                  (push (cons beg end) regions)
-                  ;; Guard against zero-width matches looping forever
-                  (when (= beg end)
-                    (if (eobp)
-                        (setq keep-going nil)
-                      (forward-char 1)))))
-              (nreverse regions)))))))))
+            (save-restriction
+              (when (or start end)
+                (narrow-to-region (max (or start (point-min)) (point-min))
+                                  (min (or end (point-max)) (point-max))))
+              (goto-char (point-min))
+              (let (regions (keep-going t))
+                (while (and keep-going (re-search-forward regexp nil t))
+                  (let ((beg (match-beginning 0))
+                        (end (match-end 0))
+                        (sub-beg (match-beginning (or subexp 0)))
+                        (sub-end (match-end (or subexp 0))))
+                    ;; A group that does not participate contributes nothing.
+                    (when sub-beg
+                      (when properties
+                        (funcall apply-fn sub-beg sub-end properties buf))
+                      (push (cons sub-beg sub-end) regions))
+                    ;; Guard against zero-width matches looping forever
+                    (when (= beg end)
+                      (if (eobp)
+                          (setq keep-going nil)
+                        (forward-char 1)))))
+                (nreverse regions))))))))))
 
-(defun tp--pattern-apply (pattern properties apply-fn object literal)
+(defun tp--pattern-apply (pattern properties apply-fn object literal
+                                  &optional start end subexp)
   "Apply APPLY-FN to matches of PATTERN (one pattern or a list).
 When LITERAL is non-nil, patterns are matched literally; otherwise
 they are regexps.  APPLY-FN is called with (START END PROPS OBJECT)
 for each match.
+START and END restrict matching to [START, END) in native
+coordinates; SUBEXP names a capture group to target (see
+`tp--pattern-apply-single').
 For strings, returns a NEW string with properties applied
 \(non-destructive).
 For buffers, returns list of regions."
@@ -92,47 +158,59 @@ For buffers, returns list of regions."
       (let ((result object))
         (dolist (p patterns)
           (setq result (tp--pattern-apply-single p properties apply-fn
-                                                 result literal)))
+                                                 result literal
+                                                 start end subexp)))
         result))
      ;; Buffer or nil (current buffer)
      (t
       (let ((all-regions nil))
         (dolist (p patterns)
           (let ((regions (tp--pattern-apply-single p properties apply-fn
-                                                   object literal)))
+                                                   object literal
+                                                   start end subexp)))
             (setq all-regions (append all-regions regions))))
         all-regions)))))
 
-(defun tp--match-apply-single (pattern properties apply-fn object)
+(defun tp--match-apply-single (pattern properties apply-fn object
+                                       &optional start end)
   "Apply APPLY-FN to literal matches of single PATTERN in OBJECT.
+START and END restrict matching to [START, END) in native coordinates.
 For strings, returns a new string with properties applied (non-destructive).
 For buffers, modifies in-place and returns list of regions."
-  (tp--pattern-apply-single pattern properties apply-fn object t))
+  (tp--pattern-apply-single pattern properties apply-fn object t start end))
 
-(defun tp--match-apply (pattern properties apply-fn &optional object)
+(defun tp--match-apply (pattern properties apply-fn &optional object start end)
   "Internal function to apply APPLY-FN to matches of PATTERN.
 PATTERN can be a string or a list of strings (multiple patterns).
 When PATTERN is a list, each element is a pattern to match.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
+START and END restrict matching to [START, END) in native coordinates.
 For strings, returns a NEW string with properties applied (non-destructive).
 For buffers, returns list of regions."
-  (tp--pattern-apply pattern properties apply-fn object t))
+  (tp--pattern-apply pattern properties apply-fn object t start end))
 
-(defun tp--regexp-apply-single (pattern properties apply-fn object)
+(defun tp--regexp-apply-single (pattern properties apply-fn object
+                                        &optional start end subexp)
   "Apply APPLY-FN to regexp matches of single PATTERN in OBJECT.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
+START and END restrict matching to [START, END) in native
+coordinates; SUBEXP names a capture group to target.
 For strings, returns a NEW string with properties applied (non-destructive).
 For buffers, modifies in-place and returns list of regions."
-  (tp--pattern-apply-single pattern properties apply-fn object nil))
+  (tp--pattern-apply-single pattern properties apply-fn object nil
+                            start end subexp))
 
-(defun tp--regexp-apply (pattern properties apply-fn &optional object)
+(defun tp--regexp-apply (pattern properties apply-fn
+                                 &optional object start end subexp)
   "Internal function to apply APPLY-FN to regexp matches of PATTERN.
 PATTERN can be a string (single regexp) or a list of strings (multiple regexps).
 When PATTERN is a list, each element is a regexp to match.
 APPLY-FN is called with (START END PROPS OBJECT) for each match.
+START and END restrict matching to [START, END) in native
+coordinates; SUBEXP names a capture group to target.
 For strings, returns a NEW string with properties applied (non-destructive).
 For buffers, returns list of regions."
-  (tp--pattern-apply pattern properties apply-fn object nil))
+  (tp--pattern-apply pattern properties apply-fn object nil start end subexp))
 
 (defun tp--deep-merge-apply (start end props obj)
   "Apply PROPS to OBJ from START to END with deep merge.
@@ -142,7 +220,10 @@ For buffers, modifies in-place."
   (if (stringp obj)
       ;; For strings: create a new propertized string using tp--apply-props-to-string with :add mode
       (tp--apply-props-to-string obj start end props :add)
-    ;; For buffers: modify in-place
+    ;; For buffers: modify in-place.  This path stamps `tp-name' for
+    ;; resolved layer applications, so the buffer must be registered
+    ;; in the reactive registry or later updates would skip it (REG-1).
+    (tp--search-register-layer-buffer props obj)
     (let ((pos start))
       (while (< pos end)
         (let* ((current-props (text-properties-at pos obj))
@@ -165,10 +246,10 @@ For buffers, modifies in-place."
           (setq pos next-pos))))
     obj))
 
-(defun tp-match-set (pattern plist &optional object)
+(defun tp-match-set (pattern plist &optional object start end)
   "Set properties on all occurrences of PATTERN.
 
-  (tp-match-set PATTERN PLIST &optional OBJECT)
+  (tp-match-set PATTERN PLIST &optional OBJECT START END)
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
 Each pattern will be matched and have properties applied.
@@ -176,30 +257,42 @@ PLIST is a property list like \\='(face bold help-echo \"tip\"),
 or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.  Matching behaves as if OBJECT consisted only of that
+portion, so no match crosses the boundaries.
 
 Returns:
-- For strings: the modified string
+- For strings: a NEW string with properties applied (the original
+  string is not modified)
 - For buffers: list of (START . END) pairs for all matches."
-  (tp--match-apply pattern (tp--ensure-props plist) #'tp-set object))
+  (tp--match-apply pattern (tp--ensure-props plist) #'tp-set object
+                   start end))
 
-(defun tp-match-reset (pattern plist &optional object)
+(defun tp-match-reset (pattern plist &optional object start end)
   "Reset (completely replace) properties on all occurrences of PATTERN.
 
-  (tp-match-reset PATTERN PLIST &optional OBJECT)
+  (tp-match-reset PATTERN PLIST &optional OBJECT START END)
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
 PLIST is a property list like \\='(face bold help-echo \"tip\"),
 or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
 
 Unlike `tp-match-set', this completely replaces all existing properties.
 
 For strings, returns a NEW string (original is not modified).
-For buffers, modifies in-place and returns list of regions."
+For buffers, modifies in-place and returns list of (START . END)
+regions."
   (tp--match-apply pattern (tp--ensure-props plist)
                    #'tp--reset-apply
-                   object))
+                   object start end))
 
 (defun tp--reset-apply (start end props obj)
   "Apply PROPS to OBJ from START to END, completely replacing existing properties.
@@ -208,26 +301,38 @@ For buffers, modifies in-place."
   (if (stringp obj)
       (tp--apply-props-to-string obj start end props :reset)
     (set-text-properties start end props obj)
+    ;; A resolved layer application stamps `tp-name': register the
+    ;; buffer so reactive updates keep visiting it (REG-1).
+    (tp--search-register-layer-buffer props obj)
     obj))
 
-(defun tp-match-add (pattern plist &optional object)
+(defun tp-match-add (pattern plist &optional object start end)
   "Add/update properties on all occurrences of PATTERN.
 
-  (tp-match-add PATTERN PLIST &optional OBJECT)
+  (tp-match-add PATTERN PLIST &optional OBJECT START END)
 
 PATTERN is a string (single pattern) or list of strings (multiple patterns).
 PLIST is a property list like \\='(face bold help-echo \"tip\"),
 or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
 
-Unlike `tp-match-set', this deeply merges nested properties."
-  (tp--match-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply object))
+Unlike `tp-match-set', this deeply merges nested properties.
 
-(defun tp-regexp-set (pattern plist &optional object)
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place and returns list of (START . END)
+regions."
+  (tp--match-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply
+                   object start end))
+
+(defun tp-regexp-set (pattern plist &optional object start end subexp)
   "Set properties on all matches of PATTERN (regexp).
 
-  (tp-regexp-set PATTERN PLIST &optional OBJECT)
+  (tp-regexp-set PATTERN PLIST &optional OBJECT START END SUBEXP)
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
 Each pattern will be matched and have properties applied.
@@ -235,65 +340,157 @@ PLIST is a property list like \\='(face bold help-echo \"tip\"),
 or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.  Matching behaves as if OBJECT consisted only of that
+portion, so no match crosses the boundaries.
+When SUBEXP is non-nil, it names a capture group of PATTERN (1 for
+the first group, like font-lock highlights): properties apply to that
+group of each match instead of the whole match, and a match in which
+the group does not participate contributes nothing.  A SUBEXP larger
+than PATTERN's group count signals an error.
 
 Returns:
-- For strings: the modified string
+- For strings: a NEW string with properties applied (the original
+  string is not modified)
 - For buffers: list of (START . END) pairs for all matches."
-  (tp--regexp-apply pattern (tp--ensure-props plist) #'tp-set object))
+  (tp--regexp-apply pattern (tp--ensure-props plist) #'tp-set object
+                    start end subexp))
 
-(defun tp-regexp-reset (pattern plist &optional object)
+(defun tp-regexp-reset (pattern plist &optional object start end subexp)
   "Reset (completely replace) properties on all regexp matches of PATTERN.
 
-  (tp-regexp-reset PATTERN PLIST &optional OBJECT)
+  (tp-regexp-reset PATTERN PLIST &optional OBJECT START END SUBEXP)
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
 PLIST is a property list like \\='(face bold help-echo \"tip\"),
 or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
+When SUBEXP is non-nil, properties apply to that capture group of
+each match instead of the whole match; a match in which the group
+does not participate contributes nothing.  A SUBEXP larger than
+PATTERN's group count signals an error.
 
 Unlike `tp-regexp-set', this completely replaces all existing properties.
 
 For strings, returns a NEW string (original is not modified).
-For buffers, modifies in-place and returns list of regions."
+For buffers, modifies in-place and returns list of (START . END)
+regions."
   (tp--regexp-apply pattern (tp--ensure-props plist)
                     #'tp--reset-apply
-                    object))
+                    object start end subexp))
 
-(defun tp-regexp-add (pattern plist &optional object)
+(defun tp-regexp-add (pattern plist &optional object start end subexp)
   "Add/update properties on all regexp matches of PATTERN.
 
-  (tp-regexp-add PATTERN PLIST &optional OBJECT)
+  (tp-regexp-add PATTERN PLIST &optional OBJECT START END SUBEXP)
 
 PATTERN is a string (single regexp) or list of strings (multiple regexps).
 PLIST is a property list like \\='(face bold help-echo \"tip\"),
 or a symbol representing a layer/group name defined by `define-tp'
 or `define-tp-group'.
 OBJECT is a buffer or string; nil means current buffer.
+START and END restrict matching to the [START, END) portion of
+OBJECT, in native coordinates (0-based for strings, 1-based for
+buffers); nil means the object's bounds.  If START > END the bounds
+are swapped.
+When SUBEXP is non-nil, properties apply to that capture group of
+each match instead of the whole match; a match in which the group
+does not participate contributes nothing.  A SUBEXP larger than
+PATTERN's group count signals an error.
 
-Unlike `tp-regexp-set', this deeply merges nested properties."
-  (tp--regexp-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply object))
+Unlike `tp-regexp-set', this deeply merges nested properties.
+
+For strings, returns a NEW string (original is not modified).
+For buffers, modifies in-place and returns list of (START . END)
+regions."
+  (tp--regexp-apply pattern (tp--ensure-props plist) #'tp--deep-merge-apply
+                    object start end subexp))
 
 (defun tp-search-forward (property &optional value predicate not-current)
-  "Search forward for text with PROPERTY.
-Wraps `text-property-search-forward'."
+  "Search forward from point for text whose PROPERTY matches VALUE.
+This is a raw wrapper: PROPERTY, VALUE, PREDICATE and NOT-CURRENT are
+passed unchanged to `text-property-search-forward', whose semantics
+apply in full - including the primitive's nil-PREDICATE default of
+matching values that are non-nil and NOT `equal' to VALUE.  On
+success point moves to the end of the matched region and a prop-match
+object is returned; otherwise nil.
+
+Obsolete since tp 0.3.0: call `tp-forward' for tp's `equal'-matching
+search (which also supports string OBJECTs and repeat counts), or
+call the Emacs primitive `text-property-search-forward' directly for
+raw use - this wrapper adds nothing to it."
   (text-property-search-forward property value predicate not-current))
+(make-obsolete 'tp-search-forward 'tp-forward "0.3.0")
 
 (defun tp-search-backward (property &optional value predicate not-current)
-  "Search backward for text with PROPERTY.
-Wraps `text-property-search-backward'."
-  (text-property-search-backward property value predicate not-current))
+  "Search backward from point for text whose PROPERTY matches VALUE.
+This is a raw wrapper: PROPERTY, VALUE, PREDICATE and NOT-CURRENT are
+passed unchanged to `text-property-search-backward', whose semantics
+apply in full - including the primitive's nil-PREDICATE default of
+matching values that are non-nil and NOT `equal' to VALUE.  On
+success point moves to the beginning of the matched region and a
+prop-match object is returned; otherwise nil.
 
-(defun tp--property-search-backward (property value)
-  "Search backward for the previous region where PROPERTY `equal's VALUE.
+Obsolete since tp 0.3.0: call `tp-backward' for tp's `equal'-matching
+search (which also supports string OBJECTs and repeat counts), or
+call the Emacs primitive `text-property-search-backward' directly for
+raw use - this wrapper adds nothing to it."
+  (text-property-search-backward property value predicate not-current))
+(make-obsolete 'tp-search-backward 'tp-backward "0.3.0")
+
+(defun tp--property-match-p (value prop-value predicate)
+  "Return non-nil when PROP-VALUE matches VALUE under PREDICATE.
+PREDICATE follows the convention tp uses for
+`text-property-search-forward': nil and t both mean the values must
+be `equal' (tp's 0.2.0 symmetric matching contract); a function is
+called with VALUE and PROP-VALUE and matches when it returns
+non-nil."
+  (if (functionp predicate)
+      (funcall predicate value prop-value)
+    (equal value prop-value)))
+
+(defun tp--string-property-matches (string property value predicate)
+  "Collect PROPERTY runs of STRING matching VALUE under PREDICATE.
+Returns a list of (START END VALUE) lists with 0-based positions.  A
+run is a maximal stretch with one `eq' PROPERTY value, and it matches
+when `tp--property-match-p' accepts that value.  Adjacent matching
+runs with different values stay separate entries, mirroring how
+`text-property-search-forward' ends a match where the property value
+changes when a non-nil predicate is given."
+  (let ((results nil))
+    (tp--map-intervals
+     string 0 (length string)
+     (lambda (beg end val)
+       (when (tp--property-match-p value val predicate)
+         (push (list beg end val) results))
+       nil)
+     property)
+    (nreverse results)))
+
+(defun tp--property-search-backward (property value
+                                              &optional predicate not-current)
+  "Search backward for the previous region where PROPERTY matches VALUE.
 
 This is the backward mirror of (text-property-search-forward PROPERTY
-VALUE t): a region matches when its PROPERTY value is `equal' to
-VALUE.  It deliberately does not call
+VALUE t): by default a region matches when its PROPERTY value is
+`equal' to VALUE.  It deliberately does not call
 `text-property-search-backward' with predicate t, because that
 primitive's non-default-predicate branch skips every other property
 run when non-matching runs intervene (observed through Emacs 30.2),
 silently missing valid matches.
+
+PREDICATE follows `tp--property-match-p': nil and t both mean `equal'
+matching (the 0.2.0 contract); a function is called with VALUE and
+the region's PROPERTY value.  When NOT-CURRENT is non-nil, the
+matching region containing point (or ending exactly at point) is
+skipped, mirroring the primitive's NOT-CURRENT argument.
 
 If a matching region is found, move point to its beginning and
 return a `prop-match' object whose end is clipped to the starting
@@ -308,7 +505,10 @@ matching region).  Otherwise return nil and leave point alone."
       (tp--map-intervals
        (current-buffer) (point-min) origin
        (lambda (ibeg iend val)
-         (when (equal value val)
+         (when (and (tp--property-match-p value val predicate)
+                    ;; With NOT-CURRENT, the run point is inside (or
+                    ;; just after) is not a candidate.
+                    (not (and not-current (= iend origin))))
            (setq found (list ibeg iend val)))
          nil)
        property)
@@ -318,14 +518,40 @@ matching region).  Otherwise return nil and leave point alone."
                          :end (cadr found)
                          :value (caddr found))))))
 
-(defun tp-forward (property &optional value object n)
+(defun tp-forward (property &optional value object n predicate not-current)
   "Search forward N times for text with PROPERTY.
-Returns prop-match for buffers or list of (START END VALUE) for strings."
+
+VALUE is the optional value to match; N is the number of searches,
+defaulting to 1.
+OBJECT can be a buffer or string; nil defaults to current buffer.
+PREDICATE customizes matching: nil (the default) and t both keep the
+0.2.0 contract where a region matches when its PROPERTY value is
+`equal' to VALUE; a function is called with VALUE and the region's
+PROPERTY value and matches when it returns non-nil.  For buffers it
+is passed to `text-property-search-forward'.
+NOT-CURRENT is passed to `text-property-search-forward' and, when
+non-nil, makes the search skip a matching region containing point.
+It only applies to the buffer path; strings have no point, so it is
+ignored there.
+
+For buffers, each search starts from point and each successful one
+moves point to the end of its matched region; the return value is
+the prop-match object of the N-th search, or nil when that search
+found nothing.
+
+For strings, point is not involved at all: the return value is the
+list of the FIRST N matching regions counted from position 0 of the
+string, each a (START END VALUE) list with 0-based positions - not
+the N-th match alone.  Fewer than N matches return however many
+exist."
   (let ((count (or n 1)))
     (cond
-     ;; String object - use tp-search
+     ;; String object - use tp-search (or the predicate-aware matcher)
      ((stringp object)
-      (let ((matches (tp-search object property value)))
+      (let ((matches (if (functionp predicate)
+                         (tp--string-property-matches object property
+                                                      value predicate)
+                       (tp-search object property value))))
         (seq-take matches count)))
      ;; Buffer or nil
      (t
@@ -333,26 +559,41 @@ Returns prop-match for buffers or list of (START END VALUE) for strings."
             (buf (or object (current-buffer))))
         (tp-with-current-buffer buf
           (dotimes (_ count)
-            (setq result (tp-search-forward property value t))))
+            (setq result (text-property-search-forward
+                          property value
+                          (if (functionp predicate) predicate t)
+                          not-current))))
         result)))))
 
-(defun tp-backward (property &optional value object n)
+(defun tp-backward (property &optional value object n predicate not-current)
   "Search backward N times for text with PROPERTY.
 
 N is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
+PREDICATE customizes matching: nil (the default) and t both keep the
+0.2.0 contract where a region matches when its PROPERTY value is
+`equal' to VALUE; a function is called with VALUE and the region's
+PROPERTY value and matches when it returns non-nil.
+NOT-CURRENT, when non-nil, skips a matching region containing point
+\(or ending exactly at point), mirroring
+`text-property-search-backward'.  It only applies to the buffer
+path; strings have no point, so it is ignored there.
 
 For buffers, returns the prop-match object from the last successful search.
 For strings, returns a list of (START END VALUE) for the last N matches
 in reverse order (from end to start).
 
-Uses `tp-search-backward' for buffers and `tp-search' for strings."
+Uses `tp--property-search-backward' for buffers and `tp-search' (or
+the predicate-aware matcher) for strings."
   (let ((count (or n 1)))
     (cond
      ;; String object - use tp-search and reverse
      ((stringp object)
-      (let ((matches (nreverse (tp-search object property value))))
+      (let ((matches (nreverse (if (functionp predicate)
+                                   (tp--string-property-matches
+                                    object property value predicate)
+                                 (tp-search object property value)))))
         (seq-take matches count)))
      ;; Buffer or nil
      (t
@@ -360,14 +601,17 @@ Uses `tp-search-backward' for buffers and `tp-search' for strings."
             (buf (or object (current-buffer))))
         (tp-with-current-buffer buf
           (dotimes (_ count)
-            ;; `equal' matching, mirroring the predicate t that
-            ;; `tp-forward' passes.  The previous code used the default
-            ;; nil predicate, which matches values NOT `equal' to VALUE
-            ;; and so inverted the match when VALUE was non-nil.
-            (setq result (tp--property-search-backward property value))))
+            ;; `equal' matching by default, mirroring the predicate t
+            ;; that `tp-forward' passes.  The previous code used the
+            ;; default nil predicate, which matches values NOT `equal'
+            ;; to VALUE and so inverted the match when VALUE was
+            ;; non-nil.
+            (setq result (tp--property-search-backward
+                          property value predicate not-current))))
         result)))))
 
-(defun tp--forward-do (function property &optional value object times start end)
+(defun tp--forward-do (function property &optional value object times
+                                start end predicate not-current)
   "Internal: search forward TIMES for PROPERTY, call FUNCTION on last match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
@@ -376,6 +620,8 @@ TIMES is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
 START and END define the search range; defaults are object start and end.
+PREDICATE and NOT-CURRENT are passed to each underlying search (see
+`tp-forward'); nil PREDICATE keeps the 0.2.0 `equal' matching.
 
 FUNCTION is called only when the TIMES-th match exists; if fewer
 matches are available, nothing is applied.
@@ -386,7 +632,10 @@ Returns the number of matches found (at most TIMES)."
      ((stringp object)
       (let* ((start-pos (or start 0))
              (end-pos (or end (length object)))
-             (all-matches (tp-search object property value))
+             (all-matches (if (functionp predicate)
+                              (tp--string-property-matches object property
+                                                           value predicate)
+                            (tp-search object property value)))
              (filtered-matches (seq-filter (lambda (m)
                                              (and (>= (car m) start-pos)
                                                   (<= (cadr m) end-pos)))
@@ -408,7 +657,10 @@ Returns the number of matches found (at most TIMES)."
             (save-excursion
               (goto-char search-start)
               (dotimes (i count)
-                (when-let ((match (tp-search-forward property value t)))
+                (when-let ((match (text-property-search-forward
+                                   property value
+                                   (if (functionp predicate) predicate t)
+                                   not-current)))
                   (when (<= (prop-match-end match) search-end)
                     (when (= i (1- count))
                       (funcall function match buf))
@@ -483,8 +735,14 @@ length-changing replacements" new-text (length new-text) len))
             (goto-char m-start)
             (insert new-text)))))))
 
-(defun tp-forward-do (function property &optional value object times start end)
-  "Search forward for text with PROPERTY and apply FUNCTION to the last match.
+(defun tp-forward-do (function property &optional value object times
+                               start end predicate not-current)
+  "Search forward TIMES times for PROPERTY; apply FUNCTION at the Nth match.
+
+Despite the -do suffix this is NOT a for-each: the search advances
+through TIMES matches and FUNCTION is applied only to the final
+\(TIMES-th) one.  Use `tp-search-map' to apply a function to EVERY
+match.
 
 FUNCTION receives (TEXT &optional START END) where TEXT is the matched text,
 START and END are the positions of the match.  The return value of FUNCTION
@@ -497,6 +755,13 @@ OBJECT can be a buffer or string; nil defaults to current buffer.
 TIMES is the number of searches, defaulting to 1.  The function searches
 TIMES times but only applies FUNCTION to the last (Nth) match found.
 START and END define the search range; defaults are object start and end.
+PREDICATE customizes matching: nil (the default) and t both keep the
+0.2.0 contract where a region matches when its PROPERTY value is
+`equal' to VALUE; a function is called with VALUE and the region's
+PROPERTY value and matches when it returns non-nil.
+NOT-CURRENT is passed to each underlying
+`text-property-search-forward' call; it only applies to the buffer
+path (strings have no point).
 
 Returns the number of successful matches.
 
@@ -523,9 +788,10 @@ Example:
     (tp--forward-do
      (lambda (match obj)
        (tp--replace-match-text function arity match obj))
-     property value object times start end)))
+     property value object times start end predicate not-current)))
 
-(defun tp--backward-do (function property &optional value object times start end)
+(defun tp--backward-do (function property &optional value object times
+                                 start end predicate not-current)
   "Internal: search backward TIMES for PROPERTY, call FUNCTION on last match.
 
 FUNCTION receives two arguments: the prop-match object (or list for strings)
@@ -534,6 +800,8 @@ TIMES is the number of searches, defaulting to 1.
 VALUE is the optional value to match.
 OBJECT can be a buffer or string; nil defaults to current buffer.
 START and END define the search range; defaults are object start and end.
+PREDICATE and NOT-CURRENT are passed to each underlying search (see
+`tp-backward'); nil PREDICATE keeps the 0.2.0 `equal' matching.
 
 FUNCTION is called only when the TIMES-th match exists; if fewer
 matches are available, nothing is applied.
@@ -544,7 +812,10 @@ Returns the number of matches found (at most TIMES)."
      ((stringp object)
       (let* ((start-pos (or start 0))
              (end-pos (or end (length object)))
-             (all-matches (tp-search object property value))
+             (all-matches (if (functionp predicate)
+                              (tp--string-property-matches object property
+                                                           value predicate)
+                            (tp-search object property value)))
              (filtered-matches
               (seq-filter (lambda (m)
                             (and (>= (car m) start-pos)
@@ -565,16 +836,24 @@ Returns the number of matches found (at most TIMES)."
             (save-excursion
               (goto-char search-end)
               (dotimes (i count)
-                ;; `equal' matching, same as tp--forward-do's predicate t.
-                (when-let ((match (tp--property-search-backward property value)))
+                ;; `equal' matching by default, same as tp--forward-do's
+                ;; predicate t.
+                (when-let ((match (tp--property-search-backward
+                                   property value predicate not-current)))
                   (when (>= (prop-match-beginning match) search-start)
                     (when (= i (1- count))
                       (funcall function match buf))
                     (cl-incf matches)))))))
         matches)))))
 
-(defun tp-backward-do (function property &optional value object times start end)
-  "Search backward for text with PROPERTY and apply FUNCTION to the last match.
+(defun tp-backward-do (function property &optional value object times
+                                start end predicate not-current)
+  "Search backward TIMES times for PROPERTY; apply FUNCTION at the Nth match.
+
+Despite the -do suffix this is NOT a for-each: the search walks back
+through TIMES matches and FUNCTION is applied only to the final
+\(TIMES-th) one.  Use `tp-search-map' to apply a function to EVERY
+match.
 
 FUNCTION receives (TEXT &optional START END) where TEXT is the matched text,
 START and END are the positions of the match.  The return value of FUNCTION
@@ -587,6 +866,13 @@ OBJECT can be a buffer or string; nil defaults to current buffer.
 TIMES is the number of searches, defaulting to 1.  The function searches
 TIMES times but only applies FUNCTION to the last (Nth) match found.
 START and END define the search range; defaults are object start and end.
+PREDICATE customizes matching: nil (the default) and t both keep the
+0.2.0 contract where a region matches when its PROPERTY value is
+`equal' to VALUE; a function is called with VALUE and the region's
+PROPERTY value and matches when it returns non-nil.
+NOT-CURRENT, when non-nil, skips a matching region containing point
+on each underlying search; it only applies to the buffer path
+\(strings have no point).
 
 Returns the number of successful matches.
 
@@ -613,7 +899,7 @@ Example:
     (tp--backward-do
      (lambda (match obj)
        (tp--replace-match-text function arity match obj))
-     property value object times start end)))
+     property value object times start end predicate not-current)))
 
 (defun tp-search (start-or-string
                   &optional end-or-property property-or-value value object)

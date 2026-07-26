@@ -29,9 +29,6 @@
   :prefix "tp-"
   :group 'development)
 
-(defvar tp--anonymous-layer-counter 0
-  "Counter for generating unique anonymous layer names.")
-
 (defcustom tp-debug-mode nil
   "When non-nil, enable debug logging for reactive updates.
 Debug messages are logged to the *tp-debug* buffer and optionally
@@ -68,7 +65,8 @@ If nil, debug messages are only logged to the *tp-debug* buffer."
     ;; Misc
     yank-handler auto-composed evaporate face-alias)
   "List of built-in Emacs text property names.
-These property names are reserved and cannot be used as layer names in `define-tp'.
+These property names are reserved and cannot be used as layer names
+in `define-tp'.
 An error is signaled at macro expansion time (when the `define-tp' form is
 evaluated) if a reserved name is used, preventing the layer definition from
 being created.")
@@ -95,6 +93,7 @@ FORMAT-STRING and ARGS are passed to `format'."
       (when tp-debug-echo
         (message "[tp] %s" msg)))))
 
+;;;###autoload
 (defun tp-debug-clear ()
   "Clear the *tp-debug* buffer."
   (interactive)
@@ -102,15 +101,11 @@ FORMAT-STRING and ARGS are passed to `format'."
     (with-current-buffer buf
       (erase-buffer))))
 
+;;;###autoload
 (defun tp-debug-show ()
   "Show the *tp-debug* buffer."
   (interactive)
   (pop-to-buffer (get-buffer-create "*tp-debug*")))
-
-(defun tp--generate-anonymous-layer-name ()
-  "Generate a unique symbol for anonymous reactive layers."
-  (setq tp--anonymous-layer-counter (1+ tp--anonymous-layer-counter))
-  (intern (format "tp-anon-%d" tp--anonymous-layer-counter)))
 
 (defmacro tp-with-current-buffer (buffer-or-name &rest body)
   "Execute BODY in BUFFER-OR-NAME with `inhibit-read-only' bound to t."
@@ -119,19 +114,28 @@ FORMAT-STRING and ARGS are passed to `format'."
      (let ((inhibit-read-only t))
        ,@body)))
 
-(defun tp-intervals (start end &optional object)
+(defun tp-intervals (start end &optional object absolute)
   "Return list of property intervals from START to END in OBJECT.
-Each element is (START END PROPERTIES). OBJECT defaults to current buffer.
-For buffers, returns positions relative to START (0-based offsets).
-For strings, returns absolute positions.
+Each element is (START END PROPERTIES).  OBJECT defaults to current
+buffer.
+For buffers, positions are by default relative to START (0-based
+offsets, the legacy convention).  When ABSOLUTE is non-nil they are
+native 1-based buffer positions instead, directly reusable in other
+tp calls (`tp-set', `tp-remove', ...) without offset arithmetic.
+For strings, positions are always absolute (0-based); ABSOLUTE
+changes nothing.
 Intervals that extend beyond the requested range are clipped to it, so
 returned positions never fall outside [START, END)."
   (let* ((intervals (object-intervals (or object (current-buffer))))
          ;; For buffers, object-intervals returns 0-based positions
-         ;; but buffer positions are 1-based, so we need to adjust
-         (offset (if (stringp object) 0 (1- start)))
+         ;; but buffer positions are 1-based, so we need to adjust:
+         ;; subtracting (1- start) makes them START-relative, while
+         ;; subtracting -1 restores native 1-based positions.
+         (offset (cond ((stringp object) 0)
+                       (absolute -1)
+                       (t (1- start))))
          ;; Filter bounds in 0-based terms for buffers
-         (filter-start (if (stringp object) start offset))
+         (filter-start (if (stringp object) start (1- start)))
          (filter-end (if (stringp object) end (1- end))))
     (mapcar (lambda (tp)
               (let* ((tp-start (- (max (nth 0 tp) filter-start) offset))
@@ -455,7 +459,8 @@ Example:
   (tp--merge-duplicate-keys \\='(face bold face (:foreground \"red\")))
   => (face ((:foreground \"red\") bold))
 
-  (tp--merge-duplicate-keys \\='(face (:background \"blue\") face (:foreground \"red\")))
+  (tp--merge-duplicate-keys
+   \\='(face (:background \"blue\") face (:foreground \"red\")))
   => (face (:background \"blue\" :foreground \"red\"))
 
   (tp--merge-duplicate-keys \\='(prop1 a prop2 b prop1 c))
@@ -555,7 +560,8 @@ Returns a list of reactive symbols found."
 
 (defun tp--extract-reactive-value (val reactive-var)
   "Extract only the parts of VAL that use REACTIVE-VAR.
-If VAL is a plist, recursively extract only the key-value pairs containing REACTIVE-VAR.
+If VAL is a plist, recursively extract only the key-value pairs
+containing REACTIVE-VAR.
 If VAL directly contains REACTIVE-VAR, return VAL as-is.
 REACTIVE-VAR should be the $-prefixed symbol (e.g., $my-color)."
   (cond
@@ -757,9 +763,28 @@ order."
               (setq pos next)))
           (nreverse results))))))
 
-(defun tp-intervals-map (function start end &optional object)
-  "Apply FUNCTION to all intervals between START and END in OBJECT.
-FUNCTION receives (i-start i-end top-props below-props-lst)."
+(defun tp-intervals-map (function start end &optional object absolute)
+  "Apply FUNCTION to each property interval of [START, END) in OBJECT.
+
+FUNCTION is called with (I-START I-END TOP-PROPS BELOW-PROPS-LST) for
+every interval `tp-intervals' reports, splitting the layer-stack
+bookkeeping out of the raw properties:
+- TOP-PROPS is the interval's property plist with the `tp-layers'
+  entry removed: the directly rendered properties.
+- BELOW-PROPS-LST is the value of the interval's `tp-layers'
+  property: the list of stored layer plists (normally the layers
+  buried below the rendered top layer; while any layer is hidden it
+  holds the whole ordered stack - see `tp-layer-stack-at' for the
+  decoded view).  It is nil when the interval carries no layer stack.
+
+I-START/I-END follow `tp-intervals' coordinates: for buffers they
+are by default relative to START (0-based offsets, the legacy
+convention), or native 1-based buffer positions when ABSOLUTE is
+non-nil; for strings they are always absolute 0-based positions.
+OBJECT is a string, a buffer, or nil for the current buffer.
+
+Returns the list of FUNCTION's non-nil results, in interval order
+\(nil results are dropped)."
   (remove
    nil
    (mapcar
@@ -775,7 +800,7 @@ FUNCTION receives (i-start i-end top-props below-props-lst)."
         (funcall function
                  interval-start interval-end
                  top-props below-props-lst)))
-    (tp-intervals start end object))))
+    (tp-intervals start end object absolute))))
 
 (provide 'tp-core)
 ;;; tp-core.el ends here

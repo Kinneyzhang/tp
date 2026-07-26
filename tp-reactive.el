@@ -13,9 +13,10 @@
 
 ;; Reactive core of tp: storage for variable dependencies, watchers,
 ;; computed properties and data variables; registration/unregistration;
-;; the variable-watcher shell and the batching queue.  The actual
-;; re-rendering of buffers lives in tp-render.el, which installs
-;; itself via `tp--reactive-update-function' / `tp--reactive-flush-function'.
+;; the variable-watcher shell and the batching queue state.  The
+;; actual re-rendering of buffers - including the queue flush and the
+;; public `tp-with-batch-updates' macro - lives in tp-render.el, which
+;; installs itself via `tp--reactive-update-function'.
 
 ;;; Code:
 
@@ -39,6 +40,118 @@ Each element: (VAR-SYMBOL . ((LAYER-NAME . REACTIVE-PROPS) ...)).")
   "Queue of deferred reactive buffer re-renders.
 Each entry is a list (LAYER-NAME CHANGED-SYMBOLS WHERE TP-TEXT-AFFECTED).
 Entries are created and widened by `tp--queue-batch-update'.")
+
+(defvar tp--layer-buffers (make-hash-table :test 'equal)
+  "Hash table mapping layer names to buffers showing their regions.
+Keys are layer names; values are lists of buffers registered via
+`tp-reactive--register-layer-buffer'.  Reactive updates walk only
+these buffers instead of scanning `buffer-list' (see
+`tp-reactive-layer-buffers').  A key holding an empty list means
+\"known: no buffer shows this layer\", which is distinct from an
+absent key (`unknown').")
+
+(defvar tp--layer-buffers-hook-installed nil
+  "Non-nil once the registry's `kill-buffer-hook' pruner is installed.")
+
+(defun tp-reactive--install-kill-buffer-hook ()
+  "Install the global `kill-buffer-hook' pruning the buffer registry.
+Idempotent; guarded by `tp--layer-buffers-hook-installed'."
+  (unless tp--layer-buffers-hook-installed
+    (add-hook 'kill-buffer-hook #'tp-reactive--prune-killed-buffer)
+    (setq tp--layer-buffers-hook-installed t)))
+
+(defun tp-reactive--prune-killed-buffer ()
+  "Drop the buffer being killed from `tp--layer-buffers'.
+Runs on `kill-buffer-hook' with the dying buffer current.  The layer
+entries themselves are kept: an entry left with an empty list means
+\"known: no buffer shows this layer\", not `unknown'."
+  (let ((buf (current-buffer)))
+    (maphash (lambda (layer bufs)
+               (when (memq buf bufs)
+                 (puthash layer (delq buf bufs) tp--layer-buffers)))
+             tp--layer-buffers)))
+
+(defun tp-reactive--register-layer-buffer (layer-name buffer)
+  "Register BUFFER as showing regions of layer LAYER-NAME.
+Idempotent: registering the same live BUFFER again keeps a single
+entry.  Dead buffers and a nil LAYER-NAME are ignored.  Installs the
+`kill-buffer-hook' pruner on first use.  See
+`tp-reactive-layer-buffers' for the consumer side of the registry."
+  (when (and layer-name (buffer-live-p buffer))
+    (tp-reactive--install-kill-buffer-hook)
+    (let ((bufs (gethash layer-name tp--layer-buffers)))
+      (unless (memq buffer bufs)
+        (puthash layer-name (cons buffer bufs) tp--layer-buffers)))))
+
+(defun tp-reactive-layer-buffers (layer-name)
+  "Return the live buffers registered as showing layer LAYER-NAME.
+Return a list of live buffers - possibly empty, meaning \"known: no
+buffer shows this layer\" - or the symbol `unknown' when LAYER-NAME
+has no registry entry at all.  Killed buffers still recorded in the
+registry are dropped lazily by this accessor.
+
+KNOWN GAP: inserting an already-propertized STRING into a buffer
+bypasses the buffer operations that register buffers, so such a
+buffer is missing here until a reactive update's full-scan fallback
+finds it or `tp-reactive-track-buffer' is called on it."
+  (let ((bufs (gethash layer-name tp--layer-buffers 'unknown)))
+    (if (eq bufs 'unknown)
+        'unknown
+      (let ((live (cl-remove-if-not #'buffer-live-p bufs)))
+        (unless (= (length live) (length bufs))
+          (puthash layer-name live tp--layer-buffers))
+        live))))
+
+(defun tp-reactive--buffer-layer-names (&optional buffer)
+  "Return the layer names present in BUFFER, in buffer order.
+BUFFER defaults to the current buffer; a dead BUFFER yields nil.
+Stack-aware: a layer counts as present when its name is the direct
+`tp-name' text property of a run (the rendered top layer) or the
+`tp-name' of any layer plist inside the run's `tp-layers'
+stack-storage property (layers buried below the top, or hidden - see
+tp-stack.el).  The `tp-layers' value is read as a plain list of
+plists, so this helper stays below the stack module.  Names are
+deduplicated with `equal'.  This is the shared scan behind
+`tp-reactive-track-buffer' and the anonymous-layer GC's liveness
+test `tp--buffer-has-layer-region-p'."
+  (let ((buf (or buffer (current-buffer)))
+        (found nil))
+    (when (buffer-live-p buf)
+      (tp--map-intervals
+       buf nil nil
+       (lambda (_start _end props)
+         (let ((direct (plist-get props 'tp-name)))
+           (when (and direct (not (member direct found)))
+             (push direct found)))
+         (dolist (layer (plist-get props 'tp-layers))
+           (let ((name (plist-get layer 'tp-name)))
+             (when (and name (not (member name found)))
+               (push name found)))))))
+    (nreverse found)))
+
+;;;###autoload
+(defun tp-reactive-track-buffer (&optional buffer)
+  "Scan BUFFER for layer regions and register it in the buffer registry.
+BUFFER defaults to the current buffer.  Walk BUFFER's text-property
+runs and register BUFFER for every layer name found - rendered top
+layers (direct `tp-name') as well as layers inside `tp-layers' stack
+storage (buried below another layer, or hidden) - so reactive updates
+visit it without a full `buffer-list' scan.
+
+Call this after inserting an already-propertized string into a
+buffer: string application bypasses the buffer operations that
+register buffers (see `tp-reactive-layer-buffers'), and this command
+closes that gap.  Return the list of layer names registered, in
+buffer order."
+  (interactive)
+  (let* ((buf (or buffer (current-buffer)))
+         (found (tp-reactive--buffer-layer-names buf)))
+    (dolist (name found)
+      (tp-reactive--register-layer-buffer name buf))
+    (when (called-interactively-p 'interactive)
+      (message "tp: tracking %d layer(s) in %s"
+               (length found) (buffer-name buf)))
+    found))
 
 (defvar tp--batch-update-active nil
   "When non-nil, we are inside a `tp-with-batch-updates' form.")
@@ -122,7 +235,11 @@ Only the reactive portions of the properties are stored for each variable."
   ;; Also clean up layer watchers, computed properties, and data
   (tp--unregister-layer-watchers layer-name)
   (tp--unregister-layer-computed layer-name)
-  (tp--unregister-layer-data layer-name))
+  (tp--unregister-layer-data layer-name)
+  ;; Drop the layer's buffer-registry entry: an undefined (or about to
+  ;; be redefined) layer must not linger as stale "known" state; the
+  ;; next update or refresh falls back to a learning full scan.
+  (remhash layer-name tp--layer-buffers))
 
 (defun tp--layer-has-reactive-deps-p (layer-name)
   "Return non-nil if LAYER-NAME has reactive dependencies registered.
@@ -138,11 +255,6 @@ SYMBOL NEWVAL WHERE OVERRIDE-ALIST) after the user watch callbacks
 have run.  When nil, variable changes only invoke watch callbacks and
 no re-rendering happens.")
 
-(defvar tp--reactive-flush-function nil
-  "Function flushing one pending batched update entry.
-Installed by tp-render.el.  Called with (LAYER-NAME WHERE
-TP-TEXT-AFFECTED).")
-
 (defun tp--reactive-variable-watcher (symbol newval operation where)
   "Watcher function called when a reactive variable changes.
 SYMBOL is the variable that changed.
@@ -153,10 +265,10 @@ WHERE indicates where the variable was set:
   - a buffer for `setq-local'
 Updates all layers that depend on this variable.
 
-Only 'set' operations trigger updates because:
-- 'let'/'unlet': Temporary bindings that will be restored, no need to update UI
-- 'makunbound': Variable is being undefined, not a value change
-- 'defvaralias': Aliasing, the actual value change will trigger a separate 'set'
+Only `set' operations trigger updates because:
+- `let'/`unlet': Temporary bindings that will be restored, no need to update UI
+- `makunbound': Variable is being undefined, not a value change
+- `defvaralias': Aliasing, the actual value change will trigger a separate `set'
 
 When `tp--batch-update-active' is non-nil, buffer updates are deferred until
 the batch completes. Layer definitions are still updated immediately.
@@ -204,48 +316,6 @@ NEWVAL is the new value, OLDVAL is the old value."
               (funcall callback newval oldval layer-name)
             (error (message "tp: watcher error for %s watching %s: %s"
                             layer-name watch-sym err))))))))
-
-(defun tp--flush-batch-updates ()
-  "Flush all pending batch updates.
-This processes all updates collected during a `tp-with-batch-updates' form."
-  (tp-debug-log "Flushing %d pending batch updates" (length tp--batch-update-pending))
-  (let ((processed-layers nil))
-    ;; Process each pending update, avoiding duplicate layer updates
-    (dolist (pending (nreverse tp--batch-update-pending))
-      (let ((layer-name (car pending))
-            (where (caddr pending))
-            (tp-text-affected (cadddr pending)))
-        (unless (memq layer-name processed-layers)
-          (push layer-name processed-layers)
-          (tp-debug-log "  Batch updating layer %s (tp-text: %s)"
-                        layer-name (if tp-text-affected "yes" "no"))
-          (when tp--reactive-flush-function
-            (funcall tp--reactive-flush-function
-                     layer-name where tp-text-affected))))))
-  (setq tp--batch-update-pending nil))
-
-(defmacro tp-with-batch-updates (&rest body)
-  "Execute BODY with reactive updates batched.
-Multiple variable changes within BODY are collected and applied
-together at the end, avoiding redundant buffer modifications.
-
-This is useful when changing multiple reactive variables simultaneously:
-
-  (tp-with-batch-updates
-    (setq my-color \"red\")
-    (setq my-size 14)
-    (setq my-text \"Hello\"))
-
-Without batching, each `setq' would trigger a separate buffer update.
-With batching, all updates are consolidated and applied once at the end."
-  (declare (indent 0) (debug t))
-  `(let ((tp--batch-update-active t)
-         (tp--batch-update-pending nil))
-     (tp-debug-log "Starting batch updates")
-     (unwind-protect
-         (progn ,@body)
-       (tp-debug-log "Ending batch updates")
-       (tp--flush-batch-updates))))
 
 (defun tp--register-layer-watchers (layer-name watchers)
   "Register WATCHERS for LAYER-NAME.
@@ -335,9 +405,10 @@ Also adds variable watchers so changes to data vars trigger computed updates."
 (defun tp--ensure-reactive-variables (var-symbols)
   "Ensure all VAR-SYMBOLS are defined as global variables.
 VAR-SYMBOLS can be a list of symbols or cons cells (SYMBOL . INITIAL-VALUE).
-If a variable is not bound, define it with the initial value (nil if not specified).
-If a variable has an explicit initial value (cons cell), always update it to allow
-re-definition to change initial values."
+If a variable is not bound, define it with the initial value (nil if
+not specified).
+If a variable has an explicit initial value (cons cell), always update
+it to allow re-definition to change initial values."
   (dolist (sym var-symbols)
     (let* ((is-cons (and (consp sym) (not (tp--reactive-symbol-p sym))))
            (var-sym (cond
@@ -353,6 +424,7 @@ re-definition to change initial values."
         (unless (boundp var-sym)
           (set var-sym initial-val))))))
 
+;;;###autoload
 (defun tp-reactive-reset ()
   "Reset all reactive text property watchers and dependencies."
   (interactive)
@@ -364,7 +436,12 @@ re-definition to change initial values."
   (setq tp-reactive-deps nil)
   (setq tp-layer-watchers nil)
   (setq tp-layer-computed nil)
-  (setq tp-layer-data nil))
+  (setq tp-layer-data nil)
+  ;; Drop queued re-renders too: entries stranded by an error escaping
+  ;; an update would otherwise survive the reset and replay against
+  ;; freshly (re)defined layers on the next flush (ARCH-4).
+  (setq tp--batch-update-pending nil)
+  (clrhash tp--layer-buffers))
 
 (provide 'tp-reactive)
 ;;; tp-reactive.el ends here
