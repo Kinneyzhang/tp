@@ -1,0 +1,364 @@
+;;; tp-render-tests.el --- ERT regression tests for tp-render.el -*- lexical-binding: t -*-
+
+;;; Commentary:
+
+;; Regression tests for confirmed bugs fixed in the reactive-render
+;; module (tp-render.el, with supporting fixes in tp-reactive.el).
+;; Each section is tagged with the canonical bug id it guards against.
+
+;;; Code:
+
+(require 'ert)
+(require 'tp)
+
+;; Reactive test variables must be dynamically bound so watcher and
+;; compute machinery can see them through `symbol-value'.
+(defvar tp-rt-b9-var nil)
+(defvar tp-rt-b10-data nil)
+(defvar tp-rt-b10-full nil)
+(defvar tp-rt-b11-face nil)
+(defvar tp-rt-b11b-color nil)
+(defvar tp-rt-b12-color nil)
+(defvar tp-rt-b13-text nil)
+(defvar tp-rt-b13b-text nil)
+(defvar tp-rt-b14-flag nil)
+(defvar tp-rt-b14-inv nil)
+(defvar tp-rt-b14b-init nil)
+(defvar tp-rt-b16-data nil)
+(defvar tp-rt-b16-comp nil)
+(defvar tp-rt-b16-count 0)
+(defvar tp-rt-b17-color nil)
+(defvar tp-rt-b17-text nil)
+(defvar tp-rt-b17b-color nil)
+(defvar tp-rt-b17b-echo nil)
+(defvar tp-rt-b18-text nil)
+(defvar tp-rt-b19-amount nil)
+(defvar tp-rt-b19s-amount nil)
+
+(defmacro tp-rt-with-cleanup (layers vars &rest body)
+  "Run BODY, then undefine LAYERS and reset VARS to nil (teardown)."
+  (declare (indent 2))
+  `(unwind-protect
+       (progn ,@body)
+     ,@(mapcar (lambda (l) `(tp-undefine-layer ',l)) layers)
+     ,@(mapcar (lambda (v) `(setq ,v nil)) vars)))
+
+;;; B9: sub-region tp-text on a string must splice, not replace the whole string
+
+(ert-deftest tp-render-test-tp-text-string-region-keeps-rest ()
+  "Region-form tp-text on a string keeps the text outside the region."
+  (let ((result (tp-set 0 1 '(tp-text "X") (copy-sequence "abc"))))
+    (should (equal result "Xbc"))
+    (should (equal (get-text-property 0 'tp-text result) "X"))
+    ;; The preserved suffix must not receive the layer's props
+    (should (null (get-text-property 1 'tp-text result)))
+    (should (null (get-text-property 2 'tp-text result)))))
+
+(ert-deftest tp-render-test-tp-text-string-mid-region-splices ()
+  "A mid-string tp-text region splices prefix + replacement + suffix."
+  (let ((result (tp-set 1 2 '(face bold tp-text "XY") (copy-sequence "abc"))))
+    (should (equal result "aXYc"))
+    ;; Props only on the replaced span [1, 3)
+    (should (null (get-text-property 0 'face result)))
+    (should (eq (get-text-property 1 'face result) 'bold))
+    (should (eq (get-text-property 2 'face result) 'bold))
+    (should (null (get-text-property 3 'face result)))))
+
+(ert-deftest tp-render-test-tp-text-string-region-preserves-outside-props ()
+  "Splicing keeps the original string's properties outside the region."
+  (let* ((source (propertize "abc" 'face 'italic 'my-prop 1))
+         (result (tp-set 1 2 '(tp-text "X") source)))
+    (should (equal result "aXc"))
+    ;; Prefix and suffix keep their original props
+    (should (eq (get-text-property 0 'face result) 'italic))
+    (should (eq (get-text-property 2 'face result) 'italic))
+    ;; Replaced span preserves non-conflicting props (tp-set preserves)
+    (should (eq (get-text-property 1 'my-prop result) 1))))
+
+(ert-deftest tp-render-test-tp-text-whole-string-still-replaces ()
+  "Whole-string form still returns just the replacement (legacy semantics)."
+  (let ((result (tp-set "2" 'face '(:background "green") 'tp-text "6")))
+    (should (equal result "6"))
+    (should (equal (get-text-property 0 'face result) '(:background "green")))
+    (should (equal (get-text-property 0 'tp-text result) "6"))))
+
+;;; B10: computed-variable path must not clobber sibling static attributes
+
+(ert-deftest tp-render-test-computed-update-keeps-static-siblings ()
+  "A computed update deep-merges, keeping static nested attributes."
+  (tp-rt-with-cleanup (tp-rt-b10-layer) (tp-rt-b10-data tp-rt-b10-full)
+    (setq tp-rt-b10-data "red")
+    (define-tp tp-rt-b10-layer ()
+      :props '(face (:foreground $tp-rt-b10-full :background "green"))
+      :data '(tp-rt-b10-data)
+      :compute '((tp-rt-b10-full (lambda () (concat "col-" tp-rt-b10-data)))))
+    (setq tp-rt-b10-data "blue")
+    (let ((face (plist-get (cdr (assoc 'tp-rt-b10-layer tp-layer-alist)) 'face)))
+      (should (equal (plist-get face :foreground) "col-blue"))
+      ;; The sibling static attribute must survive the update
+      (should (equal (plist-get face :background) "green")))))
+
+;;; B11: reactive refresh replaces the layer's own keys instead of accumulating
+
+(ert-deftest tp-render-test-reactive-refresh-replaces-face ()
+  "Changing a symbol-valued face variable replaces the face, not stacks it."
+  (tp-rt-with-cleanup (tp-rt-b11-layer) (tp-rt-b11-face)
+    (setq tp-rt-b11-face 'bold)
+    (define-tp tp-rt-b11-layer () '(face $tp-rt-b11-face))
+    (with-temp-buffer
+      (insert "Hello")
+      (tp-set 1 6 'tp-rt-b11-layer)
+      (should (eq (get-text-property 1 'face) 'bold))
+      (setq tp-rt-b11-face 'italic)
+      ;; Must be italic alone, not (italic bold)
+      (should (eq (get-text-property 1 'face) 'italic)))))
+
+(ert-deftest tp-render-test-reactive-refresh-keeps-unrelated-props ()
+  "Reactive refresh leaves property keys the layer does not own alone."
+  (tp-rt-with-cleanup (tp-rt-b11b-layer) (tp-rt-b11b-color)
+    (setq tp-rt-b11b-color "red")
+    (define-tp tp-rt-b11b-layer () '(face (:foreground $tp-rt-b11b-color)))
+    (with-temp-buffer
+      (insert "Hello")
+      (tp-set 1 6 'tp-rt-b11b-layer)
+      (put-text-property 1 6 'help-echo "keep me")
+      (setq tp-rt-b11b-color "green")
+      (should (equal (plist-get (get-text-property 1 'face) :foreground) "green"))
+      (should (equal (get-text-property 1 'help-echo) "keep me")))))
+
+;;; B12: setq-local must not leak into the global layer definition
+
+(ert-deftest tp-render-test-setq-local-does-not-touch-global-def ()
+  "A buffer-local change re-renders the buffer but keeps the global def."
+  (tp-rt-with-cleanup (tp-rt-b12-layer) ()
+    (setq-default tp-rt-b12-color "red")
+    (define-tp tp-rt-b12-layer () '(face (:foreground $tp-rt-b12-color)))
+    (let ((buf-a (generate-new-buffer " tp-rt-b12-a"))
+          (buf-b (generate-new-buffer " tp-rt-b12-b")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf-a
+              (insert "Hello")
+              (tp-set 1 6 'tp-rt-b12-layer))
+            (with-current-buffer buf-b
+              (insert "Hello")
+              (tp-set 1 6 'tp-rt-b12-layer))
+            (with-current-buffer buf-a
+              (setq-local tp-rt-b12-color "purple"))
+            ;; Buffer A is re-rendered with its local value
+            (with-current-buffer buf-a
+              (should (equal (plist-get (get-text-property 1 'face) :foreground)
+                             "purple")))
+            ;; The GLOBAL definition must not absorb the local value
+            (should (equal (plist-get
+                            (plist-get (cdr (assoc 'tp-rt-b12-layer tp-layer-alist))
+                                       'face)
+                            :foreground)
+                           "red"))
+            (should (equal (default-value 'tp-rt-b12-color) "red"))
+            ;; Other buffers keep rendering the global value
+            (with-current-buffer buf-b
+              (should (equal (plist-get (get-text-property 1 'face) :foreground)
+                             "red"))))
+        (kill-buffer buf-a)
+        (kill-buffer buf-b)
+        (setq-default tp-rt-b12-color nil)))))
+
+;;; B13: reactive tp-text replacement preserves unrelated properties
+
+(ert-deftest tp-render-test-reactive-text-update-preserves-other-props ()
+  "Replacing reactive text keeps properties other layers put on the region."
+  (tp-rt-with-cleanup (tp-rt-b13-layer) (tp-rt-b13-text)
+    (setq tp-rt-b13-text "aaa")
+    (define-tp tp-rt-b13-layer () '(face bold tp-text $tp-rt-b13-text))
+    (with-temp-buffer
+      (insert "Hello")
+      (tp-set 1 6 'tp-rt-b13-layer)
+      (put-text-property 1 3 'my-other-prop 42)
+      (setq tp-rt-b13-text "bbb")
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "bbb"))
+      ;; The unrelated property survives the text replacement
+      (should (eq (get-text-property 1 'my-other-prop) 42))
+      ;; The layer's own props are still applied
+      (should (eq (get-text-property 1 'face) 'bold)))))
+
+(ert-deftest tp-render-test-reactive-text-same-text-preserves-other-props ()
+  "A same-text properties-only update keeps unrelated properties too."
+  (tp-rt-with-cleanup (tp-rt-b13b-layer) (tp-rt-b13b-text)
+    (setq tp-rt-b13b-text "emacs")
+    (define-tp tp-rt-b13b-layer () '(tp-text $tp-rt-b13b-text))
+    (with-temp-buffer
+      (insert "emacs")
+      (tp-set 1 6 'tp-rt-b13b-layer)
+      (put-text-property 1 6 'my-other-prop 'yes)
+      ;; Same text, new embedded properties
+      (setq tp-rt-b13b-text (propertize "emacs" 'face 'bold))
+      (should (eq (get-text-property 1 'face) 'bold))
+      (should (eq (get-text-property 1 'my-other-prop) 'yes)))))
+
+;;; B14: computed values of nil must propagate
+
+(ert-deftest tp-render-test-computed-nil-propagates-on-update ()
+  "A compute function returning nil updates the variable and the layer."
+  (tp-rt-with-cleanup (tp-rt-b14-layer) (tp-rt-b14-flag tp-rt-b14-inv)
+    (setq tp-rt-b14-flag t)
+    (define-tp tp-rt-b14-layer ()
+      :props '(invisible $tp-rt-b14-inv)
+      :data '(tp-rt-b14-flag)
+      :compute '((tp-rt-b14-inv (lambda () tp-rt-b14-flag))))
+    (should (eq tp-rt-b14-inv t))
+    (setq tp-rt-b14-flag nil)
+    ;; nil is a legitimate computed value, not an error sentinel
+    (should (eq tp-rt-b14-inv nil))
+    (should (eq (plist-get (cdr (assoc 'tp-rt-b14-layer tp-layer-alist))
+                           'invisible)
+                nil))))
+
+(ert-deftest tp-render-test-computed-nil-applies-initially ()
+  "An initial computed value of nil overwrites a stale non-nil value."
+  (tp-rt-with-cleanup (tp-rt-b14b-layer) (tp-rt-b14b-init)
+    (setq tp-rt-b14b-init 'stale)
+    (define-tp tp-rt-b14b-layer ()
+      :props '(invisible $tp-rt-b14b-init)
+      :compute '((tp-rt-b14b-init (lambda () nil))))
+    (should (eq tp-rt-b14b-init nil))))
+
+;;; B16: no watcher recursion from nested variable writes
+
+(ert-deftest tp-render-test-compute-runs-once-per-change ()
+  "One data change runs each compute function exactly once (no recursion)."
+  (tp-rt-with-cleanup (tp-rt-b16-layer) (tp-rt-b16-data tp-rt-b16-comp)
+    (setq tp-rt-b16-data "a" tp-rt-b16-count 0)
+    (define-tp tp-rt-b16-layer ()
+      :props '(help-echo $tp-rt-b16-comp)
+      :data '(tp-rt-b16-data)
+      :compute '((tp-rt-b16-comp
+                  (lambda ()
+                    (setq tp-rt-b16-count (1+ tp-rt-b16-count))
+                    (concat tp-rt-b16-data "!")))))
+    (with-temp-buffer
+      (insert "Hello")
+      (tp-set 1 6 'tp-rt-b16-layer)
+      (setq tp-rt-b16-count 0)
+      (setq tp-rt-b16-data "b")
+      ;; The nested (set comp ...) must queue its re-render, not re-enter
+      ;; the compute machinery.
+      (should (= tp-rt-b16-count 1))
+      ;; The nested change's re-render still lands in the buffer
+      (should (equal tp-rt-b16-comp "b!"))
+      (should (equal (get-text-property 1 'help-echo) "b!")))))
+
+;;; B17: batched entries must union WHERE and the tp-text-affected flag
+
+(ert-deftest tp-render-test-batch-tp-text-flag-is-sticky ()
+  "A tp-text change deferred after a non-tp-text change still replaces text."
+  (tp-rt-with-cleanup (tp-rt-b17-layer) (tp-rt-b17-color tp-rt-b17-text)
+    (setq tp-rt-b17-color "red" tp-rt-b17-text "one")
+    (define-tp tp-rt-b17-layer ()
+      '(face (:foreground $tp-rt-b17-color) tp-text $tp-rt-b17-text))
+    (with-temp-buffer
+      (insert "one")
+      (tp-set 1 4 'tp-rt-b17-layer)
+      (tp-with-batch-updates
+        (setq tp-rt-b17-color "blue")   ; first change: no tp-text
+        (setq tp-rt-b17-text "two"))    ; second change: tp-text affected
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "two"))
+      (should (equal (plist-get (get-text-property 1 'face) :foreground)
+                     "blue")))))
+
+(ert-deftest tp-render-test-batch-where-widens-to-all-buffers ()
+  "A global change after a buffer-local one must reach other buffers."
+  (tp-rt-with-cleanup (tp-rt-b17b-layer) ()
+    (setq-default tp-rt-b17b-color "red")
+    (setq-default tp-rt-b17b-echo "old")
+    (define-tp tp-rt-b17b-layer ()
+      '(face (:foreground $tp-rt-b17b-color) help-echo $tp-rt-b17b-echo))
+    (let ((buf-a (generate-new-buffer " tp-rt-b17b-a"))
+          (buf-b (generate-new-buffer " tp-rt-b17b-b")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf-a
+              (insert "Hello") (tp-set 1 6 'tp-rt-b17b-layer))
+            (with-current-buffer buf-b
+              (insert "Hello") (tp-set 1 6 'tp-rt-b17b-layer))
+            (with-current-buffer buf-a
+              (tp-with-batch-updates
+                (setq-local tp-rt-b17b-color "blue") ; WHERE = buf-a
+                (setq tp-rt-b17b-echo "new")))       ; WHERE = global
+            ;; The global change must not be trapped in buf-a's WHERE
+            (with-current-buffer buf-b
+              (should (equal (get-text-property 1 'help-echo) "new"))
+              (should (equal (plist-get (get-text-property 1 'face) :foreground)
+                             "red")))
+            ;; buf-a gets both, with its local color honored
+            (with-current-buffer buf-a
+              (should (equal (get-text-property 1 'help-echo) "new"))
+              (should (equal (plist-get (get-text-property 1 'face) :foreground)
+                             "blue"))))
+        (kill-buffer buf-a)
+        (kill-buffer buf-b)
+        (setq-default tp-rt-b17b-color nil)
+        (setq-default tp-rt-b17b-echo nil)))))
+
+;;; B18: multi-interval reactive strings keep per-interval styling
+
+(ert-deftest tp-render-test-reactive-text-keeps-per-interval-props ()
+  "A propertized reactive string renders each interval's own props."
+  (tp-rt-with-cleanup (tp-rt-b18-layer) (tp-rt-b18-text)
+    (setq tp-rt-b18-text "init")
+    (define-tp tp-rt-b18-layer () '(tp-text $tp-rt-b18-text))
+    (with-temp-buffer
+      (insert "init")
+      (tp-set 1 5 'tp-rt-b18-layer)
+      (setq tp-rt-b18-text (concat (propertize "AB" 'face 'bold)
+                                   (propertize "CD" 'face 'italic)))
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "ABCD"))
+      ;; Position-0 props must not smear over the whole region
+      (should (eq (get-text-property 1 'face) 'bold))
+      (should (eq (get-text-property 2 'face) 'bold))
+      (should (eq (get-text-property 3 'face) 'italic))
+      (should (eq (get-text-property 4 'face) 'italic)))))
+
+;;; B19: :transform applies on the initial nil-tp-text render too
+
+(ert-deftest tp-render-test-transform-applies-on-initial-render ()
+  "First render of a nil tp-text layer shows the transformed text."
+  (tp-rt-with-cleanup (tp-rt-b19-layer) (tp-rt-b19-amount)
+    (setq tp-rt-b19-amount nil)
+    (define-tp tp-rt-b19-layer ()
+      :props '(face bold tp-text $tp-rt-b19-amount)
+      :transform (lambda (s) (concat "$" s)))
+    (with-temp-buffer
+      (insert "5.00")
+      (tp-set 1 5 'tp-rt-b19-layer)
+      ;; Initial rendering must match later reactive renderings
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "$5.00"))
+      ;; The model (variable and tp-text prop) keeps the raw value
+      (should (equal tp-rt-b19-amount "5.00"))
+      (should (equal (get-text-property 1 'tp-text) "5.00"))
+      (should (eq (get-text-property 1 'face) 'bold))
+      ;; And a later update stays consistent
+      (setq tp-rt-b19-amount "6.00")
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "$6.00")))))
+
+(ert-deftest tp-render-test-transform-applies-on-initial-string-render ()
+  "String form of a nil tp-text layer also shows the transformed text."
+  (tp-rt-with-cleanup (tp-rt-b19s-layer) (tp-rt-b19s-amount)
+    (setq tp-rt-b19s-amount nil)
+    (define-tp tp-rt-b19s-layer ()
+      :props '(face bold tp-text $tp-rt-b19s-amount)
+      :transform (lambda (s) (concat "$" s)))
+    (let ((result (tp-set "5.00" 'tp-rt-b19s-layer)))
+      (should (equal result "$5.00"))
+      ;; Model keeps the raw value
+      (should (equal tp-rt-b19s-amount "5.00"))
+      (should (equal (get-text-property 0 'tp-text result) "5.00"))
+      (should (eq (get-text-property 0 'face result) 'bold)))))
+
+(provide 'tp-render-tests)
+;;; tp-render-tests.el ends here

@@ -10,7 +10,7 @@ The following evaluates and documents the implementation status of six optimizat
 
 **Suggestion**: Support partial updates within a region - only updating the reactive portion while preserving surrounding text properties.
 
-**Evaluation**: Already implemented. tp.el uses `tp-intervals-map` and interval-based update mechanisms to support fine-grained property updates. Updates only affect regions with specific `tp-name` properties.
+**Evaluation**: Already implemented. tp.el uses `tp-search-map` over `tp-name`-tagged regions and interval-based update mechanisms to support fine-grained property updates. Updates only affect regions with specific `tp-name` properties, and only the layer's own property keys are replaced — properties contributed by other sources are left untouched.
 
 ### 2. Reactive Symbol Cleanup ✅ Already Implemented
 
@@ -192,9 +192,9 @@ Debug mode helps developers understand the reactive update flow:
 
 These optimizations follow tp.el's layered architecture principles:
 
-1. **Debug Mode** - Basic utility layer functionality
-2. **Batch Updates** - Implemented in the reactive system layer
-3. **Value Transformation** - Implemented in layer definition and reactive text handling
+1. **Debug Mode** - Basic utility layer functionality (`tp-core.el`)
+2. **Batch Updates** - Implemented in the reactive system layer (`tp-reactive.el`)
+3. **Value Transformation** - Implemented in layer definition and reactive text handling (`tp-layer.el` / `tp-render.el`)
 
 All new features integrate seamlessly with the existing reactive system without breaking existing APIs.
 

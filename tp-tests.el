@@ -1,11 +1,11 @@
-;;; tp-ert-tests.el --- ERT tests for tp.el -*- lexical-binding: t -*-
+;;; tp-tests.el --- ERT tests for tp.el -*- lexical-binding: t -*-
 
-;; Copyright (C) 2024
+;; Copyright (C) 2024-2026
 
 ;;; Commentary:
 
 ;; Comprehensive test suite for tp.el using ERT (Emacs Lisp Regression Testing).
-;; Run with: emacs --batch -l tp.el -l tp-ert-tests.el -f ert-run-tests-batch-and-exit
+;; Run with: emacs --batch -L . -l tp.el -l tp-tests.el -f ert-run-tests-batch-and-exit
 
 ;;; Code:
 
@@ -23,13 +23,16 @@
 ;;; ============================================================
 
 (defmacro tp-test-with-temp-buffer (&rest body)
-  "Execute BODY in a temporary buffer with tp.el loaded."
+  "Execute BODY in a temporary buffer with a clean tp state.
+All layer registries, transforms and reactive watchers are cleared
+before BODY runs and again afterwards (teardown), so state cannot
+leak between tests regardless of how BODY exits."
   (declare (indent 0))
-  `(with-temp-buffer
-     (setq tp-layer-alist nil)
-     (setq tp-layer-groups nil)
-     (tp-reactive-reset)
-     ,@body))
+  `(unwind-protect
+       (with-temp-buffer
+         (tp-layer-reset)
+         ,@body)
+     (tp-layer-reset)))
 
 ;;; ============================================================
 ;;; Basic Text Property Functions Tests
@@ -677,9 +680,16 @@
     (insert "Hello World")
     (tp-set 1 6 '(face bold))
     (goto-char 12)
+    ;; Explicit VALUE finds the previous region carrying that value.
+    (let ((match (tp-backward 'face 'bold)))
+      (should match)
+      (should (= (prop-match-beginning match) 1)))
+    ;; VALUE nil equal-matches the property-absent region, mirroring
+    ;; tp-forward (see tp-test-forward).
+    (goto-char 12)
     (let ((match (tp-backward 'face)))
       (should match)
-      (should (= (prop-match-beginning match) 1)))))
+      (should (= (prop-match-beginning match) 6)))))
 
 (ert-deftest tp-test-backward-on-string ()
   "Test tp-backward works on string objects."
@@ -708,7 +718,10 @@
       (should (equal (substring str 12 17) "HELLO")))))
 
 (ert-deftest tp-test-forward-do-on-string-with-range ()
-  "Test tp-forward-do on string with start/end range."
+  "Test tp-forward-do on string with start/end range.
+TIMES targets the TIMES-th match specifically; with only one match in
+range, asking for the 2nd applies nothing (all-or-nothing, matching
+the buffer path) and returns the available count."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
@@ -717,8 +730,8 @@
       (should (= count 1))  ; Only one match in range 6-17
       ;; First match should NOT be upcased
       (should (equal (substring str 0 5) "hello"))
-      ;; Second match should be upcased
-      (should (equal (substring str 12 17) "HELLO")))))
+      ;; The requested 2nd match does not exist: nothing is applied
+      (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-forward-do-function-receives-start-end ()
   "Test tp-forward-do passes start and end to function."
@@ -766,16 +779,17 @@
       (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-backward-do-on-string-with-range ()
-  "Test tp-backward-do on string with start/end range."
+  "Test tp-backward-do on string with start/end range.
+All-or-nothing: with one match in range, requesting the 2nd applies
+nothing and returns the available count."
   (let ((str (copy-sequence "hello World hello")))
     (tp-set 0 5 '(marker t) str)
     (tp-set 12 17 '(marker t) str)
     ;; Search only in range 0-10 (before second match)
     (let ((count (tp-backward-do #'upcase 'marker nil str 2 0 10)))
       (should (= count 1))  ; Only one match in range 0-10
-      ;; First match should be upcased
-      (should (equal (substring str 0 5) "HELLO"))
-      ;; Second match should NOT be upcased
+      ;; The requested 2nd match does not exist: nothing is applied
+      (should (equal (substring str 0 5) "hello"))
       (should (equal (substring str 12 17) "hello")))))
 
 (ert-deftest tp-test-backward-do-function-receives-start-end ()
@@ -4109,5 +4123,5 @@ can be tracked and removed."
     ;; tp-delete property should be removed
     (should (null (get-text-property 0 'tp-delete result)))))
 
-(provide 'tp-ert-tests)
-;;; tp-ert-tests.el ends here
+(provide 'tp-tests)
+;;; tp-tests.el ends here

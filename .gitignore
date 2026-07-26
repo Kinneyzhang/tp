@@ -7,3 +7,13 @@ dash.el
 # Backup files
 *~
 \#*\#
+
+# macOS
+.DS_Store
+
+# Syncthing conflict files
+*.sync-conflict-*
+.syncthing.*
+
+# Claude worktrees
+.claude/

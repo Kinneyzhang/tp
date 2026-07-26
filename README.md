@@ -18,6 +18,7 @@
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
 - [Overview](#overview)
   - [Core Innovations](#core-innovations)
 - [Features](#features)
@@ -38,6 +39,7 @@
     - [tp-add](#tp-add---addmerge-properties)
     - [tp-get](#tp-get---get-property-value)
     - [tp-at](#tp-at---get-property-at-position)
+    - [tp-member](#tp-member---property-membership-at-position)
     - [tp-remove](#tp-remove---remove-property)
     - [tp-clear](#tp-clear---clear-all-properties)
   - [Pattern Matching Functions](#pattern-matching-functions)
@@ -91,6 +93,8 @@
     - [tp-plist](#tp-plist---get-all-properties-in-region)
     - [tp-empty-p](#tp-empty-p---check-if-object-has-properties)
     - [tp-region-layer-props](#tp-region-layer-props---get-layer-properties-in-region)
+    - [tp-with-current-buffer / tp-pop-to-buffer / tp-switch-to-buffer](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer)
+  - [Color Palette System](#color-palette-system)
 - [Reactive Text Properties](#reactive-text-properties)
   - [Core Concept](#core-concept)
   - [How It Works](#how-it-works)
@@ -115,9 +119,44 @@
 
 ---
 
+## Quick Start
+
+```elisp
+;; Install: clone the repository, add it to your load-path, and require
+(add-to-list 'load-path "/path/to/tp")
+(require 'tp)
+
+;; Set properties with one unified API (returns a new propertized string)
+(tp-set "hello" 'face 'bold)
+;; => #("hello" 0 5 (face bold))
+
+;; Stack property layers on a buffer region
+(define-tp spotlight () '(face (:background "yellow")))
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-push-layer 1 6 'spotlight)
+  (tp-layer-top 1 6))
+;; => spotlight
+
+;; Reactive: text properties follow a variable
+(defvar accent-color "red")
+(define-tp accent ()
+  :props '(face (:foreground $accent-color)))
+(with-temp-buffer
+  (insert "Hello")
+  (tp-push-layer 1 6 'accent)
+  (setq accent-color "blue")   ; text updates automatically!
+  (tp-at 1 'face))
+;; => (:foreground "blue")
+```
+
+---
+
 ## Overview
 
 **tp.el** is a library that comprehensively enhances Emacs text property manipulation. It is not just a simple wrapper around native text property APIs (like `put-text-property`, `get-text-property`), but provides many **functional extensions that native functions do not have**. tp.el innovates in the following areas:
+
+Since 0.2.0 the library is organized as a family of layered modules (`tp-core`, `tp-reactive`, `tp-layer`, `tp-ops`, `tp-search`, `tp-render`, `tp-stack`, `tp-palette`, `tp-builtins`) behind the umbrella file `tp.el` — `(require 'tp)` still loads everything, so nothing changes for users. See [Installation](#installation) for the module map.
 
 ### Core Innovations
 
@@ -168,13 +207,13 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
 
 - ✅ **Path-style Access**: Access deeply nested property values through path syntax
   ```elisp
-  ;; Get nested properties
-  (tp-get str 'face :underline :style)  ; => wave
+  ;; Get nested properties (tp-get returns (START END VALUE) intervals)
+  (tp-get str 'face :underline :style)  ; => ((0 5 wave))
   (tp-at 5 '(face :box :color))         ; => "blue"
   
   ;; Get multiple nested keys
   (tp-get str 'face :underline '(:color :style))
-  ;; => ((:color "green" :style wave))
+  ;; => ((0 5 (:color "green" :style wave)))
   ```
 - ✅ **Sub-property Deletion**: Precisely remove specific keys from nested properties
   ```elisp
@@ -191,7 +230,8 @@ Native APIs only have simple set and get. tp.el provides three clear operation s
         'face 'bold
         'face '(:background "green")
         'face '(:foreground "red"))
-;; Result: face is ((:background "green" :foreground "red") bold)
+;; Result: face is ((:foreground "red") (:background "green") bold)
+;; (entries stack into one face list, most recent first)
 
 ;; Later values override earlier ones for the same sub-property
 (tp-set "emacs"
@@ -275,12 +315,13 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 (setq my-color "blue")  ;; All text with my-highlight layer updates to blue!
 
 ;; Advanced example with :data, :compute, and :watch
+;; (note: ARGLIST () is mandatory, and the keyword values are quoted)
 (define-tp full-name-layer ()
   :props '(help-echo $full-name face (:foreground $name-color))
-  :data ((first-name . "John") (last-name . "Doe"))  ;; With initial values
-  :compute ((full-name (lambda () (concat first-name " " last-name))))
-  :watch ((first-name (lambda (new old layer)
-                        (message "Name changed from %s to %s" old new)))))
+  :data '((first-name . "John") (last-name . "Doe") (name-color . "purple"))
+  :compute '((full-name (lambda () (concat first-name " " last-name))))
+  :watch '((first-name (lambda (new old layer)
+                         (message "Name changed from %s to %s" old new)))))
 ```
 
 ### Enhanced Search & Navigation
@@ -295,15 +336,19 @@ Native APIs require manual searching and looping. tp.el provides convenient patt
 (tp-search my-string 'marker)  ; => ((0 5 t) (12 17 t))
 
 ;; Upcase all marker text
-(tp-search-map #'upcase my-string 'marker)
+(tp-search-map #'upcase 'marker nil my-string)
 ```
 
 ## Requirements
 
 - **Emacs 28.1+** (uses `object-intervals` function)
-- **dash.el** (list manipulation utilities)
+- **dash.el 2.19.1+** (list manipulation utilities)
 
 ## Installation
+
+The library is the `tp-*.el` module family plus the umbrella file `tp.el`.
+Installing means putting the directory on your `load-path` and requiring the
+umbrella, which loads every module:
 
 ```elisp
 ;; Add to your load-path
@@ -317,6 +362,25 @@ Or with `use-package`:
 (use-package tp
   :load-path "/path/to/tp")
 ```
+
+The modules and their roles:
+
+| Module | Responsibility |
+|---|---|
+| `tp-core.el` | Intervals, plist/face merge engine, debug logging, `$var` utilities |
+| `tp-reactive.el` | Reactive dependency registry, variable watchers, batching queue |
+| `tp-layer.el` | `define-tp` / `define-tps`, layer registry and resolution |
+| `tp-ops.el` | `tp-set` / `tp-reset` / `tp-add` / `tp-get` / `tp-at` / `tp-remove` / `tp-clear` |
+| `tp-search.el` | `tp-match-*`, `tp-regexp-*`, `tp-search`, navigation |
+| `tp-render.el` | Reactive re-rendering engine |
+| `tp-stack.el` | Layer stack operations (push/pop/move/merge/flatten/...) |
+| `tp-palette.el` | Light/dark color palette data |
+| `tp-builtins.el` | Built-in layers, palette gallery, display-buffer helpers |
+
+A `Makefile` is included: `make test` runs all ERT suites, `make doctest`
+executes the README examples against the code (`tp-doctest.el`),
+`make compile` byte-compiles the modules, and `make clean` removes
+compiled files.
 
 ---
 
@@ -334,6 +398,7 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-add`](#tp-add---addmerge-properties) | Add/merge properties with deep merge support |
 | [`tp-get`](#tp-get---get-property-value) | Get property value(s) from range or string |
 | [`tp-at`](#tp-at---get-property-at-position) | Get property value(s) at a single position |
+| [`tp-member`](#tp-member---property-membership-at-position) | Like `tp-at`, but distinguishes present-with-nil from absent |
 | [`tp-remove`](#tp-remove---remove-property) | Remove a property or sub-property |
 | [`tp-clear`](#tp-clear---clear-all-properties) | Clear all text properties from a region |
 
@@ -420,6 +485,17 @@ A complete overview of all tp.el functions organized by category:
 | [`tp-intervals-map`](#tp-intervals-map---apply-function-to-intervals) | Apply function to all intervals in a region |
 | [`tp-plist`](#tp-plist---get-all-properties-in-region) | Get all properties present in a region |
 | [`tp-empty-p`](#tp-empty-p---check-if-object-has-properties) | Check if object has no text properties |
+| [`tp-with-current-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | Run body in a buffer with `inhibit-read-only` bound |
+| [`tp-pop-to-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | Fill a buffer, make it read-only, display via `pop-to-buffer` |
+| [`tp-switch-to-buffer`](#tp-with-current-buffer--tp-pop-to-buffer--tp-switch-to-buffer) | Fill a buffer, make it read-only, display via `switch-to-buffer` |
+
+#### Palette Functions
+| Function | Description |
+|----------|-------------|
+| [`tp-palette-alist`](#color-palette-system) | Registry of named palettes (variable) |
+| [`define-tp-palette`](#color-palette-system) | Register or update a named palette |
+| [`tp-palette-show`](#color-palette-system) | Show a gallery of all registered palettes |
+| [`tp-parse-color`](#color-palette-system) | Resolve a color spec for the current light/dark theme |
 
 ---
 
@@ -495,8 +571,8 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 (let ((my-buffer (generate-new-buffer "*test*")))
   (with-current-buffer my-buffer
     (insert "Hello World"))
-  (tp-set 1 10 '(face italic) my-buffer)
-  (kill-buffer my-buffer))
+  (prog1 (tp-set 1 10 '(face italic) my-buffer)
+    (kill-buffer my-buffer)))
 ;; => (1 . 10)
 
 ;; Set properties on a string region (0-indexed) - MODIFIES original string
@@ -518,16 +594,17 @@ LAYER-NAME can be a symbol representing a layer defined by `define-tp` or a grou
 ;; Use a defined layer name on entire string
 (define-tp my-style ()
   :props '(face (:foreground $my-color))
-  :data ((my-color . "blue")))
+  :data '((my-color . "blue")))
 (tp-set " " 'my-style)
-;; => #(" " 0 1 (tp-name my-style face (:foreground "blue") ...))
+;; => #(" " 0 1 (face (:foreground "blue") tp-name my-style))
 
 ;; Merge multiple faces in a single call (duplicate properties auto-merged)
 (tp-set "emacs"
         'face 'bold
         'face '(:background "green")
         'face '(:foreground "red"))
-;; => Three faces merged into one: ((:background "green" :foreground "red") bold)
+;; => face is ((:foreground "red") (:background "green") bold)
+;;    (entries stack into one face list, most recent first)
 
 ;; Later values override earlier ones for the same sub-property
 (tp-set "emacs"
@@ -806,6 +883,37 @@ For single-position property queries (previously done with `tp-get`), use `tp-at
 
 ---
 
+#### `tp-member` - Property Membership at Position
+
+```elisp
+(tp-member POS PROPERTY &optional OBJECT)
+```
+
+Like `tp-at`, but returns a `(PROPERTY VALUE)` list when PROPERTY is present
+at POS, or nil when it is absent. This distinguishes a property that is
+present with the value nil from a property that is missing entirely
+(analogous to `plist-member`).
+
+**Examples:**
+
+```elisp
+;; Present with value nil vs. absent
+(let ((str (copy-sequence "Hello")))
+  (tp-set 0 5 '(face nil) str)
+  (list (tp-member 0 'face str)       ; present, value nil
+        (tp-member 0 'display str)))  ; absent
+;; => ((face nil) nil)
+
+;; In a buffer
+(with-temp-buffer
+  (insert "Hello")
+  (tp-set 1 6 '(face bold))
+  (tp-member 1 'face))
+;; => (face bold)
+```
+
+---
+
 #### `tp-remove` - Remove Property
 
 Remove a property or nested sub-property from a region or entire string.
@@ -874,7 +982,7 @@ Remove a property or nested sub-property from a region or entire string.
 ;; Remove nested keys from string
 (let ((original (propertize "Hello" 'face '(:underline (:style wave :color "blue")))))
   (let ((result (tp-remove original 'face :underline '(:style))))
-    (get-text-property 0 '(face :underline) result)))
+    (tp-at 0 '(face :underline) result)))
 ;; => (:color "blue")
 ```
 
@@ -942,7 +1050,8 @@ OBJECT is a buffer or string; nil means current buffer.
 (with-temp-buffer
   (insert "Hello world, Hello again")
   (tp-match-set '("world" "Hello") '(face bold)))
-;; => ((1 . 6) (7 . 12) (14 . 19))  ; Matches "Hello", "world", "Hello"
+;; => ((7 . 12) (1 . 6) (14 . 19))  ; regions grouped per pattern:
+;;    "world" first, then each "Hello", in the order patterns are given
 
 ;; Multiple patterns on string
 (tp-match-set '("Hello" "world") '(face bold) "Hello world")
@@ -1064,13 +1173,15 @@ OBJECT is a buffer or string; nil means current buffer.
   (list (tp-at 5 'face) (tp-at 13 'face)))
 ;; => (font-lock-number-face font-lock-number-face)
 
-;; On string
+;; On string (`case-fold-search' applies by default, so "Hello" matches too;
+;; let-bind it to nil for case-sensitive matching)
 (tp-regexp-set "[A-Z]+" '(face bold) "Hello WORLD")
-;; => #("Hello WORLD" 6 11 (face bold))
+;; => #("Hello WORLD" 0 5 (face bold) 6 11 (face bold))
 
 ;; Multiple regexps - match both numbers and uppercase letters
+;; (with case folding, "abc" matches "[A-Z]+" as well)
 (tp-regexp-set '("[0-9]+" "[A-Z]+") '(face bold) "abc 123 XYZ")
-;; => #("abc 123 XYZ" 4 7 (face bold) 8 11 (face bold))
+;; => #("abc 123 XYZ" 0 3 (face bold) 4 7 (face bold) 8 11 (face bold))
 
 ;; Use a defined layer name
 (define-tp number-style ()
@@ -1107,12 +1218,12 @@ OBJECT is a buffer or string; nil means current buffer.
   (tp-at 5))
 ;; => (face bold)  ; help-echo is removed
 
-;; On string
+;; On string - returns a NEW string; the original is unchanged
 (let ((str (copy-sequence "abc 123 def")))
   (tp-set 4 7 '(help-echo "original") str)
-  (tp-regexp-reset "[0-9]+" '(face italic) str)
-  (tp-at 4 str))
-;; => (face italic)
+  (let ((result (tp-regexp-reset "[0-9]+" '(face italic) str)))
+    (list (tp-at 4 result) (tp-at 4 str))))
+;; => ((face italic) (help-echo "original"))
 
 ;; Use a defined layer name
 (define-tp code-number ()
@@ -1149,12 +1260,12 @@ OBJECT is a buffer or string; nil means current buffer.
   (tp-at 5))
 ;; => (face bold help-echo "number")
 
-;; On string
+;; On string - returns a NEW string; the original is unchanged
 (let ((str (copy-sequence "abc 123 def")))
   (tp-set 4 7 '(help-echo "number") str)
-  (tp-regexp-add "[0-9]+" '(face italic) str)
-  (tp-at 4 str))
-;; => (face italic help-echo "number")
+  (let ((result (tp-regexp-add "[0-9]+" '(face italic) str)))
+    (list (tp-at 4 result) (tp-at 4 str))))
+;; => ((face italic help-echo "number") (help-echo "number"))
 
 ;; Use a defined layer name
 (define-tp bold-underline ()
@@ -1191,23 +1302,47 @@ These are low-level search functions that work directly with prop-match objects.
 Search forward/backward N times for text with PROPERTY.
 
 - **N** is the number of searches, defaulting to 1.
-- **VALUE** is the optional value to match.
+- **VALUE** is `equal`-matched against the property's value in buffers.
+  Passing nil therefore matches the next run where PROPERTY is *absent*
+  (its value is nil); pass the value explicitly to find a propertied region.
+- **`tp-backward` mirrors `tp-forward`**: the same equal-matching semantics,
+  in the opposite direction.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
 - For buffers, returns the prop-match object from the last successful search.
-- For strings, returns a list of (START END VALUE) for all matches found.
+- For strings, returns a list of (START END VALUE) for runs where PROPERTY
+  is present; VALUE nil means any value. `tp-backward` returns them from
+  end to start.
 
 **Examples:**
 
 ```elisp
-;; Find next text with 'marker property
+;; Find next text where 'marker equals t
+(with-temp-buffer
+  (insert "Hello World Test")
+  (tp-set 7 12 '(marker t))
+  (goto-char 1)
+  (let ((match (tp-forward 'marker t)))
+    (when match
+      (prop-match-beginning match))))
+;; => 7
+
+;; VALUE nil equal-matches nil - i.e. the run WITHOUT the property
 (with-temp-buffer
   (insert "Hello World Test")
   (tp-set 7 12 '(marker t))
   (goto-char 1)
   (let ((match (tp-forward 'marker)))
-    (when match
-      (prop-match-beginning match))))
-;; => 7
+    (list (prop-match-beginning match) (prop-match-end match))))
+;; => (1 7)  ; the run where marker is absent
+
+;; Backward mirrors forward: same value matching, opposite direction
+(with-temp-buffer
+  (insert "Hello World Test")
+  (tp-set 7 12 '(marker t))
+  (goto-char (point-max))
+  (let ((match (tp-backward 'marker t)))
+    (list (prop-match-beginning match) (prop-match-end match))))
+;; => (7 12)
 
 ;; Find next text where 'type equals 'heading
 (with-temp-buffer
@@ -1238,11 +1373,12 @@ Search forward/backward N times for text with PROPERTY.
 
 Search forward/backward for text with PROPERTY and apply FUNCTION **only to the last match**.
 
-- **FUNCTION** receives `(TEXT &optional START END)` where TEXT is the matched text, START and END are the positions of the match. The return value of FUNCTION replaces the matched text in the string or buffer.
+- **FUNCTION** receives `(TEXT &optional START END IDX)` where TEXT is the matched text, START and END are the positions of the match, and IDX is the 0-based match index. FUNCTION is called with as many of these arguments as it accepts. When FUNCTION returns a string, it replaces the matched text in the string or buffer.
+- **Replacements may change length in buffers** (the match is deleted and the replacement inserted). **Strings cannot change length in place**: a replacement of a different length signals an error; same-length replacements are applied in place.
 - **PROPERTY** is the text property to search for.
 - **VALUE** is the optional value to match; nil means search for PROPERTY without matching value.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
-- **TIMES** is the number of searches, defaulting to 1. The function searches TIMES times but only applies FUNCTION to the last (Nth) match found.
+- **TIMES** is the number of searches, defaulting to 1. The function searches TIMES times but only applies FUNCTION to the TIMES-th match. All-or-nothing: if fewer than TIMES matches exist, FUNCTION is not applied at all and the number of available matches is returned.
 - **START** and **END** define the search range; defaults are object start and end.
 - Returns the number of successful matches.
 
@@ -1345,7 +1481,13 @@ Apply FUNCTION to all matches of PROPERTY in OBJECT.
   - TEXT is the matched text
   - START and END are the positions of the match
   - IDX is the 0-based index of the current match
-  The return value of FUNCTION replaces the matched text in the string or buffer.
+  FUNCTION is called with as many of these arguments as it accepts. When
+  FUNCTION returns a string, it replaces the matched text in the string or
+  buffer.
+- **Replacements may change length in buffers** (the match is deleted and the
+  replacement inserted). **Strings cannot change length in place**: a
+  replacement of a different length signals an error; same-length
+  replacements are applied in place.
 - **PROPERTY** is the text property to search for.
 - **VALUE** is the optional value to match; nil means search for PROPERTY without matching value.
 - **OBJECT** can be a buffer or string; nil defaults to current buffer.
@@ -1424,8 +1566,8 @@ Custom text properties is a **general-purpose feature** provided by tp.el. After
         'face 'bold
         'face '(:background "green")
         'face '(:foreground "red"))
-;; Result: face is ((:background "green" :foreground "red") bold)
-;; Three face properties are intelligently merged
+;; Result: face is ((:foreground "red") (:background "green") bold)
+;; Three face properties stack into one face list, most recent first
 
 ;; Later values override earlier ones for the same sub-property
 (tp-set "emacs"
@@ -1499,7 +1641,7 @@ Text property layers is a **unique feature** of tp.el that requires specific fun
 
 ##### `define-tp` - Define Single Custom Text Property (Layer)
 
-Define a custom text property. The name does not need to be quoted. Supports three formats:
+Define a custom text property. The name does not need to be quoted. The ARGLIST is **mandatory in every format**: `()` for non-parameterized layers (including the reactive keyword format), `(ARG)` for parameterized layers. Supports three formats:
 
 **Format 1 - Non-parameterized (empty argument list, simple properties):**
 
@@ -1527,9 +1669,9 @@ Define a custom text property. The name does not need to be quoted. Supports thr
 
 ```elisp
 (define-tp my-reactive-layer ()
-  :props '(face (:foreground $my-color))
-  :data '((my-color . "red"))
-  :compute '((full-name (lambda () (concat first-name " " last-name))))
+  :props '(face (:foreground $my-color) help-echo $status-note)
+  :data '((my-color . "red") (status . "active"))
+  :compute '((status-note (lambda () (concat "status: " status))))
   :watch '((my-color (lambda (new old layer) (message "Color changed!"))))
   :transform (lambda (text) (upcase text)))
 
@@ -1547,9 +1689,13 @@ Define a custom text property. The name does not need to be quoted. Supports thr
 - **:watch** - Watchers that execute callbacks when variables change
 - **:transform** - Transform function to process `tp-text` values before display
 
+Note: the values of `:props`, `:data`, `:compute`, and `:watch` must be
+**quoted** (they are evaluated when the layer is defined); `:transform`
+takes a function.
+
 ##### `define-tps` - Define Custom Text Property Group (Layer Group)
 
-Define multiple related custom text properties. The name does not need to be quoted. Properties in the group can be used individually or with the group name to set multiple layers.
+Define multiple related custom text properties. The name does not need to be quoted. As with `define-tp`, the ARGLIST is **mandatory**: `()` for non-parameterized groups, `(ARG)` for parameterized ones. Properties in the group can be used individually or with the group name to set multiple layers.
 
 **Format 1 - Non-parameterized (empty argument list):**
 
@@ -1641,8 +1787,7 @@ The first layer in the definition is the top layer (visible by default).
 ```elisp
 ;; Define status layers, then group them
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp highlight ()
     '(face (:background "yellow" :foreground "black")))
   (define-tp error ()
@@ -1656,20 +1801,18 @@ The first layer in the definition is the top layer (visible by default).
 
 ;; Define a layer group with named layers
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tps moon-phases ()
     '("new" . (display "🌑"))
     '("waxing-crescent" . (display "🌒"))
     '("first-quarter" . (display "🌓"))
     '("full" . (display "🌕")))
   (tp-layer-props 'moon-phases-full))
-;; => (display "🌕" tp-name moon-phases-full)
+;; => (display "🌕")
 
 ;; Parameterized layer group referencing other defined layers
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp tp-test-l1 (color)
     `(face (:foreground ,color)))
   (define-tp tp-test-l2 (color)
@@ -1691,27 +1834,34 @@ The first layer in the definition is the top layer (visible by default).
 #### `tp-layer-props` / `tp-group-props`
 
 ```elisp
-(tp-layer-props LAYER-NAME)
-(tp-group-props GROUP-NAME)
+(tp-layer-props LAYER-NAME &optional INCLUDE-TP-NAME)
+(tp-group-props GROUP-NAME &optional INCLUDE-TP-NAME)
 ```
 
 Get properties for a layer or all layers in a group.
 
+By default the result contains only the layer's own properties. When
+INCLUDE-TP-NAME is non-nil, a `tp-name LAYER-NAME` entry is appended
+(the form used internally by the layer stack). Exception: layers with
+registered reactive dependencies always include `tp-name` — the
+reactive engine uses it to locate and re-render their regions.
+
 **Examples:**
 
 ```elisp
-;; Get layer properties
+;; Get layer properties (no tp-name by default)
 (progn
-  (setq tp-layer-alist nil)
+  (tp-layer-reset)
   (define-tp my-layer ()
     '(face bold help-echo "tip"))
-  (tp-layer-props 'my-layer))
-;; => (face bold help-echo "tip" tp-name my-layer)
+  (list (tp-layer-props 'my-layer)
+        (tp-layer-props 'my-layer t)))
+;; => ((face bold help-echo "tip")
+;;     (face bold help-echo "tip" tp-name my-layer))
 
 ;; Get group properties
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp layer1 () '(face bold))
   (define-tp layer2 () '(face italic))
   (define-tps my-group ()
@@ -1736,7 +1886,7 @@ Remove layer or group definition.
 ```elisp
 ;; Undefine a layer
 (progn
-  (setq tp-layer-alist nil)
+  (tp-layer-reset)
   (define-tp temp-layer () '(face bold))
   (tp-undefine-layer 'temp-layer)
   (tp-layer-props 'temp-layer))
@@ -1744,8 +1894,7 @@ Remove layer or group definition.
 
 ;; Undefine a group
 (progn
-  (setq tp-layer-alist nil)
-  (setq tp-layer-groups nil)
+  (tp-layer-reset)
   (define-tp l1 () '(face bold))
   (define-tps my-group ()
     'l1)
@@ -1798,7 +1947,7 @@ This is useful when you want to remove all reactive bindings but keep the layer 
   (tp-reactive-reset)
   ;; Layer still exists, but changing my-reactive-color no longer updates it
   (tp-layer-props 'reactive-layer))
-;; => (face (:foreground "red") tp-name reactive-layer)
+;; => (face (:foreground "red"))
 ```
 
 ---
@@ -1820,6 +1969,17 @@ Set layer(s) at a specific index position in the layer stack.
 - `IDX = 0`: Top (visible layer)
 - `IDX = -1`: Bottom
 - Other values insert at that position
+
+LAYER accepts several specs:
+
+- a layer name defined with `define-tp`: `'highlight`
+- an inline property plist (no `define-tp` needed): `'(face bold help-echo "tip")`
+- a list of layer names (the first name ends up on top): `'(layer-a layer-b)`
+- a parameterized layer call: `'(tp-color "red")`
+
+**Stack model:** only the top layer's properties are the visible text
+properties; lower layers are stored in the `tp-layers` text property until
+they are raised, rotated, or flattened.
 
 **Examples:**
 
@@ -1858,6 +2018,35 @@ Set layer(s) at a specific index position in the layer stack.
     (tp-put-layer 1 10 'info -1)
     (tp-layer-top 1 10)))
 ;; => base  ; info is at bottom, base is visible
+
+;; Inline plist - no define-tp needed
+(with-temp-buffer
+  (insert "Hello World")
+  (tp-put-layer 1 10 '(face bold help-echo "tip") 0)
+  (list (tp-at 1 'face) (tp-at 1 'help-echo)))
+;; => (bold "tip")
+
+;; List of layer names - layer-a ends up on top
+(progn
+  (tp-layer-reset)
+  (define-tp layer-a () '(face bold))
+  (define-tp layer-b () '(face italic))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 '(layer-a layer-b) 0)
+    (list (tp-at 1 'face) (tp-layer-list 1 10))))
+;; => (bold (layer-a layer-b))
+
+;; Parameterized layer call
+(progn
+  (tp-layer-reset)
+  (define-tp tp-color (color)
+    `(face (:foreground ,color)))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-put-layer 1 10 '(tp-color "red") 0)
+    (tp-at 1 'face)))
+;; => (:foreground "red")
 ```
 
 ---
@@ -1899,6 +2088,21 @@ Push a layer to the top of the stack (equivalent to `tp-put-layer ... 0`).
     (tp-push-layer 1 10 'highlight)
     (tp-at 1 'tp-name)))
 ;; => highlight
+
+;; The top layer's props are visible; lower layers wait in `tp-layers'
+(progn
+  (tp-layer-reset)
+  (define-tp base () '(face default))
+  (define-tp highlight () '(face (:background "yellow")))
+  (with-temp-buffer
+    (insert "Hello World")
+    (tp-push-layer 1 10 'base)
+    (tp-push-layer 1 10 'highlight)
+    (list :face (tp-at 1 'face)
+          :top (tp-layer-top 1 10)
+          :layers (tp-layer-list 1 10)
+          :hidden (length (tp-at 1 'tp-layers)))))
+;; => (:face (:background "yellow") :top highlight :layers (highlight base) :hidden 1)
 ```
 
 ---
@@ -2471,7 +2675,11 @@ Add or merge properties to all layers in a region or string.
 
 Get all text property intervals from START to END in OBJECT.
 
-- Returns a list of (START END PROPERTIES) for each interval.
+- Returns a list of (START END PROPERTIES) for each interval, including
+  gap intervals with no properties, whose PROPERTIES is nil.
+- For buffer input, START and END are 1-based buffer positions but the
+  returned positions are **0-based offsets relative to START**. For strings,
+  positions are absolute 0-based indices.
 - Uses `object-intervals` (requires Emacs 28.1+).
 - OBJECT can be a buffer or string; nil defaults to current buffer.
 
@@ -2483,7 +2691,8 @@ Get all text property intervals from START to END in OBJECT.
   (tp-set 1 6 '(face bold))
   (tp-set 7 12 '(face italic))
   (tp-intervals 1 12))
-;; => ((0 5 (face bold)) (6 11 (face italic)))
+;; => ((0 5 (face bold)) (5 6 nil) (6 11 (face italic)))
+;;    positions are offsets from START; (5 6 nil) is the unpropertized gap
 ```
 
 ---
@@ -2497,8 +2706,9 @@ Get all text property intervals from START to END in OBJECT.
 Apply FUNCTION to all intervals between START and END in OBJECT.
 
 - FUNCTION receives four arguments: interval-start, interval-end, top-props (visible layer properties), and below-props-lst (list of hidden layers).
+- Intervals with no properties are visited too, with nil top-props (positions follow the same offset convention as `tp-intervals`).
 - OBJECT can be a buffer or string; nil defaults to current buffer.
-- Returns list of function results (nil values are removed).
+- Returns list of function results (nil results are removed).
 
 **Examples:**
 
@@ -2511,7 +2721,7 @@ Apply FUNCTION to all intervals between START and END in OBJECT.
    (lambda (start end props belows)
      (list start end (plist-get props 'face)))
    1 12))
-;; => ((0 5 bold) (6 11 italic))
+;; => ((0 5 bold) (5 6 nil) (6 11 italic))
 ```
 
 ---
@@ -2556,7 +2766,9 @@ Return layer properties for LAYER-NAME in region from START to END.
 
 Get a property list of all properties present in a region or string.
 
-- Returns a plist containing all properties found in the range.
+- Returns a single merged plist of the properties found in the range; when
+  the same property occurs in several intervals, the value from the later
+  interval wins.
 - OBJECT defaults to current buffer for region form.
 
 **Examples:**
@@ -2567,7 +2779,7 @@ Get a property list of all properties present in a region or string.
   (tp-set 1 6 '(face bold help-echo "Tip"))
   (tp-set 7 12 '(face italic))
   (tp-plist 1 12))
-;; => (face bold help-echo "Tip" face italic)
+;; => (help-echo "Tip" face italic)  ; later interval's face wins
 ```
 
 ---
@@ -2587,10 +2799,78 @@ Return t if OBJECT has no text properties.
 
 ```elisp
 (tp-empty-p "plain text")  ; => t
-(let ((str (copy-sequence "text")))
-  (tp-set str 'face 'bold)
-  (tp-empty-p str))  ; => nil
+
+;; Whole-string tp-set is non-destructive: the original stays empty
+(let* ((str "text")
+       (new (tp-set str 'face 'bold)))
+  (list (tp-empty-p str) (tp-empty-p new)))
+;; => (t nil)
 ```
+
+---
+
+#### `tp-with-current-buffer` / `tp-pop-to-buffer` / `tp-switch-to-buffer`
+
+```elisp
+(tp-with-current-buffer BUFFER-OR-NAME BODY...)
+(tp-pop-to-buffer BUFFER-OR-NAME BODY...)
+(tp-switch-to-buffer BUFFER-OR-NAME BODY...)
+```
+
+Convenience macros for operating on and displaying propertized content:
+
+- **`tp-with-current-buffer`** evaluates BODY in BUFFER-OR-NAME with
+  `inhibit-read-only` bound to t. Useful for modifying read-only display
+  buffers.
+- **`tp-pop-to-buffer`** creates (or reuses) BUFFER-OR-NAME, erases it,
+  evaluates BODY inside it, then makes it read-only and displays it with
+  `pop-to-buffer`. Press `q` in the displayed buffer to quit its window.
+- **`tp-switch-to-buffer`** is the same but displays the buffer with
+  `switch-to-buffer`.
+
+**Example:**
+
+```elisp
+(tp-pop-to-buffer "*tp-demo*"
+  (insert (tp-set "Important" 'face '(:foreground "red" :weight bold))
+          " message\n"))
+;; Displays *tp-demo* with the propertized text; `q' quits the window
+```
+
+---
+
+### Color Palette System
+
+`tp-palette.el` ships a set of named color palettes with separate light-mode
+and dark-mode colors, and `tp-builtins.el` exposes them through the built-in
+parameterized `tp-palette` layer (as in `(tp-set "emacs" 'tp-palette 'info)`).
+
+- **`tp-palette-alist`** (variable) — alist of `(NAME . PLIST)` palette
+  definitions; the single source of truth for palette lookups. Each PLIST
+  maps `:fg`, `:bg`, and `:border` to colors.
+- **`define-tp-palette`** — register (or update) a palette:
+
+  ```elisp
+  (define-tp-palette my-brand
+    :fg ("#0969da" . "#58a6ff")     ; ("light" . "dark")
+    :bg ("#ddf4ff" . "#1f3d5c"))
+  ```
+
+- **`tp-palette-show`** — interactive command that displays a gallery buffer
+  of every registered palette and its `-fg` / `-bg` / `-fbg` / `-border`
+  variants (`q` quits).
+- **`tp-parse-color`** — resolve a color spec for the current theme. Accepts
+  a plain color string, a `("light" . "dark")` cons (either side may be nil),
+  or a `(:light L :dark D)` plist:
+
+  ```elisp
+  (tp-parse-color "red")                 ; => "red"
+  (tp-parse-color '("white" . "black"))  ; => "white" on a light theme,
+                                         ;    "black" on a dark theme
+  ```
+
+Note: `tp-layer-reset` clears every layer definition, including built-in
+layers like `tp-palette`.
 
 ---
 
@@ -2637,7 +2917,7 @@ Return t if OBJECT has no text properties.
   (define-tp status-todo () '(face (:foreground "gray")))
   (define-tp status-progress () '(face (:foreground "yellow")))
   (define-tp status-done () '(face (:foreground "green")))
-  (define-tps task-status 'status-todo 'status-progress 'status-done)
+  (define-tps task-status () 'status-todo 'status-progress 'status-done)
   ;; Check group is defined
   (length (tp-group-props 'task-status)))
 ;; => 3
@@ -2658,7 +2938,7 @@ Return t if OBJECT has no text properties.
   (define-tp temp-highlight ()
   '(face (:background "yellow")))
   (tp-layer-props 'temp-highlight))
-;; => (face (:background "yellow") tp-name temp-highlight)
+;; => (face (:background "yellow"))
 
 ;; Flash function (for use in real buffers)
 (defun flash-region (start end)
@@ -2793,10 +3073,10 @@ The `:watch` keyword lets you execute callbacks when reactive variables change:
 ```elisp
 (define-tp monitored-layer ()
   :props '(face (:foreground $status-color))
-  :watch ((status-color 
-           (lambda (new-val old-val layer-name)
-             (message "Layer %s: color changed from %s to %s" 
-                      layer-name old-val new-val)))))
+  :watch '((status-color 
+            (lambda (new-val old-val layer-name)
+              (message "Layer %s: color changed from %s to %s" 
+                       layer-name old-val new-val)))))
 
 (setq status-color "red")
 ;; Message: "Layer monitored-layer: color changed from nil to red"
@@ -2875,7 +3155,7 @@ All text property APIs (`tp-set`, `tp-match-set`, `tp-regexp-set`, etc.) now acc
 Layer groups can also use reactive features:
 
 ```elisp
-(define-tps status-indicators
+(define-tps status-indicators ()
   '("success" :props (face (:foreground $success-color))
               :data ((success-color . "green")))
   '("warning" :props (face (:foreground $warning-color))
@@ -2960,22 +3240,18 @@ To clear all reactive dependencies and watchers:
 (defvar theme-bg "black")
 (defvar theme-accent "cyan")
 
-;; Define theme-aware layers
+;; Define theme-aware layers - each one references a theme variable
+(define-tp code-text ()
+  :props '(face (:foreground $theme-fg :background $theme-bg)))
+
 (define-tp code-keyword ()
   :props '(face (:foreground $theme-accent :weight bold)))
 
-(define-tp code-comment ()
-  :props '(face (:foreground "gray" :slant italic)))
-
-(define-tp code-string ()
-  :props '(face (:foreground "green")))
-
-;; Apply layers to code
+;; Apply layers to code in the current buffer
+(tp-set (point-min) (point-max) 'code-text)
 (tp-match-set '("defun" "defvar" "let" "if" "when") 'code-keyword)
-(tp-regexp-set ";.*$" 'code-comment)
-(tp-regexp-set "\"[^\"]*\"" 'code-string)
 
-;; Switch to light theme - just change variables!
+;; Switch to light theme - just change the variables!
 (defun switch-to-light-theme ()
   (interactive)
   (setq theme-fg "black")
@@ -2988,13 +3264,16 @@ To clear all reactive dependencies and watchers:
   (setq theme-fg "white")
   (setq theme-bg "black")
   (setq theme-accent "cyan"))
+
+;; After `switch-to-light-theme', keywords turn blue and the rest of the
+;; code turns black-on-white - every region re-renders automatically
 ```
 
 ---
 
 ## License
 
-GNU General Public License v2 or later.
+GNU General Public License v3 or later. See the [LICENSE](LICENSE) file.
 
 ---
 

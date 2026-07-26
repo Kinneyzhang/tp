@@ -1,5 +1,12 @@
 # tp.el 代码分析报告
 
+> **历史文档说明（2026-07 更新）**：本报告分析的是拆分前的单文件 tp.el（0.1.0）。
+> 自 0.2.0 起，代码库已模块化为九个分层模块（tp-core.el → tp-reactive.el → tp-layer.el →
+> tp-ops.el → tp-search.el → tp-render.el → tp-stack.el → tp-palette.el → tp-builtins.el，
+> tp.el 仅作总入口），并修复了大量已确认的 bug。当前架构请以
+> [ARCHITECTURE.md](ARCHITECTURE.md) 为准，本次变更明细见 [CHANGELOG.md](../CHANGELOG.md)。
+> 下文的调用堆栈与问题分析保留为历史分析；"文件结构"与"关键代码位置"表已更新为当前模块位置。
+
 本报告旨在帮助想要参与 tp.el 开发的开发者快速了解项目结构、核心功能实现、以及潜在的优化方向。
 
 ## 目录
@@ -23,7 +30,7 @@
 
 ## 项目概述
 
-tp.el 是一个 Emacs Lisp 文本属性操作库，采用 **五层架构设计**：
+tp.el 是一个 Emacs Lisp 文本属性操作库，拆分前的单文件版本采用概念上的 **五层架构设计**：
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -44,15 +51,30 @@ tp.el 是一个 Emacs Lisp 文本属性操作库，采用 **五层架构设计**
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+0.2.0 的模块拆分大体沿用了这一分层思路，并把"响应式系统向上调用高级 API"的
+矛盾收拢为 tp-render.el 安装的钩子变量，详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
 ---
 
 ## 文件结构
 
+当前（0.2.0）文件结构：
+
 ```
 tp/
-├── tp.el           # 核心代码（4863 行）
-├── tp-palette.el   # 预定义颜色调色板层（333 行）
-├── tp-tests.el     # ERT 测试套件（4113 行，100+ 测试用例）
+├── tp.el              # 总入口，按序加载全部模块（62 行）
+├── tp-core.el         # 区间遍历、plist/face 合并引擎、调试、$var 工具（781 行）
+├── tp-reactive.el     # 响应式依赖注册表、变量监听、批量队列（370 行）
+├── tp-layer.el        # define-tp / define-tps、层注册表与解析（1295 行）
+├── tp-ops.el          # 核心属性操作 tp-set/get/at/remove/...（916 行）
+├── tp-search.el       # 模式匹配、搜索与导航（810 行）
+├── tp-render.el       # 响应式重渲染引擎（501 行）
+├── tp-stack.el        # 属性层栈操作（709 行）
+├── tp-palette.el      # 明/暗主题调色板数据（351 行）
+├── tp-builtins.el     # 内置层与辅助工具（193 行）
+├── tp-tests.el        # 综合 ERT 测试套件（4123 行，280 个测试）
+├── tp-*-tests.el      # 各模块回归测试套件（7 个文件，159 个测试；全套共 439 个测试）
+├── Makefile           # test / compile / clean
 ├── docs/
 │   ├── ARCHITECTURE.md              # 架构文档
 │   ├── CODE-ANALYSIS.md             # 代码分析报告（本文档）
@@ -95,21 +117,23 @@ tp-set (用户调用入口)
 
 #### 关键代码位置
 
-| 函数 | 文件位置 | 作用 |
+（0.2.0 模块化后按"函数 → 模块文件"定位；文件内具体行号请用 `M-x xref-find-definitions` 查找。）
+
+| 函数 | 模块文件 | 作用 |
 |------|----------|------|
-| `tp-set` | tp.el:1350 | 主入口函数 |
-| `tp--parse-args` | tp.el:1233 | 解析三种调用格式 |
-| `tp--resolve-props` | tp.el:3730 | 展开层名称和响应式变量 |
-| `tp--handle-tp-text-property` | tp.el:1124 | 处理 tp-text 文本替换 |
-| `tp-add` | tp.el:1522 | 深度合并属性 |
-| `tp-push-layer` | tp.el:4156 | 推送层到栈顶 |
-| `tp-put-layer` | tp.el:4071 | 在指定位置放置层 |
-| `define-tp` | tp.el:3154 | 定义自定义层（宏）|
-| `define-tps` | tp.el:3448 | 定义层组（宏）|
-| `tp--reactive-variable-watcher` | tp.el:713 | 响应式变量监听器回调 |
-| `tp--update-layer-regions` | tp.el:993 | 更新使用层的文本区域 |
-| `tp-search-map` | tp.el:2918 | 搜索并应用函数 |
-| `tp--match-apply` | tp.el:2269 | 模式匹配内部实现 |
+| `tp-set` | tp-ops.el | 主入口函数 |
+| `tp--parse-args` | tp-ops.el | 解析多种调用格式 |
+| `tp--resolve-props` | tp-layer.el | 展开层名称和响应式变量 |
+| `tp--handle-tp-text-property` | tp-render.el | 处理 tp-text 文本替换（经钩子 `tp--tp-text-handler-function` 安装到 tp-ops） |
+| `tp-add` | tp-ops.el | 深度合并属性 |
+| `tp-push-layer` | tp-stack.el | 推送层到栈顶 |
+| `tp-put-layer` | tp-stack.el | 在指定位置放置层 |
+| `define-tp` | tp-layer.el | 定义自定义层（宏）|
+| `define-tps` | tp-layer.el | 定义层组（宏）|
+| `tp--reactive-variable-watcher` | tp-reactive.el | 响应式变量监听器回调 |
+| `tp--update-layer-regions` | tp-render.el | 更新使用层的文本区域 |
+| `tp-search-map` | tp-search.el | 搜索并应用函数 |
+| `tp--match-apply` | tp-search.el | 模式匹配内部实现 |
 
 ---
 
@@ -683,18 +707,18 @@ tp-layers -> [props1 props2 props3]
 (setq tp-debug-mode t)
 (setq tp-debug-echo t)
 
-;; 运行测试
-;; emacs --batch -l tp.el -l tp-tests.el -f ert-run-tests-batch-and-exit
+;; 运行测试（全套 439 个 ERT 测试）
+;; make test
 ```
 
 ### 2. 添加新功能的步骤
 
 1. **理解分层架构**
-   - 确定新功能属于哪一层
-   - 遵循层间调用规则（只调用下层函数）
+   - 确定新功能属于哪个模块（见 [ARCHITECTURE.md](ARCHITECTURE.md)）
+   - 遵循模块间调用规则（只调用前置模块的函数）
 
 2. **编写测试用例**
-   - 在 `tp-tests.el` 中添加测试
+   - 在对应模块的 `tp-*-tests.el`（或综合套件 `tp-tests.el`）中添加测试
    - 覆盖正常流程和边界情况
 
 3. **实现功能**
@@ -731,23 +755,23 @@ tp-reactive-deps
 
 #### 添加新的核心属性函数
 
-1. 在第二层添加函数
+1. 在 `tp-ops.el` 添加函数
 2. 使用 `tp--parse-args` 解析参数
 3. 调用 Emacs 原生 API
 4. 添加测试用例
 
-#### 添加新的层操作函数
+#### 添加新的层栈操作函数
 
-1. 在第三层添加函数
-2. 使用 `tp-intervals-map` 遍历区间
+1. 在 `tp-stack.el` 添加函数
+2. 使用 `tp--stack-map-region` 遍历区域内层栈
 3. 使用 `tp--get-layer-stack` 获取层栈
 4. 添加测试用例
 
 #### 扩展响应式系统
 
-1. 在第四层添加函数
+1. 注册/监听逻辑放在 `tp-reactive.el`，渲染逻辑放在 `tp-render.el`
 2. 使用 `add-variable-watcher` 注册监听
-3. 在适当位置调用 `tp--update-layer-regions`
+3. 在适当位置调用 `tp--update-layer-regions`（下层模块经钩子变量触发）
 4. 添加测试用例
 
 ---
@@ -775,5 +799,5 @@ tp.el 是一个设计精良的文本属性操作库，其核心创新包括：
 
 ---
 
-*报告生成时间: 2026-01-10*
-*tp.el 版本: 0.1.0*
+*报告生成时间: 2026-01-10（分析对象：拆分前的单文件 tp.el 0.1.0）*
+*文件结构与"关键代码位置"表更新于 2026-07-26（tp 0.2.0 模块化后）*
