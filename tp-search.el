@@ -20,8 +20,26 @@
 (require 'cl-lib)
 (require 'text-property-search)
 (require 'tp-core)
+(require 'tp-reactive)
 (require 'tp-layer)
 (require 'tp-ops)
+
+(defun tp--search-register-layer-buffer (props object)
+  "Record OBJECT in the reactive buffer registry for PROPS's layers.
+When OBJECT is a buffer or nil (the current buffer) and the applied
+PROPS carry a `tp-name' - directly, or inside a `tp-layers' entry
+from a group application - register that buffer under each layer name
+via `tp-reactive--register-layer-buffer', so reactive updates keep
+visiting buffers written through the pattern-apply paths.  String
+OBJECTs are not registered; see `tp-reactive-layer-buffers' for that
+gap."
+  (when (or (null object) (bufferp object))
+    (let ((buf (or object (current-buffer))))
+      (when-let ((name (plist-get props 'tp-name)))
+        (tp-reactive--register-layer-buffer name buf))
+      (dolist (layer (plist-get props 'tp-layers))
+        (when-let ((name (plist-get layer 'tp-name)))
+          (tp-reactive--register-layer-buffer name buf))))))
 
 (defun tp--pattern-apply-single (pattern properties apply-fn object literal
                                          &optional start end subexp)
@@ -190,7 +208,10 @@ For buffers, modifies in-place."
   (if (stringp obj)
       ;; For strings: create a new propertized string using tp--apply-props-to-string with :add mode
       (tp--apply-props-to-string obj start end props :add)
-    ;; For buffers: modify in-place
+    ;; For buffers: modify in-place.  This path stamps `tp-name' for
+    ;; resolved layer applications, so the buffer must be registered
+    ;; in the reactive registry or later updates would skip it (REG-1).
+    (tp--search-register-layer-buffer props obj)
     (let ((pos start))
       (while (< pos end)
         (let* ((current-props (text-properties-at pos obj))
@@ -265,6 +286,9 @@ For buffers, modifies in-place."
   (if (stringp obj)
       (tp--apply-props-to-string obj start end props :reset)
     (set-text-properties start end props obj)
+    ;; A resolved layer application stamps `tp-name': register the
+    ;; buffer so reactive updates keep visiting it (REG-1).
+    (tp--search-register-layer-buffer props obj)
     obj))
 
 (defun tp-match-add (pattern plist &optional object start end)

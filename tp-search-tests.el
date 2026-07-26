@@ -610,5 +610,79 @@ value changes when a non-nil predicate is given."
     (should (= (tp-forward-do #'upcase 'lvl 2 s) 1))
     (should (equal (substring-no-properties s) "abc DEF"))))
 
+;;; REG-1: pattern-apply paths must register buffers in the reactive registry
+
+(defvar tp-search-reg1-color nil)
+(defvar tp-search-reg1b-color nil)
+
+(ert-deftest tp-search-test-regexp-add-registers-reactive-buffer ()
+  "tp-regexp-add in a second buffer keeps reactive updates flowing there.
+The deep-merge apply path stamps `tp-name' but never registered the
+buffer, so once the layer was known from a `tp-set' elsewhere the
+regexp-applied buffer went permanently stale (REG-1)."
+  (setq tp-search-reg1-color "red")
+  (unwind-protect
+      (progn
+        (tp-layer-reset)
+        (define-tp tp-search-reg1-layer ()
+          :props '(face (:foreground $tp-search-reg1-color)))
+        (let ((a (generate-new-buffer " *tp-sreg1-a*"))
+              (b (generate-new-buffer " *tp-sreg1-b*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer a (insert "foo bar"))
+                (with-current-buffer b (insert "foo bar"))
+                (tp-set 1 4 'tp-search-reg1-layer a) ; registers A
+                (tp-regexp-add "foo" 'tp-search-reg1-layer b)
+                (let ((bufs (tp-reactive-layer-buffers
+                             'tp-search-reg1-layer)))
+                  (should (memq a bufs))
+                  (should (memq b bufs)))
+                (setq tp-search-reg1-color "blue")
+                (should (equal (with-current-buffer a
+                                 (get-text-property 1 'face))
+                               '(:foreground "blue")))
+                (should (equal (with-current-buffer b
+                                 (get-text-property 1 'face))
+                               '(:foreground "blue"))))
+            (kill-buffer a)
+            (kill-buffer b))))
+    (tp-layer-reset)
+    (setq tp-search-reg1-color nil)))
+
+(ert-deftest tp-search-test-match-reset-registers-reactive-buffer ()
+  "tp-match-reset in a second buffer keeps reactive updates flowing there.
+The reset-apply path stamps `tp-name' via `set-text-properties' but
+never registered the buffer (REG-1)."
+  (setq tp-search-reg1b-color "red")
+  (unwind-protect
+      (progn
+        (tp-layer-reset)
+        (define-tp tp-search-reg1b-layer ()
+          :props '(face (:foreground $tp-search-reg1b-color)))
+        (let ((a (generate-new-buffer " *tp-sreg1b-a*"))
+              (b (generate-new-buffer " *tp-sreg1b-b*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer a (insert "foo bar"))
+                (with-current-buffer b (insert "foo bar"))
+                (tp-set 1 4 'tp-search-reg1b-layer a)
+                (tp-match-reset "foo" 'tp-search-reg1b-layer b)
+                (let ((bufs (tp-reactive-layer-buffers
+                             'tp-search-reg1b-layer)))
+                  (should (memq a bufs))
+                  (should (memq b bufs)))
+                (setq tp-search-reg1b-color "blue")
+                (should (equal (with-current-buffer a
+                                 (get-text-property 1 'face))
+                               '(:foreground "blue")))
+                (should (equal (with-current-buffer b
+                                 (get-text-property 1 'face))
+                               '(:foreground "blue"))))
+            (kill-buffer a)
+            (kill-buffer b))))
+    (tp-layer-reset)
+    (setq tp-search-reg1b-color nil)))
+
 (provide 'tp-search-tests)
 ;;; tp-search-tests.el ends here

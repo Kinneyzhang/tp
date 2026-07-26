@@ -862,5 +862,91 @@ not just the first."
     (should (null (tp-at 1 'face)))
     (should (equal (tp-at 1 'help-echo) "tip"))))
 
+;;; REG-1: every stack write must register its buffer in the reactive registry
+
+(defvar tp-st-reg1-color nil)
+
+(ert-deftest tp-stack-test-push-layer-registers-reactive-buffer ()
+  "tp-push-layer in a second buffer keeps reactive updates flowing there.
+Once the registry knows a layer from a `tp-set' in one buffer, a
+stack-path application in another buffer must register too; before
+the REG-1 fix the second buffer was silently and permanently skipped
+by every later update."
+  (setq tp-st-reg1-color "red")
+  (unwind-protect
+      (progn
+        (tp-layer-reset)
+        (define-tp tp-st-reg1-layer ()
+          :props '(face (:foreground $tp-st-reg1-color)))
+        (let ((a (generate-new-buffer " *tp-reg1-a*"))
+              (b (generate-new-buffer " *tp-reg1-b*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer a (insert "hello"))
+                (with-current-buffer b (insert "hello"))
+                (tp-set 1 6 'tp-st-reg1-layer a) ; registers A
+                (with-current-buffer b
+                  (tp-push-layer 1 6 'tp-st-reg1-layer))
+                ;; The registry must know BOTH buffers.
+                (let ((bufs (tp-reactive-layer-buffers 'tp-st-reg1-layer)))
+                  (should (memq a bufs))
+                  (should (memq b bufs)))
+                (setq tp-st-reg1-color "blue")
+                (should (equal (with-current-buffer a
+                                 (get-text-property 1 'face))
+                               '(:foreground "blue")))
+                (should (equal (with-current-buffer b
+                                 (get-text-property 1 'face))
+                               '(:foreground "blue")))
+                ;; And the registration is permanent, not a one-shot fluke.
+                (setq tp-st-reg1-color "green")
+                (should (equal (with-current-buffer b
+                                 (get-text-property 1 'face))
+                               '(:foreground "green"))))
+            (kill-buffer a)
+            (kill-buffer b))))
+    (tp-layer-reset)
+    (setq tp-st-reg1-color nil)))
+
+(ert-deftest tp-stack-test-stack-write-registers-buried-and-hidden-layers ()
+  "Stack writes register every named layer of the new stack, not just the top.
+A buried layer (under a fresh push) and a hidden layer arrive in the
+buffer via string insertion - a path that never registers - and the
+next stack write on the region must register them (REG-1; GC-1's
+liveness depends on this)."
+  (unwind-protect
+      (progn
+        (tp-layer-reset)
+        (define-tp tp-st-reg1-buried () '(face bold))
+        (define-tp tp-st-reg1-top () '(face italic))
+        (define-tp tp-st-reg1-hidden () '(face underline))
+        (let ((buf (generate-new-buffer " *tp-reg1-c*")))
+          (unwind-protect
+              (with-current-buffer buf
+                ;; Propertized string insertion bypasses registration.
+                (insert (let ((s (copy-sequence "hello")))
+                          (tp-push-layer s 'tp-st-reg1-buried)
+                          s))
+                (insert (let ((s (copy-sequence " world")))
+                          (tp-push-layer s 'tp-st-reg1-hidden)
+                          s))
+                (should (eq (tp-reactive-layer-buffers 'tp-st-reg1-buried)
+                            'unknown))
+                ;; Pushing a new top rewrites the stack: the buried
+                ;; layer below it must be registered as well.
+                (tp-push-layer 1 6 'tp-st-reg1-top)
+                (should (memq buf (tp-reactive-layer-buffers
+                                   'tp-st-reg1-buried)))
+                (should (memq buf (tp-reactive-layer-buffers
+                                   'tp-st-reg1-top)))
+                ;; Hiding rewrites the stack: the now-hidden layer must
+                ;; stay registered even though it loses its direct
+                ;; tp-name.
+                (tp-hide-layer 7 12 'tp-st-reg1-hidden)
+                (should (memq buf (tp-reactive-layer-buffers
+                                   'tp-st-reg1-hidden))))
+            (kill-buffer buf))))
+    (tp-layer-reset)))
+
 (provide 'tp-stack-tests)
 ;;; tp-stack-tests.el ends here

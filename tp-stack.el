@@ -20,6 +20,7 @@
 (require 'cl-lib)
 (require 'dash)
 (require 'tp-core)
+(require 'tp-reactive)
 (require 'tp-layer)
 (require 'tp-ops)
 
@@ -132,6 +133,23 @@ layer properties at all when every layer is hidden) and the
    ((null (cdr layer-list)) (copy-sequence (car layer-list)))
    (t (append (car layer-list)
               (list 'tp-layers (cdr layer-list))))))
+
+(defun tp--stack-register-layers (stack object)
+  "Register OBJECT in the reactive buffer registry for every layer in STACK.
+STACK is a list of layer plists as stored by the stack operations.
+When OBJECT is a buffer or nil (the current buffer), every plist
+carrying a `tp-name' - buried and hidden layers included - registers
+that buffer via `tp-reactive--register-layer-buffer', so reactive
+updates and the anonymous-layer GC keep seeing buffers whose layers
+were written by stack mutators rather than by `tp-set'.  String
+OBJECTs are not registered; see `tp-reactive-layer-buffers' for that
+gap.  Registration is idempotent, so calling this once per rewritten
+run is cheap."
+  (when (or (null object) (bufferp object))
+    (let ((buf (or object (current-buffer))))
+      (dolist (layer stack)
+        (when-let ((name (plist-get layer 'tp-name)))
+          (tp-reactive--register-layer-buffer name buf))))))
 
 ;;; Queries
 
@@ -369,7 +387,8 @@ string forms), otherwise the cons (START . END)."
                                      (seq-drop stack actual-idx))))
              (set-text-properties abs-start abs-end
                                   (tp--stack-build-props new-stack)
-                                  obj))))
+                                  obj)
+             (tp--stack-register-layers new-stack obj))))
         (or obj (cons start end))))))
 
 (defun tp-push-layer (start-or-string &optional end-or-layer layer-or-object object noerror)
@@ -425,10 +444,11 @@ alone and a return value of 0 means nothing matched at all."
        start end obj
        (lambda (abs-start abs-end stack)
          (when-let ((found (tp--get-layer-by-idx-or-name stack layer-id)))
-           (set-text-properties
-            abs-start abs-end
-            (tp--stack-build-props (-remove-at (car found) stack))
-            obj)
+           (let ((new-stack (-remove-at (car found) stack)))
+             (set-text-properties abs-start abs-end
+                                  (tp--stack-build-props new-stack)
+                                  obj)
+             (tp--stack-register-layers new-stack obj))
            (setq count (1+ count)))))
       count)))
 
@@ -547,6 +567,7 @@ return value of 0 means nothing matched at all."
            (set-text-properties abs-start abs-end
                                 (tp--stack-build-props new-stack)
                                 obj)
+           (tp--stack-register-layers new-stack obj)
            (setq count (1+ count)))))
       count)))
 
@@ -583,6 +604,7 @@ alone and a return value of 0 means nothing matched at all."
            (set-text-properties abs-start abs-end
                                 (tp--stack-build-props new-stack)
                                 obj)
+           (tp--stack-register-layers new-stack obj)
            (setq count (1+ count)))))
       count)))
 
@@ -662,6 +684,7 @@ region had layers to rotate (or COUNT was below 1)."
                (set-text-properties abs-start abs-end
                                     (tp--stack-build-props new-stack)
                                     obj)
+               (tp--stack-register-layers new-stack obj)
                (setq applied (1+ applied)))))))
       applied)))
 
@@ -713,6 +736,7 @@ left alone and a return value of 0 means nothing matched at all."
            (set-text-properties abs-start abs-end
                                 (tp--stack-build-props new-stack)
                                 obj)
+           (tp--stack-register-layers new-stack obj)
            (setq count (1+ count)))))
       count)))
 
@@ -765,6 +789,7 @@ alone as well, so a return value of 0 means nothing changed."
                (set-text-properties abs-start abs-end
                                     (tp--stack-build-props new-stack)
                                     obj)
+               (tp--stack-register-layers new-stack obj)
                (setq count (1+ count)))))))
       count)))
 
@@ -807,6 +832,7 @@ as well, so a return value of 0 means nothing changed."
                (set-text-properties abs-start abs-end
                                     (tp--stack-build-props new-stack)
                                     obj)
+               (tp--stack-register-layers new-stack obj)
                (setq count (1+ count)))))))
       count)))
 
@@ -867,7 +893,8 @@ to nil in a higher-precedence layer stays nil in the merged layer."
              (setq new-stack (cons merged-props new-stack))
              (set-text-properties abs-start abs-end
                                   (tp--stack-build-props new-stack)
-                                  obj))))))
+                                  obj)
+             (tp--stack-register-layers new-stack obj))))))
     nil))
 
 (defun tp-flatten-layers (start-or-string &optional end-or-name name-or-object object)
@@ -896,7 +923,8 @@ flattened result."
                                        for i from 0
                                        collect (cons i layer))
                               (when name (list 'tp-name name)))))
-           (set-text-properties abs-start abs-end merged-props obj)))))
+           (set-text-properties abs-start abs-end merged-props obj)
+           (tp--stack-register-layers (list merged-props) obj)))))
     nil))
 
 (defun tp-add-to-layers (idx-or-layer-name-list start-or-string &optional end-or-plist plist-or-object &rest rest)
@@ -961,7 +989,8 @@ Returns the modified object (string) or nil for buffer operations."
          (when stack
            (set-text-properties abs-start abs-end
                                 (tp--stack-build-props modified-stack)
-                                obj)))))
+                                obj)
+           (tp--stack-register-layers modified-stack obj)))))
     (if (stringp obj) obj nil)))
 
 (defun tp-add-to-all-layers (start-or-string &optional end-or-plist plist-or-object &rest rest)
